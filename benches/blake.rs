@@ -29,21 +29,29 @@ fn as_u40(b: &[u8]) -> u64 {
         | (b[4] as u64) << 32
 }
 
-fn prove(stream: &[u8], challenge: &[u8; 32], d: u64) {
+fn as_u34(b: &[u8], i: usize) -> u64 {
+    const MASK: u64 = u64::MAX >> 28;
+    let start = i/8;
+    (as_u40(&b[start..start+5]) >> i % 8) & MASK
+}
+
+fn prove(stream: &[u8], challenge: &[u8; 32], d: u64) -> Vec<usize> {
     let mut hasher = Hasher::new();
     let mut out: Vec<u8> = vec![0; 85];
     let (chunks, _) = stream.as_chunks::<16>();
+    let mut result = vec![];
+    let mut i: usize = 0;
     for chunk in chunks {
         hasher.update(challenge);
         hasher.update(chunk);
         hasher.finalize_xof().fill(out.as_mut_slice());
         hasher.reset();
-        // this seems to have very insignificant impact
-        // might be optimized away
-        for _ in 0..20 {
-            if as_u40(&out[0..5]) <= d {
-
+        for j in 0..20 {
+            if as_u34(&out, j*34) <= d {
+                result.push(i)
             }
         }
+        i += 1;
     }
+    result
 }
