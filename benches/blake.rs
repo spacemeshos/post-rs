@@ -31,7 +31,7 @@ fn as_u40(b: &[u8]) -> u64 {
 
 fn prove(stream: &[u8], challenge: &[u8; 32], d: u64) {
     let mut hasher = Hasher::new();
-    let mut out: Vec<u8> = vec![0; 80];
+    let mut out: Vec<u8> = vec![0; 85];
     let (chunks, _) = stream.as_chunks::<16>();
     for chunk in chunks {
         hasher.update(challenge);
@@ -41,7 +41,7 @@ fn prove(stream: &[u8], challenge: &[u8; 32], d: u64) {
         // this seems to have very insignificant impact
         // might be optimized away
         for _ in 0..20 {
-            if as_u40(&chunk[0..5]) <= d {
+            if as_u40(&out[0..5]) <= d {
 
             }
         }
