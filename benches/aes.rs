@@ -48,12 +48,12 @@ fn prove1(stream: &[u8], challenge: &[u8; 16], d: u64, send: mpsc::Sender<(u64, 
         .map(|i| {
             let mut key = challenge.clone();
             key[15] = i as u8;
-            Aes128::new(&GenericArray::from(key))
+            Aes128::new(&key.into())
         })
         .collect();
 
     for i in 0..(stream.len() / 16) {
-        let labels = GenericArray::from_slice(&stream[i * 16..(i + 1) * 16]);
+        let labels = (&stream[i * 16..(i + 1) * 16]).into();
         for (j, cipher) in ciphers.iter().enumerate() {
             cipher.encrypt_block_b2b(labels, (&mut output[j * 16..(j + 1) * 16]).into())
         }
