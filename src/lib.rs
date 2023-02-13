@@ -4,9 +4,23 @@ use aes::{
 };
 use std::{sync::mpsc, thread};
 
+fn as_u40(b: &[u8]) -> u64 {
+    (b[0] as u64)
+        | (b[1] as u64) << 8
+        | (b[2] as u64) << 16
+        | (b[3] as u64) << 24
+        | (b[4] as u64) << 32
+}
+
+fn as_u34(b: &[u8], i: usize) -> u64 {
+    const MASK: u64 = u64::MAX >> 28;
+    let start = i / 8;
+    (as_u40(&b[start..start + 5]) >> i % 8) & MASK
+}
+
 pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: mpsc::Sender<(u64, u64)>) {
-    let mut output = [0u8; 160];
-    let ciphers: Vec<Aes128> = (0..10)
+    let mut output = [0u8; 96];
+    let ciphers: Vec<Aes128> = (0..6)
         .map(|i| {
             let mut key = challenge.clone();
             key[15] = i as u8;
@@ -19,17 +33,14 @@ pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: mpsc::Sender<(u64,
         for (j, cipher) in ciphers.iter().enumerate() {
             cipher.encrypt_block_b2b(labels, (&mut output[j * 16..(j + 1) * 16]).into())
         }
-        unsafe {
-            let (_, ints, _) = output.align_to::<u64>();
-            for j in 0..20 {
-                if ints[j] as u64 <= d {
-                    match tx.send((j as u64, i as u64)) {
-                        Ok(()) => {}
-                        Err(_) => return,
-                    }
+        for j in 0..20 {
+            if as_u34(&output, j * 34) as u64 <= d {
+                match tx.send((j as u64, i as u64)) {
+                    Ok(()) => {}
+                    Err(_) => return,
                 }
             }
-        };
+        }
     }
 }
 
