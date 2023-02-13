@@ -5,8 +5,8 @@ use aes::{
 use std::{sync::mpsc, thread};
 
 pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: mpsc::Sender<(u64, u64)>) {
-    let mut output = [0u8; 96];
-    let ciphers: Vec<Aes128> = (0..6)
+    let mut output = [0u8; 160];
+    let ciphers: Vec<Aes128> = (0..10)
         .map(|i| {
             let mut key = challenge.clone();
             key[15] = i as u8;
@@ -20,7 +20,7 @@ pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: mpsc::Sender<(u64,
             cipher.encrypt_block_b2b(labels, (&mut output[j * 16..(j + 1) * 16]).into())
         }
         unsafe {
-            let (_, ints, _) = output.align_to::<u32>();
+            let (_, ints, _) = output.align_to::<u64>();
             for j in 0..20 {
                 if ints[j] as u64 <= d {
                     match tx.send((j as u64, i as u64)) {
