@@ -13,7 +13,7 @@ fn as_u40(b: &[u8]) -> u64 {
 }
 
 fn as_u34(b: &[u8], i: usize) -> u64 {
-    const MASK: u64 = u64::MAX >> 28;
+    const MASK: u64 = u64::MAX >> 30;
     let start = i / 8;
     (as_u40(&b[start..start + 5]) >> i % 8) & MASK
 }
