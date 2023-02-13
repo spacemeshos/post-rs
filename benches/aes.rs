@@ -42,7 +42,7 @@ fn prove_many(t: usize, stream: &[u8], challenge: &[u8; 16], d: u64, tx: mpsc::S
     })
 }
 
-fn prove1(stream: &[u8], challenge: &[u8; 16], d: u64, send: mpsc::Sender<(u64, u64)>) {
+fn prove1(stream: &[u8], challenge: &[u8; 16], d: u64, tx: mpsc::Sender<(u64, u64)>) {
     let mut output = [0u8; 96];
     let ciphers: Vec<Aes128> = (0..6)
         .map(|i| {
@@ -61,7 +61,7 @@ fn prove1(stream: &[u8], challenge: &[u8; 16], d: u64, send: mpsc::Sender<(u64, 
             let (_, ints, _) = output.align_to::<u32>();
             for j in 0..20 {
                 if ints[j] as u64 <= d {
-                    match send.send((j as u64, i as u64)) {
+                    match tx.send((j as u64, i as u64)) {
                         Ok(()) => {}
                         Err(_) => return,
                     }
