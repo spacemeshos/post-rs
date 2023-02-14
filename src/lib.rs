@@ -4,25 +4,9 @@ use aes::{
 };
 use std::{sync::mpsc, thread};
 
-#[inline(always)]
-fn as_u40(b: &[u8]) -> u64 {
-    (b[0] as u64)
-        | (b[1] as u64) << 8
-        | (b[2] as u64) << 16
-        | (b[3] as u64) << 24
-        | (b[4] as u64) << 32
-}
-
-#[cfg(not_used)]
-fn as_u34(b: &[u8], i: usize) -> u64 {
-    const MASK: u64 = u64::MAX >> 30;
-    let start = i / 8;
-    (as_u40(&b[start..start + 5]) >> i % 8) & MASK
-}
-
 pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: mpsc::Sender<(u64, u64)>) {
-    let mut output = [0u8; 16*7];
-    let ciphers: Vec<Aes128> = (0..7)
+    let mut output = [0u8; 16 * 6];
+    let ciphers: Vec<Aes128> = (0..6)
         .map(|i: u32| {
             let mut key = [0u8; 16];
             key[..12].copy_from_slice(&challenge[..12]);
@@ -36,11 +20,16 @@ pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: mpsc::Sender<(u64,
         for (j, cipher) in ciphers.iter().enumerate() {
             cipher.encrypt_block_b2b(labels, (&mut output[j * 16..(j + 1) * 16]).into())
         }
-        for j in 0..20 {
-            if as_u40(&output[j*5..]) as u64 <= d {
-                match tx.send((j as u64, i as u64)) {
-                    Ok(()) => {}
-                    Err(_) => return,
+        unsafe {
+            // this can target only systems with little endian, which is most of them
+            // on big endian systems we will have to copy.
+            let (_, ints, _) = output.align_to::<u64>();
+            for j in 0..12 {
+                if ints[j] <= d {
+                    match tx.send((j as u64, i as u64)) {
+                        Ok(()) => {}
+                        Err(_) => return,
+                    }
                 }
             }
         }
