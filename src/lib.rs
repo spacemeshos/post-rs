@@ -1,5 +1,5 @@
 use aes::{
-    cipher::{BlockEncrypt, KeyInit},
+    cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray},
     Aes128,
 };
 use std::{sync::mpsc, thread};
@@ -17,14 +17,13 @@ pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64
             Aes128::new(&key.into())
         })
         .collect();
-    for i in 0..(stream.len() / 16) {
-        let labels = (&stream[i * 16..(i + 1) * 16]).into(); // 16 labels per iteration
+
+    for i in 0..(stream.len() / 16) { // there is of by 1 error
+        let labels = (&stream[i*16..(i+1)*16]).into();
         for (j, cipher) in ciphers.iter().enumerate() {
             cipher.encrypt_block_b2b(labels, (&mut output[j * 16..(j + 1) * 16]).into());
         }
         unsafe {
-            // this can target only systems with little endian, which is most of them
-            // on big endian systems we can do byte swap
             let (_, ints, _) = output.align_to::<u64>();
             for j in 0..OUTPUTS {
                 if ints[j].to_le() <= d {
@@ -54,3 +53,22 @@ pub fn prove_many(
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sanity() {
+        let (tx, rx) = mpsc::channel();
+        let challenge = b"dsadsadasdsaaaaa";
+        let iterations = 3;
+        let stream = vec![0u8; 16*iterations];
+        prove(&stream, &challenge, u64::MAX, &tx);
+        drop(tx);
+        let rst: Vec<(u64, u64)> = rx.into_iter().collect();
+        assert_eq!(rst.len(), 12*iterations);
+        println!("{:?}", rst);
+    }
+}
+
