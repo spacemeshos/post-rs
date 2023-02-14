@@ -17,10 +17,9 @@ pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64
             Aes128::new(&key.into())
         })
         .collect();
-
-    for i in 0..(stream.len() / 16) {
-        // there is of by 1 error
-        let labels = (&stream[i * 16..(i + 1) * 16]).into();
+    
+    for (i, chunk) in stream.chunks(16).enumerate() {
+        let labels = chunk.into();
         for (j, cipher) in ciphers.iter().enumerate() {
             cipher.encrypt_block_b2b(labels, (&mut output[j * 16..(j + 1) * 16]).into());
         }
