@@ -4,6 +4,8 @@ use aes::{
 };
 use std::{sync::mpsc, thread};
 
+pub mod verify;
+
 pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64, u64)>) {
     const BLOCKS: usize = 6; // number of aes calls per iteration
     const OUTPUTS: usize = 12; // number of outputs from aes BLOCKS
