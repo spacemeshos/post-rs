@@ -1,5 +1,5 @@
 use aes::{
-    cipher::{BlockEncrypt, KeyInit, generic_array::GenericArray},
+    cipher::{BlockEncrypt, KeyInit},
     Aes128,
 };
 use std::{sync::mpsc, thread};
@@ -18,8 +18,9 @@ pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64
         })
         .collect();
 
-    for i in 0..(stream.len() / 16) { // there is of by 1 error
-        let labels = (&stream[i*16..(i+1)*16]).into();
+    for i in 0..(stream.len() / 16) {
+        // there is of by 1 error
+        let labels = (&stream[i * 16..(i + 1) * 16]).into();
         for (j, cipher) in ciphers.iter().enumerate() {
             cipher.encrypt_block_b2b(labels, (&mut output[j * 16..(j + 1) * 16]).into());
         }
@@ -63,12 +64,11 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let challenge = b"dsadsadasdsaaaaa";
         let iterations = 3;
-        let stream = vec![0u8; 16*iterations];
+        let stream = vec![0u8; 16 * iterations];
         prove(&stream, &challenge, u64::MAX, &tx);
         drop(tx);
         let rst: Vec<(u64, u64)> = rx.into_iter().collect();
-        assert_eq!(rst.len(), 12*iterations);
+        assert_eq!(rst.len(), 12 * iterations);
         println!("{:?}", rst);
     }
 }
-
