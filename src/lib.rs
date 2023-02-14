@@ -4,7 +4,6 @@ use aes::{
 };
 use std::{sync::mpsc, thread};
 
-#[cfg(target_endian = "little")]
 pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64, u64)>) {
     const BLOCKS: usize = 6; // number of aes calls per iteration
     const OUTPUTS: usize = 12; // number of outputs from aes BLOCKS
@@ -28,7 +27,7 @@ pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64
             // on big endian systems we can do byte swap
             let (_, ints, _) = output.align_to::<u64>();
             for j in 0..OUTPUTS {
-                if ints[j].swap_bytes() <= d {
+                if ints[j].to_le() <= d {
                     match tx.send((j as u64, i as u64)) {
                         Ok(()) => {}
                         Err(_) => return,
