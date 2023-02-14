@@ -4,6 +4,7 @@ use aes::{
 };
 use std::{sync::mpsc, thread};
 
+#[inline(always)]
 fn as_u40(b: &[u8]) -> u64 {
     (b[0] as u64)
         | (b[1] as u64) << 8
@@ -12,6 +13,7 @@ fn as_u40(b: &[u8]) -> u64 {
         | (b[4] as u64) << 32
 }
 
+#[cfg(not_used)]
 fn as_u34(b: &[u8], i: usize) -> u64 {
     const MASK: u64 = u64::MAX >> 30;
     let start = i / 8;
@@ -19,11 +21,12 @@ fn as_u34(b: &[u8], i: usize) -> u64 {
 }
 
 pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: mpsc::Sender<(u64, u64)>) {
-    let mut output = [0u8; 112];
+    let mut output = [0u8; 16*7];
     let ciphers: Vec<Aes128> = (0..7)
-        .map(|i| {
-            let mut key = challenge.clone();
-            key[15] = i as u8;
+        .map(|i: u32| {
+            let mut key = [0u8; 16];
+            key[..12].copy_from_slice(&challenge[..12]);
+            key[12..].copy_from_slice(&i.to_le_bytes());
             Aes128::new(&key.into())
         })
         .collect();
