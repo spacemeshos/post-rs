@@ -4,6 +4,7 @@ use aes::{
 };
 use std::{sync::mpsc, thread};
 
+#[cfg(target_endian = "little")]
 pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: mpsc::Sender<(u64, u64)>) {
     let mut output = [0u8; 16 * 6];
     let ciphers: Vec<Aes128> = (0..6)
