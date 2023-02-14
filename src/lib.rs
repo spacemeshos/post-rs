@@ -6,8 +6,11 @@ use std::{sync::mpsc, thread};
 
 #[cfg(target_endian = "little")]
 pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64, u64)>) {
-    let mut output = [0u8; 16 * 6];
-    let ciphers: Vec<Aes128> = (0..6)
+    const BLOCKS: usize = 6; // number of aes calls per iteration
+    const OUTPUTS: usize = 12; // number of outputs from aes BLOCKS
+
+    let mut output = [0u8; 16 * BLOCKS];
+    let ciphers: Vec<Aes128> = (0..BLOCKS as u32)
         .map(|i: u32| {
             let mut key = [0u8; 16];
             key[..12].copy_from_slice(&challenge[..12]);
@@ -15,18 +18,17 @@ pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64
             Aes128::new(&key.into())
         })
         .collect();
-
     for i in 0..(stream.len() / 16) {
-        let labels = (&stream[i * 16..(i + 1) * 16]).into();
+        let labels = (&stream[i * 16..(i + 1) * 16]).into(); // 16 labels per iteration
         for (j, cipher) in ciphers.iter().enumerate() {
-            cipher.encrypt_block_b2b(labels, (&mut output[j * 16..(j + 1) * 16]).into())
+            cipher.encrypt_block_b2b(labels, (&mut output[j * 16..(j + 1) * 16]).into());
         }
         unsafe {
             // this can target only systems with little endian, which is most of them
-            // on big endian systems we will have to copy.
+            // on big endian systems we can do byte swap
             let (_, ints, _) = output.align_to::<u64>();
-            for j in 0..12 {
-                if ints[j] <= d {
+            for j in 0..OUTPUTS {
+                if ints[j].swap_bytes() <= d {
                     match tx.send((j as u64, i as u64)) {
                         Ok(()) => {}
                         Err(_) => return,
