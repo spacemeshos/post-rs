@@ -14,14 +14,14 @@ fn aes_benchmark(c: &mut Criterion) {
     group.bench_function("prove1", |b| {
         b.iter(|| {
             let (tx, rx) = mpsc::channel();
-            post::prove(&data, challenge, 0, tx);
+            post::prove(&data, challenge, 0, &tx);
             black_box(rx)
         });
     });
     group.bench_function("prove4", |b| {
         b.iter(|| {
             let (tx, rx) = mpsc::channel();
-            post::prove_many(4, &data, challenge, 0, tx);
+            post::prove_many(4, &data, challenge, 0, &tx);
             black_box(rx);
         });
     });

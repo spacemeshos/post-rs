@@ -5,7 +5,7 @@ use aes::{
 use std::{sync::mpsc, thread};
 
 #[cfg(target_endian = "little")]
-pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: mpsc::Sender<(u64, u64)>) {
+pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64, u64)>) {
     let mut output = [0u8; 16 * 6];
     let ciphers: Vec<Aes128> = (0..6)
         .map(|i: u32| {
@@ -42,14 +42,14 @@ pub fn prove_many(
     stream: &[u8],
     challenge: &[u8; 16],
     d: u64,
-    tx: mpsc::Sender<(u64, u64)>,
+    tx: &mpsc::Sender<(u64, u64)>,
 ) {
     thread::scope(|s| {
         let chunk = stream.len() / t;
         for i in 0..t {
             let tx = tx.clone();
             let stream = &stream[i * chunk..(i + 1) * chunk];
-            s.spawn(|| prove(stream, challenge, d, tx));
+            s.spawn(move || prove(stream, challenge, d, &tx));
         }
     })
 }
