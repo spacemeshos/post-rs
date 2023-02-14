@@ -1,4 +1,4 @@
-use std::{hint::black_box, sync::mpsc};
+use std::{hint::black_box, sync::mpsc, thread};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::{thread_rng, RngCore};
@@ -21,10 +21,28 @@ fn aes_benchmark(c: &mut Criterion) {
     group.bench_function("prove4", |b| {
         b.iter(|| {
             let (tx, rx) = mpsc::channel();
-            post::prove_many(4, &data, challenge, 0, &tx);
+            prove_many(4, &data, challenge, 0, &tx);
             black_box(rx);
         });
     });
+}
+
+
+pub fn prove_many(
+    t: usize,
+    stream: &[u8],
+    challenge: &[u8; 16],
+    d: u64,
+    tx: &mpsc::Sender<(u64, u64)>,
+) {
+    thread::scope(|s| {
+        let chunk = stream.len() / t;
+        for i in 0..t {
+            let tx = tx.clone();
+            let stream = &stream[i * chunk..(i + 1) * chunk];
+            s.spawn(move || post::prove(stream, challenge, d, &tx));
+        }
+    })
 }
 
 criterion_group!(benches, aes_benchmark);
