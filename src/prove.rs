@@ -2,7 +2,7 @@ use aes::{
     cipher::{BlockEncrypt, KeyInit},
     Aes128,
 };
-use std::{sync::mpsc};
+use std::sync::mpsc;
 
 pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64, u64)>) {
     const BLOCKS: usize = 6; // number of aes calls per iteration
@@ -18,7 +18,7 @@ pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64
             Aes128::new(&key.into())
         })
         .collect();
-    
+
     for (i, chunk) in stream.chunks(AES_BLOCK).enumerate() {
         let labels = chunk.into();
         for (j, cipher) in ciphers.iter().enumerate() {
@@ -37,6 +37,8 @@ pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64
         }
     }
 }
+
+
 
 #[cfg(test)]
 mod tests {
