@@ -9,12 +9,13 @@ fn aes_benchmark(c: &mut Criterion) {
     let challenge = b"dsadassdada12311";
     let mut data: Vec<u8> = vec![0; 512 << 20];
     thread_rng().fill_bytes(&mut data);
+    let mut prover = post::Prover::new(challenge);
 
     group.throughput(criterion::Throughput::Bytes(data.len() as u64));
     group.bench_function("prove1", |b| {
         b.iter(|| {
             let (tx, rx) = mpsc::channel();
-            post::prove(&data, challenge, 0, &tx);
+            prover.prove(&data, 0, &tx);
             black_box(rx)
         });
     });
