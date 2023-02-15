@@ -6,8 +6,7 @@ use cipher::block_padding::NoPadding;
 use std::sync::mpsc;
 
 const BLOCK_SIZE: usize = 16; // size of the aes block
-// will use encrypt8 asm method
-const BATCH: usize = 8;
+const BATCH: usize = 8; // will use encrypt8 asm method
 
 pub struct Prover<const N: usize = 1> {
     ciphers: [Aes128; N],
@@ -33,19 +32,19 @@ impl<const N: usize> Prover<N> {
 
     pub fn prove(&mut self, stream: &[u8], tx: &mpsc::Sender<(u64, u64)>) {
         for i in 0..stream.len() / (BLOCK_SIZE * BATCH) {
-            let chunk =
-                &stream[i * BLOCK_SIZE * BATCH..(i + 1) * BLOCK_SIZE * BATCH];
+            let chunk = &stream[i * BLOCK_SIZE * BATCH..(i + 1) * BLOCK_SIZE * BATCH];
             for (j, cipher) in self.ciphers.iter().enumerate() {
                 cipher
                     .encrypt_padded_b2b::<NoPadding>(chunk, &mut self.output)
                     .unwrap();
                 unsafe {
                     let (_, ints, _) = self.output.align_to::<u64>();
+                    println!("{:?}", ints.len());
                     for (out_i, out) in ints.iter().enumerate() {
                         if out.to_le() <= self.d {
                             let j = j * 2;
                             let i = i * 8 + out_i;
-                            match tx.send(((j + i % 2) as u64, i as u64)) {
+                            match tx.send(((j + i % 2) as u64, (i / 2) as u64)) {
                                 Ok(()) => {}
                                 Err(_) => return,
                             }
@@ -70,12 +69,31 @@ mod tests {
     fn sanity() {
         let (tx, rx) = mpsc::channel();
         let challenge = b"dsadsadasdsaaaaa";
-        let iterations = 8;
-        let stream = vec![0u8; 16 * iterations];
+        let stream = vec![0u8; 16 * 8];
         prove(&stream, &challenge, u64::MAX, &tx);
         drop(tx);
         let rst: Vec<(u64, u64)> = rx.into_iter().collect();
-        assert_eq!(rst.len(), 12 * iterations);
-        println!("{:?}", rst);
+        assert_eq!(rst.len(), 16);
+        assert_eq!(
+            rst,
+            vec![
+                (0, 0),
+                (1, 0),
+                (0, 1),
+                (1, 1),
+                (0, 2),
+                (1, 2),
+                (0, 3),
+                (1, 3),
+                (0, 4),
+                (1, 4),
+                (0, 5),
+                (1, 5),
+                (0, 6),
+                (1, 6),
+                (0, 7),
+                (1, 7)
+            ],
+        );
     }
 }
