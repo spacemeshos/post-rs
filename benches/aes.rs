@@ -7,7 +7,7 @@ fn aes_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("aes");
 
     let challenge = b"dsadassdada12311";
-    let mut data: Vec<u8> = vec![0; 128 << 20];
+    let mut data: Vec<u8> = vec![0; 512 << 20];
     thread_rng().fill_bytes(&mut data);
 
     group.throughput(criterion::Throughput::Bytes(data.len() as u64));
