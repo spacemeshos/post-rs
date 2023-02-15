@@ -10,17 +10,20 @@ pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64
     const BLOCK_SIZE: usize = 16; // size of the aes block
     const BATCHED_BLOCKS: usize = 8; // number of aes blocks. will use encrypt8 asm method
 
-    let ciphers: Vec<Aes128> = (0..CIPHERS as u32)
+    let ciphers: [Aes128; CIPHERS] = (0..CIPHERS as u32)
         .map(|i: u32| {
             let mut key = [0u8; BLOCK_SIZE];
             key[..12].copy_from_slice(&challenge[..12]);
             key[12..].copy_from_slice(&i.to_le_bytes());
             Aes128::new(&key.into())
         })
-        .collect();
-    let mut output = vec![0u8; BLOCK_SIZE * BATCHED_BLOCKS];
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+    let mut output = [0u8; BLOCK_SIZE * BATCHED_BLOCKS];
 
-    for (i, chunk) in stream.chunks(BLOCK_SIZE * BATCHED_BLOCKS).enumerate() {
+    for i in 0..stream.len() / (BLOCK_SIZE * BATCHED_BLOCKS) {
+        let chunk = &stream[i * BLOCK_SIZE * BATCHED_BLOCKS..(i + 1) * BLOCK_SIZE * BATCHED_BLOCKS];
         for (j, cipher) in ciphers.iter().enumerate() {
             cipher
                 .encrypt_padded_b2b::<NoPadding>(chunk, &mut output)
