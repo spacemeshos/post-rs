@@ -5,19 +5,19 @@ use aes::{
 use cipher::block_padding::NoPadding;
 use std::sync::mpsc;
 
-const CIPHERS: usize = 1; // each cipher produces two nonces
 const BLOCK_SIZE: usize = 16; // size of the aes block
-const BATCHED_BLOCKS: usize = 8; // number of aes blocks. will use encrypt8 asm method
+// will use encrypt8 asm method
+const BATCH: usize = 8;
 
-pub struct Prover {
-    ciphers: [Aes128; CIPHERS],
-    output: [u8; BLOCK_SIZE * BATCHED_BLOCKS],
+pub struct Prover<const N: usize = 1> {
+    ciphers: [Aes128; N],
+    output: [u8; BLOCK_SIZE * BATCH],
     d: u64,
 }
 
-impl Prover {
+impl<const N: usize> Prover<N> {
     pub fn new(challenge: &[u8; 16], d: u64) -> Self {
-        let ciphers: [Aes128; CIPHERS] = (0..CIPHERS as u32)
+        let ciphers: [Aes128; N] = (0..N as u32)
             .map(|i: u32| {
                 let mut key = [0u8; BLOCK_SIZE];
                 key[..12].copy_from_slice(&challenge[..12]);
@@ -27,14 +27,14 @@ impl Prover {
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
-        let output = [0u8; BLOCK_SIZE * BATCHED_BLOCKS];
+        let output = [0u8; BLOCK_SIZE * BATCH];
         Prover { ciphers, output, d }
     }
 
     pub fn prove(&mut self, stream: &[u8], tx: &mpsc::Sender<(u64, u64)>) {
-        for i in 0..stream.len() / (BLOCK_SIZE * BATCHED_BLOCKS) {
+        for i in 0..stream.len() / (BLOCK_SIZE * BATCH) {
             let chunk =
-                &stream[i * BLOCK_SIZE * BATCHED_BLOCKS..(i + 1) * BLOCK_SIZE * BATCHED_BLOCKS];
+                &stream[i * BLOCK_SIZE * BATCH..(i + 1) * BLOCK_SIZE * BATCH];
             for (j, cipher) in self.ciphers.iter().enumerate() {
                 cipher
                     .encrypt_padded_b2b::<NoPadding>(chunk, &mut self.output)
@@ -58,7 +58,7 @@ impl Prover {
 }
 
 pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64, u64)>) {
-    let mut prover = Prover::new(challenge, d);
+    let mut prover = Prover::<1>::new(challenge, d);
     prover.prove(stream, tx);
 }
 

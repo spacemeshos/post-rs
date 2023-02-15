@@ -4,9 +4,9 @@ fn main() {
     let mut f = fs::File::open("/dev/random").expect("can't read from /dev/random");
     let mut stream = vec![0u8; 1 << 30];
     let challenge = b"3213123122dsadsa";
-    let mut prover = post::Prover::new(challenge, u64::MAX >> 28);
+    let mut prover = post::Prover::<1>::new(challenge, u64::MAX >> 28);
     let (tx, rx) = mpsc::channel();
-    
+
     for _ in 0..20 {
         let start = SystemTime::now();
         match f.read_exact(&mut stream) {

@@ -9,7 +9,7 @@ fn aes_benchmark(c: &mut Criterion) {
     let challenge = b"dsadassdada12311";
     let mut data: Vec<u8> = vec![0; 512 << 20];
     thread_rng().fill_bytes(&mut data);
-    let mut prover = post::Prover::new(challenge, 0);
+    let mut prover: post::Prover = post::Prover::new(challenge, 0);
 
     group.throughput(criterion::Throughput::Bytes(data.len() as u64));
     group.bench_function("prove1", |b| {
