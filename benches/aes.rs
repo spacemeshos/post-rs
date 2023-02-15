@@ -27,7 +27,6 @@ fn aes_benchmark(c: &mut Criterion) {
     });
 }
 
-
 pub fn prove_many(
     t: usize,
     stream: &[u8],
