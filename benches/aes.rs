@@ -1,18 +1,19 @@
-use std::{hint::black_box, sync::mpsc, thread};
+use std::{hint::black_box, sync::mpsc};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::{thread_rng, RngCore};
 
-fn aes_benchmark(c: &mut Criterion) {
+fn prover_bench<const N: usize>(c: &mut Criterion) {
     let mut group = c.benchmark_group("aes");
 
     let challenge = b"dsadassdada12311";
     let mut data: Vec<u8> = vec![0; 512 << 20];
     thread_rng().fill_bytes(&mut data);
-    let mut prover: post::Prover<1> = post::Prover::new(challenge, 0);
+    let mut prover: post::Prover<N> = post::Prover::new(challenge, 0);
 
+    let name = (N * 2).to_string();
     group.throughput(criterion::Throughput::Bytes(data.len() as u64));
-    group.bench_function("prove", |b| {
+    group.bench_function(name, |b| {
         b.iter(|| {
             let (tx, rx) = mpsc::channel();
             prover.prove(&data, &tx);
@@ -21,22 +22,12 @@ fn aes_benchmark(c: &mut Criterion) {
     });
 }
 
-pub fn prove_many(
-    t: usize,
-    stream: &[u8],
-    challenge: &[u8; 16],
-    d: u64,
-    tx: &mpsc::Sender<(u64, u64)>,
-) {
-    thread::scope(|s| {
-        let chunk = stream.len() / t;
-        for i in 0..t {
-            let tx = tx.clone();
-            let stream = &stream[i * chunk..(i + 1) * chunk];
-            s.spawn(move || post::prove(stream, challenge, d, &tx));
-        }
-    })
-}
-
-criterion_group!(benches, aes_benchmark);
+criterion_group!(
+    benches,
+    prover_bench::<1>,
+    prover_bench::<2>,
+    prover_bench::<3>,
+    prover_bench::<5>,
+    prover_bench::<10>,
+);
 criterion_main!(benches);
