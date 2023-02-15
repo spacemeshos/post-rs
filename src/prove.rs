@@ -39,7 +39,6 @@ impl<const N: usize> Prover<N> {
                     .unwrap();
                 unsafe {
                     let (_, ints, _) = self.output.align_to::<u64>();
-                    println!("{:?}", ints.len());
                     for (out_i, out) in ints.iter().enumerate() {
                         if out.to_le() <= self.d {
                             let j = j * 2;
