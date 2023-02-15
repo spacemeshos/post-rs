@@ -9,21 +9,14 @@ fn aes_benchmark(c: &mut Criterion) {
     let challenge = b"dsadassdada12311";
     let mut data: Vec<u8> = vec![0; 512 << 20];
     thread_rng().fill_bytes(&mut data);
-    let mut prover = post::Prover::new(challenge);
+    let mut prover = post::Prover::new(challenge, 0);
 
     group.throughput(criterion::Throughput::Bytes(data.len() as u64));
     group.bench_function("prove1", |b| {
         b.iter(|| {
             let (tx, rx) = mpsc::channel();
-            prover.prove(&data, 0, &tx);
+            prover.prove(&data, &tx);
             black_box(rx)
-        });
-    });
-    group.bench_function("prove4", |b| {
-        b.iter(|| {
-            let (tx, rx) = mpsc::channel();
-            prove_many(4, &data, challenge, 0, &tx);
-            black_box(rx);
         });
     });
 }

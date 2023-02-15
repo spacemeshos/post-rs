@@ -20,3 +20,4 @@ block-padding = ["cipher/block-padding"]
 [[bench]]
 name = "aes"
 harness = false
+opt-level = 3
