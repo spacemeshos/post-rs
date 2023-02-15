@@ -7,7 +7,7 @@ fn main() {
     let mut prover = post::Prover::<1>::new(challenge, u64::MAX >> 28);
     let (tx, rx) = mpsc::channel();
 
-    for _ in 0..20 {
+    for _ in 0..10 {
         let start = SystemTime::now();
         match f.read_exact(&mut stream) {
             Err(err) => {

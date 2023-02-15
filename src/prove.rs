@@ -34,6 +34,10 @@ impl<const N: usize> Prover<N> {
         for i in 0..stream.len() / (BLOCK_SIZE * BATCH) {
             let chunk = &stream[i * BLOCK_SIZE * BATCH..(i + 1) * BLOCK_SIZE * BATCH];
             for (j, cipher) in self.ciphers.iter().enumerate() {
+                // TODO(ds) encrypt_blocks_b2b api seems to have less overhead
+                // it may get closer to actual aes throughput
+                // also remember that all inputs are cleanly divisible by 128
+                // can i enforce that with type system without overhead?
                 cipher
                     .encrypt_padded_b2b::<NoPadding>(chunk, &mut self.output)
                     .unwrap();
