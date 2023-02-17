@@ -14,6 +14,24 @@ pub struct Prover<const N: usize = 1> {
     d: u64,
 }
 
+pub trait Consumer {
+    fn consume(&self, _nonce: u64, _index:  u64) -> bool {
+        false
+    }
+}
+
+impl Consumer for &mpsc::Sender<(u64, u64)> {
+    fn consume(&self, nonce: u64, index: u64) -> bool {
+        match self.send((nonce, index)) {
+            Ok(()) => false,
+            Err(_) => true,
+        }
+    }
+}
+
+pub struct Noop {}
+impl Consumer for Noop {}
+
 impl<const N: usize> Prover<N> {
     pub fn new(challenge: &[u8; 16], d: u64) -> Self {
         let ciphers: [Aes128; N] = (0..N as u32)
@@ -30,14 +48,10 @@ impl<const N: usize> Prover<N> {
         Prover { ciphers, output, d }
     }
 
-    pub fn prove(&mut self, stream: &[u8], tx: &mpsc::Sender<(u64, u64)>) {
+    pub fn prove<C: Consumer>(&mut self, stream: &[u8], consumer: C) {
         for i in 0..stream.len() / (BLOCK_SIZE * BATCH) {
             let chunk = &stream[i * BLOCK_SIZE * BATCH..(i + 1) * BLOCK_SIZE * BATCH];
             for (j, cipher) in self.ciphers.iter().enumerate() {
-                // TODO(ds) encrypt_blocks_b2b api seems to have less overhead
-                // it may get closer to actual aes throughput
-                // also remember that all inputs are cleanly divisible by 128
-                // can i enforce that with type system without overhead?
                 cipher
                     .encrypt_padded_b2b::<NoPadding>(chunk, &mut self.output)
                     .unwrap();
@@ -47,9 +61,8 @@ impl<const N: usize> Prover<N> {
                         if out.to_le() <= self.d {
                             let j = j * 2;
                             let i = i * 8 + out_i;
-                            match tx.send(((j + i % 2) as u64, (i / 2) as u64)) {
-                                Ok(()) => {}
-                                Err(_) => return,
+                            if consumer.consume((j + i % 2) as u64, (i / 2) as u64) {
+                                return;
                             }
                         }
                     }

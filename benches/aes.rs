@@ -1,4 +1,4 @@
-use std::{hint::black_box, sync::mpsc};
+use std::{hint::black_box};
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::{thread_rng, RngCore};
@@ -15,9 +15,7 @@ fn prover_bench<const N: usize>(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Bytes(data.len() as u64));
     group.bench_function(name, |b| {
         b.iter(|| {
-            let (tx, rx) = mpsc::channel();
-            prover.prove(&data, &tx);
-            black_box(rx)
+            black_box(prover.prove(&data, post::Noop{}));
         });
     });
 }
