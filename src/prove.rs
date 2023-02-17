@@ -44,17 +44,15 @@ impl<const N: usize> Prover<N> {
                     let (_, ints, _) = self.output.align_to::<u64>();
                     ints
                 };
-                match ints
-                    .into_iter()
-                    .enumerate()
-                    .filter(|(_, out)| out.to_le() <= self.d)
-                    .try_for_each(|(out_i, _)| {
+                for (out_i, out) in ints.into_iter().enumerate() {
+                    if out.to_le() <= self.d {
                         let j = j * 2;
                         let i = i * 8 + out_i;
-                        consume((j + i % 2) as u64, (i / 2) as u64)
-                    }) {
-                    Ok(()) => {}
-                    Err(()) => return,
+                        match consume((j + i % 2) as u64, (i / 2) as u64) {
+                            Ok(()) => {}
+                            Err(()) => return,
+                        }
+                    }
                 }
             }
         }
