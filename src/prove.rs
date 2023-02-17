@@ -7,10 +7,11 @@ use std::sync::mpsc;
 
 const BLOCK_SIZE: usize = 16; // size of the aes block
 const BATCH: usize = 8; // will use encrypt8 asm method
+const CHUNK_SIZE: usize = BLOCK_SIZE * BATCH;
 
 pub struct Prover<const N: usize = 1> {
     ciphers: [Aes128; N],
-    output: [u8; BLOCK_SIZE * BATCH],
+    output: [u8; CHUNK_SIZE],
     d: u64,
 }
 
@@ -26,7 +27,7 @@ impl<const N: usize> Prover<N> {
             .collect::<Vec<_>>()
             .try_into()
             .unwrap();
-        let output = [0u8; BLOCK_SIZE * BATCH];
+        let output = [0u8; CHUNK_SIZE];
         Prover { ciphers, output, d }
     }
 
@@ -34,8 +35,8 @@ impl<const N: usize> Prover<N> {
     where
         F: FnMut(u64, u64) -> Result<(), ()>,
     {
-        for i in 0..stream.len() / (BLOCK_SIZE * BATCH) {
-            let chunk = &stream[i * BLOCK_SIZE * BATCH..(i + 1) * BLOCK_SIZE * BATCH];
+        for i in 0..stream.len() / (CHUNK_SIZE) {
+            let chunk = &stream[i * CHUNK_SIZE..(i + 1) * CHUNK_SIZE];
             for (j, cipher) in self.ciphers.iter().enumerate() {
                 cipher
                     .encrypt_padded_b2b::<NoPadding>(chunk, &mut self.output)
