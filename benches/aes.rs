@@ -1,4 +1,4 @@
-use std::{hint::black_box};
+use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::{thread_rng, RngCore};
@@ -15,7 +15,8 @@ fn prover_bench<const N: usize>(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Bytes(data.len() as u64));
     group.bench_function(name, |b| {
         b.iter(|| {
-            black_box(prover.prove(&data, post::Noop{}));
+            let f = black_box(|_, _| Ok(()));
+            prover.prove(&data, f);
         });
     });
 }

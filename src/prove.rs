@@ -14,24 +14,6 @@ pub struct Prover<const N: usize = 1> {
     d: u64,
 }
 
-pub trait Consumer {
-    fn consume(&self, _nonce: u64, _index:  u64) -> bool {
-        false
-    }
-}
-
-impl Consumer for &mpsc::Sender<(u64, u64)> {
-    fn consume(&self, nonce: u64, index: u64) -> bool {
-        match self.send((nonce, index)) {
-            Ok(()) => false,
-            Err(_) => true,
-        }
-    }
-}
-
-pub struct Noop {}
-impl Consumer for Noop {}
-
 impl<const N: usize> Prover<N> {
     pub fn new(challenge: &[u8; 16], d: u64) -> Self {
         let ciphers: [Aes128; N] = (0..N as u32)
@@ -48,24 +30,31 @@ impl<const N: usize> Prover<N> {
         Prover { ciphers, output, d }
     }
 
-    pub fn prove<C: Consumer>(&mut self, stream: &[u8], consumer: C) {
+    pub fn prove<F>(&mut self, stream: &[u8], mut consume: F)
+    where
+        F: FnMut(u64, u64) -> Result<(), ()>,
+    {
         for i in 0..stream.len() / (BLOCK_SIZE * BATCH) {
             let chunk = &stream[i * BLOCK_SIZE * BATCH..(i + 1) * BLOCK_SIZE * BATCH];
             for (j, cipher) in self.ciphers.iter().enumerate() {
                 cipher
                     .encrypt_padded_b2b::<NoPadding>(chunk, &mut self.output)
                     .unwrap();
-                unsafe {
+                let ints = unsafe {
                     let (_, ints, _) = self.output.align_to::<u64>();
-                    for (out_i, out) in ints.iter().enumerate() {
-                        if out.to_le() <= self.d {
-                            let j = j * 2;
-                            let i = i * 8 + out_i;
-                            if consumer.consume((j + i % 2) as u64, (i / 2) as u64) {
-                                return;
-                            }
-                        }
-                    }
+                    ints
+                };
+                match ints
+                    .into_iter()
+                    .enumerate()
+                    .filter(|(_, out)| out.to_le() <= self.d)
+                    .try_for_each(|(out_i, _)| {
+                        let j = j * 2;
+                        let i = i * 8 + out_i;
+                        consume((j + i % 2) as u64, (i / 2) as u64)
+                    }) {
+                    Ok(()) => {}
+                    Err(()) => return,
                 }
             }
         }
@@ -74,7 +63,12 @@ impl<const N: usize> Prover<N> {
 
 pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64, u64)>) {
     let mut prover = Prover::<1>::new(challenge, d);
-    prover.prove(stream, tx);
+    prover.prove(stream, |nonce, index| -> Result<(), ()> {
+        match tx.send((nonce, index)) {
+            Ok(()) => Ok(()),
+            Err(_) => Err(()),
+        }
+    });
 }
 
 #[cfg(test)]
