@@ -3,4 +3,22 @@ name = "post-rs"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "post"
+
 [dependencies]
+rand = "0.8.5"
+aes = "0.8.2"
+cipher = "0.4.2"
+
+[dev-dependencies]
+criterion = "0.4"
+
+[features]
+default = ["block-padding"]
+block-padding = ["cipher/block-padding"]
+
+[[bench]]
+name = "aes"
+harness = false
+opt-level = 3
