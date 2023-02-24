@@ -18,11 +18,9 @@ fn main() {
             Ok(()) => {
                 println!("got data in {:?}", start.elapsed().unwrap());
                 let start = SystemTime::now();
-                prover.prove(&stream, |nonce, index| {
-                    match tx.send((nonce, index)) {
-                        Ok(()) => Ok(()),
-                        Err(_) => Err(()),
-                    }
+                prover.prove(&stream, |nonce, index| match tx.send((nonce, index)) {
+                    Ok(()) => Ok(()),
+                    Err(_) => Err(()),
                 });
                 println!(
                     "proving finished in {:?} for file of size {:?}. estimated throughput {:?} GB/s",
