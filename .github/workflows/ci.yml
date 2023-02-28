@@ -43,10 +43,7 @@ jobs:
         with:
           profile: minimal
           toolchain: nightly
-      - uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --release -p post
+      - run: cargo +nightly build --release -p post
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
