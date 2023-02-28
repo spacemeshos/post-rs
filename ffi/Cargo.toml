@@ -1,0 +1,14 @@
+[package]
+name = "post"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate_type = ["staticlib"]
+
+[dependencies]
+eyre = "0.6.8"
+post-rs = { path = "../" }
+
+[build-dependencies]
+cbindgen = "*"

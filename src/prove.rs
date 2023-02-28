@@ -3,11 +3,17 @@ use aes::{
     Aes128, Aes256,
 };
 use cipher::{block_padding::NoPadding, generic_array::GenericArray};
+use eyre::Context;
 
-use std::{iter::repeat, ops::Range};
+use std::{collections::HashMap, ops::Range, path::Path};
 use streaming_iterator::StreamingIterator;
 
-use crate::reader::Batch;
+use crate::{
+    config::Config,
+    difficulty::proving_difficulty,
+    metadata,
+    reader::{stream_data, Batch},
+};
 
 const BLOCK_SIZE: usize = 16; // size of the aes block
 const AES_BATCH: usize = 8; // will use encrypt8 asm method
@@ -168,200 +174,41 @@ impl Prover for ConstDVarBProver {
     }
 }
 
-pub struct VarDProver {
-    ciphers: Vec<AesCipher>,
-    difficulty: u64,
-    d: usize,
-    nonces: Range<u32>,
-}
+pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre::Result<Proof> {
+    let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
 
-impl VarDProver {
-    pub fn new(challenge: &[u8; 32], difficulty: u64, nonces: Range<u32>, d: usize) -> Self {
-        let num_ciphers = ((nonces.len() * d) as f64 / BLOCK_SIZE as f64).ceil() as u32;
-        // FIXME(brozansk): fix the range below. It's len is OK, but the values are not.
-        VarDProver {
-            ciphers: (nonces.start..nonces.start + num_ciphers)
-                .map(|n| AesCipher::new(challenge, n))
-                .collect(),
-            difficulty,
-            d,
-            nonces,
-        }
-    }
-}
+    let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
+    let difficulty = proving_difficulty(num_labels, cfg.b, cfg.k1)?;
+    println!("Difficulty: {:08X}, num_labels: {num_labels}", difficulty);
 
-impl Prover for VarDProver {
-    fn required_aeses(&self) -> usize {
-        self.ciphers.len()
-    }
+    let mut start_nonce = 0;
+    let mut end_nonce = start_nonce + cfg.n;
+    loop {
+        println!("Generating proof for nonces ({start_nonce}..{end_nonce})");
+        let stream = stream_data(datadir, 1024 * 1024);
 
-    fn prove<F, BatchStream>(&mut self, mut stream: BatchStream, mut consume: F) -> eyre::Result<()>
-    where
-        F: FnMut(u32, u64) -> bool,
-        BatchStream: StreamingIterator<Item = Batch>,
-    {
-        let mut bytes = (0..self.ciphers.len())
-            .map(|_| [0u8; CHUNK_SIZE])
-            .collect::<Vec<_>>();
-
-        let dvals_size = self.nonces.len() * self.d;
-        let aes_out_size = self.ciphers.len() * BLOCK_SIZE;
-        let needed_size = dvals_size - self.d + 8;
-        // required extra bytes to be able to load an u64 from linearized's bytes.
-        let u64_alignment = if needed_size > aes_out_size {
-            Some(needed_size - aes_out_size)
-        } else {
-            None
-        };
-
-        // Buffers that will keep linearized output from all ciphers per
-        // each labels block in AES_BATCH.
-        // It "rotates" the `bytes` from:
-        // bytes[0] = [<CIPHER_0-BLOCK_0>, ..., <CIPHER_0-BLOCK_N-1>]
-        // ...
-        // bytes[C-1] = [<CIPHER_C-BLOCK_0>, ..., <CIPHER_C-BLOCK_N-1>]
-        // To:
-        // linearized[0] = [<CIPHER_0-BLOCK_0>, ..., <CIPHER_C-1-BLOCK_0>]
-        // linearized[N-1] = [<CIPHER_0-BLOCK_N-1>, ..., <CIPHER_C-1-BLOCK_N-1>]
-        // Where:
-        //  - `C` - the number of ciphers used
-        //  - `N` - the number of blocks in AES_BATCH
-        //
-        // Rotation is required to be able to extract u64 values from AES' outputs
-        // when the values are on AES buffers' boundary.
-        // Note: It can be done without linearization but it's faster.
-        let mut linearized = (0..AES_BATCH)
-            .map(|_| Vec::with_capacity(needed_size))
-            .collect::<Vec<Vec<u8>>>();
-        let mask = (1u64 << (self.d * 8)) - 1;
-
-        while let Some(batch) = stream.next() {
-            let stream = &batch.data;
-            let mut index = batch.index;
-            for chunk in stream.as_slice().chunks(CHUNK_SIZE) {
-                for buf in &mut linearized {
-                    buf.clear();
-                }
-
-                for (id, cipher) in self.ciphers.iter().enumerate() {
-                    cipher
-                        .aes
-                        .encrypt_padded_b2b::<NoPadding>(chunk, &mut bytes[id])
-                        .unwrap();
-
-                    for (out, block) in bytes[id].chunks(16).zip(&mut linearized) {
-                        block.extend_from_slice(out);
-                    }
-                }
-
-                // Extend each buf in `linearized` if needed to safely build u64 from &[u8] for the last value.
-                if let Some(size) = u64_alignment {
-                    for buf in &mut linearized {
-                        buf.extend(repeat(0).take(size));
-                    }
-                }
-
-                for (label_block_id, buf) in linearized.iter().enumerate() {
-                    for (offset, nonce) in (0..).step_by(self.d).zip(self.nonces.clone()) {
-                        let val =
-                            u64::from_le_bytes(buf[offset..offset + 8].try_into().unwrap()) & mask;
-                        if val <= self.difficulty {
-                            let stop = consume(nonce, index + label_block_id as u64);
-                            if stop {
-                                return Ok(());
-                            }
-                        }
-                    }
-                }
-
-                index += AES_BATCH as u64;
+        // Generate proof
+        let mut indicies = HashMap::<u32, Vec<u64>>::new();
+        let mut found_nonce = None;
+        let mut prover = ConstDProver::new(challenge, difficulty, start_nonce..end_nonce);
+        prover.prove(stream, |nonce, index| -> bool {
+            let vec = indicies.entry(nonce).or_default();
+            vec.push(index);
+            if vec.len() >= cfg.k2 as usize {
+                found_nonce = Some(nonce);
+                return true;
             }
+            false
+        })?;
+        if let Some(nonce) = found_nonce {
+            return Ok(Proof {
+                nonce,
+                // SAFETY: unwrap will never fail as we know that the key is present.
+                indicies: indicies.remove(&nonce).unwrap(),
+            });
         }
-        Ok(())
-    }
-}
 
-// Variant of `VarDProver` that doesn't linearize the hashed data for every label block
-pub struct VarDProver2(VarDProver);
-
-impl VarDProver2 {
-    pub fn new(challenge: &[u8; 32], difficulty: u64, nonces: Range<u32>, d: usize) -> Self {
-        VarDProver2(VarDProver::new(challenge, difficulty, nonces, d))
-    }
-}
-
-impl Prover for VarDProver2 {
-    fn required_aeses(&self) -> usize {
-        self.0.ciphers.len()
-    }
-
-    fn prove<F, BatchStream>(&mut self, mut stream: BatchStream, mut consume: F) -> eyre::Result<()>
-    where
-        F: FnMut(u32, u64) -> bool,
-        BatchStream: StreamingIterator<Item = Batch>,
-    {
-        let mut bytes = (0..self.0.ciphers.len())
-            .map(|_| [0u8; CHUNK_SIZE])
-            .collect::<Vec<_>>();
-
-        let d = self.0.d;
-        let mask = (1u64 << (d * 8)) - 1;
-        let mut u64buf = [0u8; 8];
-
-        while let Some(batch) = stream.next() {
-            let stream = &batch.data;
-            let mut index = batch.index;
-            for chunk in stream.as_slice().chunks(CHUNK_SIZE) {
-                for (id, cipher) in self.0.ciphers.iter().enumerate() {
-                    cipher
-                        .aes
-                        .encrypt_padded_b2b::<NoPadding>(chunk, &mut bytes[id])
-                        .unwrap();
-                }
-
-                for block_id in 0..AES_BATCH {
-                    for (nonce_id, nonce) in self.0.nonces.clone().enumerate() {
-                        let offset = nonce_id * d;
-
-                        let val = {
-                            let lsb_out_id = offset / 16;
-                            let msb_out_id = (offset + d - 1) / 16;
-                            let of = offset % 16;
-
-                            let lsb = &bytes[lsb_out_id][block_id * 16..(block_id + 1) * 16];
-
-                            if of + 8 < 16 {
-                                // 8B value fits entirely in single AES block
-                                u64::from_le_bytes(lsb[of..of + 8].try_into().unwrap())
-                            } else {
-                                let in_lsb = d.min(16 - of);
-                                u64buf[..in_lsb].copy_from_slice(&lsb[of..of + in_lsb]);
-
-                                if in_lsb < d {
-                                    // Need to copy some bytes from the next AES block
-                                    let in_msb = d - in_lsb;
-                                    let msb =
-                                        &bytes[msb_out_id][block_id * 16..(block_id + 1) * 16];
-                                    u64buf[in_lsb..in_lsb + in_msb].copy_from_slice(&msb[..in_msb]);
-                                }
-
-                                u64::from_le_bytes(u64buf)
-                            }
-                        };
-                        let val = val & mask;
-                        if val <= self.0.difficulty {
-                            let stop = consume(nonce, index + block_id as u64);
-                            if stop {
-                                return Ok(());
-                            }
-                        }
-                    }
-                }
-
-                index += AES_BATCH as u64;
-            }
-        }
-        Ok(())
+        (start_nonce, end_nonce) = (end_nonce, end_nonce + cfg.n);
     }
 }
 

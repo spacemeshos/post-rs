@@ -33,6 +33,28 @@ jobs:
         with:
           command: test
 
+  build:
+    name: Build library
+    # TODO(brozansk) build for Mac and Windows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+      - uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release -p post
+      - name: Archive production artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: libpost
+          path: |
+            ffi/prover.h
+            target/release/libpost.a
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest

@@ -1,8 +1,7 @@
-#![feature(vec_into_raw_parts)]
-#![feature(get_many_mut)]
-
+pub mod config;
 mod difficulty;
-mod prove;
+mod metadata;
+pub mod prove;
 pub mod reader;
 mod verify;
 pub use crate::prove::*;
