@@ -1,3 +1,4 @@
+mod difficulty;
 mod prove;
 mod verify;
 pub use crate::prove::*;
