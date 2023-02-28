@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use lazy_static::lazy_static;
-use post::{reader::BatchingReader, Prover};
+use post::Prover;
 use pprof::criterion::{Output, PProfProfiler};
 use rand::{thread_rng, RngCore};
 
@@ -20,16 +20,15 @@ lazy_static! {
 fn prover_bench<const N: usize>(c: &mut Criterion) {
     let mut group = c.benchmark_group("proving/const-D");
 
-    let mut prover = post::ConstDProver::new(CHALLENGE, 0, 0..N as u32);
+    let prover = post::ConstDProver::new(CHALLENGE, 0, 0..N as u32);
 
     group.throughput(criterion::Throughput::Bytes(DATA.len() as u64));
     group.bench_function(
         format!("nonces={N}/D=8/B=16/aes={}", prover.required_aeses()),
         |b| {
             b.iter(|| {
-                let reader = BatchingReader::new(DATA.as_slice(), 0, 128 * 1024);
                 let f = black_box(|_, _| false);
-                assert!(prover.prove(reader, f).is_ok());
+                assert!(prover.prove(DATA.as_slice(), 0, f).is_ok());
             });
         },
     );
@@ -38,16 +37,15 @@ fn prover_bench<const N: usize>(c: &mut Criterion) {
 fn var_b_prover_bench<const N: usize, const B: usize>(c: &mut Criterion) {
     let mut group = c.benchmark_group("proving/const-D");
 
-    let mut prover = post::ConstDVarBProver::new(CHALLENGE, 0, 0..N as u32, B);
+    let prover = post::ConstDVarBProver::new(CHALLENGE, 0, 0..N as u32, B);
 
     group.throughput(criterion::Throughput::Bytes(DATA.len() as u64));
     group.bench_function(
         format!("nonces={N}/D=8/B={B}/aes={}", prover.required_aeses()),
         |b| {
             b.iter(|| {
-                let reader = BatchingReader::new(DATA.as_slice(), 0, 128 * 1024);
                 let f = black_box(|_, _| false);
-                assert!(prover.prove(reader, f).is_ok());
+                assert!(prover.prove(DATA.as_slice(), 0, f).is_ok());
             });
         },
     );

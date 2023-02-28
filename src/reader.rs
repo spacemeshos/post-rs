@@ -111,7 +111,7 @@ pub fn read_data(datadir: &Path, batch_size: usize) -> impl Iterator<Item = Batc
         pos += len
     }
 
-    readers.into_iter().flat_map(|r| r.into_iter())
+    readers.into_iter().flatten()
 }
 
 pub fn stream_data(datadir: &Path, batch_size: usize) -> impl StreamingIterator<Item = Batch> {
@@ -142,28 +142,27 @@ mod tests {
     fn batching_reader() {
         let data = (0..40).collect::<Vec<u8>>();
         let file = Cursor::new(data);
-        let reader = BatchingReader::new(file, 0, 16);
-        let mut iter = reader.into_iter();
+        let mut reader = BatchingReader::new(file, 0, 16);
         assert_eq!(
             Some(Batch {
                 data: (0..16).collect(),
                 index: 0,
             }),
-            iter.next()
+            reader.next()
         );
         assert_eq!(
             Some(Batch {
                 data: (16..32).collect(),
                 index: 16,
             }),
-            iter.next()
+            reader.next()
         );
         assert_eq!(
             Some(Batch {
                 data: (32..40).collect(),
                 index: 32,
             }),
-            iter.next()
+            reader.next()
         );
     }
 
@@ -172,9 +171,9 @@ mod tests {
         let tmp_dir = tempdir().unwrap();
         let data = ["2", "Hello World!", "1", "Welcome Back", ""];
         for (i, part) in data.iter().enumerate() {
-            let file_path = tmp_dir.path().join(format!("postdata_{}.bin", i));
+            let file_path = tmp_dir.path().join(format!("postdata_{i}.bin"));
             let mut tmp_file = File::create(file_path).unwrap();
-            write!(tmp_file, "{}", part).unwrap();
+            write!(tmp_file, "{part}").unwrap();
         }
         let expected = data.into_iter().collect::<String>();
 
