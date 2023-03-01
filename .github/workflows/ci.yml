@@ -43,7 +43,7 @@ jobs:
         with:
           profile: minimal
           toolchain: nightly
-      - run: cargo +nightly build --release -p post
+      - run: cargo +nightly build --profile release-clib -p post
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:

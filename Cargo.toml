@@ -10,7 +10,6 @@ edition = "2021"
 name = "post"
 
 [dependencies]
-rand = "0.8.5"
 aes = "0.8.2"
 cipher = "0.4.2"
 eyre = "0.6.8"
@@ -21,14 +20,14 @@ serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
 bytemuck = "1.13.0"
 serde_with = { version = "2.2.0", features = ["base64"] }
-generic-array = "0.14.6"
 streaming-iterator = "0.1.9"
-rayon = "1.6.1"
 
 [dev-dependencies]
 criterion = "0.4"
 pprof = { version = "0.11.1", features = ["flamegraph", "criterion"] }
 tempfile = "3.3.0"
+rayon = "1.6.1"
+rand = "0.8.5"
 
 [features]
 default = ["block-padding"]
@@ -38,5 +37,8 @@ block-padding = ["cipher/block-padding"]
 name = "proving"
 harness = false
 
-[profile.release]
-debug = true
+
+[profile.release-clib]
+inherits = "release"
+strip = true
+lto = true
