@@ -21,7 +21,7 @@ pub struct Proof {
 }
 
 pub trait Prover<'a> {
-    fn prove<F>(&self, batch: &[u8], index: u64, consume: F) -> eyre::Result<()>
+    fn prove<F>(&self, batch: &[u8], index: u64, consume: F) -> Option<u32>
     where
         F: FnMut(u32, u64) -> bool;
 
@@ -54,11 +54,10 @@ pub struct ConstDProver {
 
 impl ConstDProver {
     pub fn new(challenge: &[u8; 32], difficulty: u64, nonces: Range<u32>) -> Self {
+        let start = nonces.start / 2;
+        let end = 1.max(nonces.end / 2);
         ConstDProver {
-            ciphers: nonces
-                .step_by(2) // each cipher encodes 2 nonces
-                .map(|n| AesCipher::new(challenge, n))
-                .collect(),
+            ciphers: (start..end).map(|n| AesCipher::new(challenge, n)).collect(),
             difficulty,
         }
     }
@@ -69,7 +68,7 @@ impl<'a> Prover<'a> for ConstDProver {
         self.ciphers.len()
     }
 
-    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> eyre::Result<()>
+    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<u32>
     where
         F: FnMut(u32, u64) -> bool,
     {
@@ -88,7 +87,7 @@ impl<'a> Prover<'a> for ConstDProver {
                         let index = index + (i / 2) as u64;
                         let stop = consume(nonce, index);
                         if stop {
-                            return Ok(());
+                            return Some(nonce);
                         }
                     }
                 }
@@ -96,7 +95,7 @@ impl<'a> Prover<'a> for ConstDProver {
             index += AES_BATCH as u64;
         }
 
-        Ok(())
+        None
     }
 }
 
@@ -126,7 +125,7 @@ impl<'a> Prover<'a> for ConstDVarBProver {
         self.ciphers.len()
     }
 
-    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> eyre::Result<()>
+    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<u32>
     where
         F: FnMut(u32, u64) -> bool,
     {
@@ -149,14 +148,14 @@ impl<'a> Prover<'a> for ConstDVarBProver {
                         let index = index + (i / 2) as u64;
                         let stop = consume(nonce, index);
                         if stop {
-                            return Ok(());
+                            return Some(nonce);
                         }
                     }
                 }
             }
             index += AES_BATCH as u64;
         }
-        Ok(())
+        None
     }
 }
 
@@ -175,18 +174,17 @@ pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre
 
         while let Some(batch) = stream.next() {
             let mut indicies = HashMap::<u32, Vec<u64>>::new();
-            let mut found_nonce = None;
+
             let prover = ConstDProver::new(challenge, difficulty, start_nonce..end_nonce);
-            prover.prove(&batch.data, batch.index, |nonce, index| -> bool {
+            let nonce = prover.prove(&batch.data, batch.index, |nonce, index| -> bool {
                 let vec = indicies.entry(nonce).or_default();
                 vec.push(index);
                 if vec.len() >= cfg.k2 as usize {
-                    found_nonce = Some(nonce);
                     return true;
                 }
                 false
-            })?;
-            if let Some(nonce) = found_nonce {
+            });
+            if let Some(nonce) = nonce {
                 return Ok(Proof {
                     nonce,
                     // SAFETY: unwrap will never fail as we know that the key is present.
@@ -217,7 +215,7 @@ mod tests {
         let res = prover.prove(&[0u8; 16 * 8], 0, |nonce, index| -> bool {
             tx.send((nonce, index)).is_err()
         });
-        assert!(res.is_ok());
+        assert!(res.is_none());
         drop(tx);
         let rst: Vec<(u32, u64)> = rx.into_iter().collect();
         assert_eq!(
@@ -306,6 +304,52 @@ mod tests {
                 deviation_from_expected.abs() <= 1.0,
                 "Too big deviation in proof indexes distribution in bucket {id}: {deviation_from_expected} ({occurences} indexes of {expected} expected)"
             );
+        }
+    }
+
+    #[test]
+    fn proving() {
+        let challenge = b"hello world, CHALLENGE me!!!!!!!";
+
+        let num_labels = 1e6 as usize;
+        let k1 = 1000;
+        let k2 = 1000;
+        let difficulty = proving_difficulty(num_labels as u64, 16, k1).unwrap();
+
+        let mut data = vec![0u8; num_labels];
+        thread_rng().fill_bytes(&mut data);
+
+        let prover = ConstDProver::new(challenge, difficulty, 0..20);
+
+        let mut indicies = HashMap::<u32, Vec<u64>>::new();
+
+        let nonce = prover
+            .prove(&data, 0, |nonce, index| -> bool {
+                let vec = indicies.entry(nonce).or_default();
+                vec.push(index);
+                if vec.len() >= k2 {
+                    return true;
+                }
+                false
+            })
+            .unwrap();
+
+        let indicies = indicies.remove(&nonce).unwrap();
+        assert_eq!(k2, indicies.len());
+        assert!(nonce < 20);
+
+        // Verify if all indicies really satisfy difficulty
+        let cipher = AesCipher::new(challenge, nonce / 2);
+        let mut out = [0u64; 2];
+
+        for idx in indicies {
+            let idx = idx as usize;
+            cipher.aes.encrypt_block_b2b(
+                data[idx * 16..(idx + 1) * 16].into(),
+                bytemuck::cast_slice_mut(out.as_mut_slice()).into(),
+            );
+
+            assert!(out[(nonce % 2) as usize] <= difficulty);
         }
     }
 }

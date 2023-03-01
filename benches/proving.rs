@@ -50,10 +50,10 @@ fn prover_bench(c: &mut Criterion) {
                     let f = black_box(|_, _| false);
                     match threads {
                         1 => DATA.chunks(chunk_size).for_each(|chunk| {
-                            assert!(prover.prove(chunk, 0, f).is_ok());
+                            prover.prove(chunk, 0, f);
                         }),
                         0 => DATA.chunks(chunk_size).par_bridge().for_each(|chunk| {
-                            assert!(prover.prove(chunk, 0, f).is_ok());
+                            prover.prove(chunk, 0, f);
                         }),
                         n => {
                             let pool = rayon::ThreadPoolBuilder::new()
@@ -62,7 +62,7 @@ fn prover_bench(c: &mut Criterion) {
                                 .unwrap();
                             pool.install(|| {
                                 DATA.chunks(chunk_size).par_bridge().for_each(|chunk| {
-                                    assert!(prover.prove(chunk, 0, f).is_ok());
+                                    prover.prove(chunk, 0, f);
                                 })
                             });
                         }
@@ -99,10 +99,10 @@ fn var_b_prover_bench(c: &mut Criterion) {
                     let f = black_box(|_, _| false);
                     match threads {
                         1 => DATA.chunks(chunk_size).for_each(|chunk| {
-                            assert!(prover.prove(chunk, 0, f).is_ok());
+                            prover.prove(chunk, 0, f);
                         }),
                         0 => DATA.chunks(chunk_size).par_bridge().for_each(|chunk| {
-                            assert!(prover.prove(chunk, 0, f).is_ok());
+                            prover.prove(chunk, 0, f);
                         }),
                         n => {
                             let pool = rayon::ThreadPoolBuilder::new()
@@ -111,7 +111,7 @@ fn var_b_prover_bench(c: &mut Criterion) {
                                 .unwrap();
                             pool.install(|| {
                                 DATA.chunks(chunk_size).par_bridge().for_each(|chunk| {
-                                    assert!(prover.prove(chunk, 0, f).is_ok());
+                                    prover.prove(chunk, 0, f);
                                 })
                             });
                         }
