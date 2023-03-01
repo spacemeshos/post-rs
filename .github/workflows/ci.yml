@@ -87,4 +87,4 @@ jobs:
           name: libpost-${{ matrix.os }}
           path: |
             ffi/prover.h
-            target/release/libpost.a
+            target/release-clib/libpost.a
