@@ -165,7 +165,7 @@ pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre
 
     let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
     let difficulty = proving_difficulty(num_labels, cfg.b, cfg.k1)?;
-    println!("Difficulty: {:08X}, num_labels: {num_labels}", difficulty);
+    println!("Difficulty: {difficulty:08X}, num_labels: {num_labels}");
 
     let mut start_nonce = 0;
     let mut end_nonce = start_nonce + cfg.n;

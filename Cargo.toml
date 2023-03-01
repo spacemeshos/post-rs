@@ -23,6 +23,7 @@ bytemuck = "1.13.0"
 serde_with = { version = "2.2.0", features = ["base64"] }
 generic-array = "0.14.6"
 streaming-iterator = "0.1.9"
+rayon = "1.6.1"
 
 [dev-dependencies]
 criterion = "0.4"
