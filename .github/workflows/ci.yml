@@ -4,7 +4,7 @@ on:
     branches:
       - main
 
-name: Tests
+name: CI
 
 jobs:
   check:
@@ -22,6 +22,8 @@ jobs:
 
   test:
     name: Test Suite
+    needs:
+      - check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -32,34 +34,6 @@ jobs:
       - uses: actions-rs/cargo@v1
         with:
           command: test
-
-  build:
-    name: Build library
-    runs-on: ${{ matrix.os }}
-    needs: filter-changes
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        include:
-          - os: macos-latest
-            rustflags: --cfg=aes_armv8
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-      - run: cargo +nightly build --profile release-clib -p post
-        env:
-          RUSTFLAGS: ${{ matrix.rustflags }}
-      - name: Archive production artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: libpost-${{ matrix.os }}
-          path: |
-            ffi/prover.h
-            target/release/libpost.a
-
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
@@ -84,3 +58,33 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features
+
+  build:
+    name: Build library
+    runs-on: ${{ matrix.os }}
+    needs:
+      - test
+      - fmt
+      - clippy
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: macos-latest
+            rustflags: --cfg=aes_armv8
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+      - run: cargo +nightly build --profile release-clib -p post
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+      - name: Archive production artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: libpost-${{ matrix.os }}
+          path: |
+            ffi/prover.h
+            target/release/libpost.a
