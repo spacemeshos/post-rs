@@ -69,6 +69,8 @@ jobs:
     strategy:
       matrix:
         include:
+          - os: ubuntu-20.04
+            libname: libpost.so
           - os: ubuntu-latest
             libname: libpost.so
           - os: macos-latest
