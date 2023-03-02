@@ -70,12 +70,12 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            libname: libpost.a
+            libname: libpost.so
           - os: macos-latest
-            libname: libpost.a
+            libname: libpost.dylib
             rustflags: --cfg=aes_armv8
           - os: windows-latest
-            libname: post.lib
+            libname: post.dll
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
