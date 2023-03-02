@@ -69,13 +69,19 @@ jobs:
     strategy:
       matrix:
         include:
+          - os: ubuntu-20.04
+            dylib: libpost.so
+            staticlib: libpost.a
           - os: ubuntu-latest
-            libname: libpost.a
+            dylibn: libpost.so
+            staticlib: libpost.a
           - os: macos-latest
-            libname: libpost.a
+            dylib: libpost.dylib
+            staticlib: libpost.a
             rustflags: --cfg=aes_armv8
           - os: windows-latest
-            libname: post.lib
+            dylib: post.dll
+            staticlib: post.lib
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -91,4 +97,5 @@ jobs:
           name: libpost-${{ matrix.os }}
           path: |
             ffi/prover.h
-            target/release-clib/${{ matrix.libname }}
+            target/release-clib/${{ matrix.dylib }}
+            target/release-clib/${{ matrix.staticlib }}

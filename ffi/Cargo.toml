@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate_type = ["staticlib"]
+crate_type = ["staticlib", "cdylib"]
 
 [dependencies]
 eyre = "0.6.8"
