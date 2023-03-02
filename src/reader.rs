@@ -5,9 +5,7 @@ use std::{
 };
 
 use itertools::Itertools;
-use lazy_static::lazy_static;
 use regex::Regex;
-use streaming_iterator::{IntoStreamingIterator, StreamingIterator, StreamingIteratorMut};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Batch {
@@ -22,7 +20,6 @@ where
     reader: T,
     index: u64,
     batch_size: usize,
-    batch: Batch,
 }
 
 impl<T: Read> BatchingReader<T> {
@@ -31,10 +28,6 @@ impl<T: Read> BatchingReader<T> {
             reader,
             index,
             batch_size,
-            batch: Batch {
-                data: vec![0; batch_size],
-                index,
-            },
         }
     }
 }
@@ -43,15 +36,20 @@ impl<T: Read> Iterator for BatchingReader<T> {
     type Item = Batch;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut batch = Batch {
-            data: vec![0; self.batch_size],
-            index: self.index,
-        };
-
-        match self.reader.read(&mut batch.data) {
+        // FIXME(brozansk) avoid reallocating the vector
+        let mut data = Vec::with_capacity(self.batch_size);
+        match self
+            .reader
+            .by_ref()
+            .take(self.batch_size as u64)
+            .read_to_end(&mut data)
+        {
             Ok(0) => None,
             Ok(n) => {
-                batch.data.resize(n, 0);
+                let batch = Batch {
+                    data,
+                    index: self.index,
+                };
                 self.index += n as u64;
                 Some(batch)
             }
@@ -60,31 +58,8 @@ impl<T: Read> Iterator for BatchingReader<T> {
     }
 }
 
-impl<T: Read> StreamingIterator for BatchingReader<T> {
-    type Item = Batch;
-
-    fn advance(&mut self) {
-        self.batch.data.resize(self.batch_size, 0);
-        match self.reader.read(&mut self.batch.data) {
-            Ok(n) => {
-                self.batch.data.resize(n, 0);
-                self.batch.index = self.index;
-                self.index += n as u64;
-            }
-            Err(_) => self.batch.data.clear(),
-        }
-    }
-
-    fn get(&self) -> Option<&Self::Item> {
-        if self.batch.data.is_empty() {
-            None
-        } else {
-            Some(&self.batch)
-        }
-    }
-}
-
 fn pos_files(datadir: &Path) -> impl Iterator<Item = DirEntry> {
+    let file_re = Regex::new(r"postdata_\d+\.bin").unwrap();
     datadir
         .read_dir()
         .expect("read_dir call failed")
@@ -92,12 +67,7 @@ fn pos_files(datadir: &Path) -> impl Iterator<Item = DirEntry> {
             Ok(entry) => Some(entry),
             Err(_) => None,
         })
-        .filter(|entry| {
-            lazy_static! {
-                static ref RE: Regex = Regex::new(r"postdata_\d+\.bin").unwrap();
-            }
-            RE.is_match(entry.path().to_str().unwrap())
-        })
+        .filter(|entry| file_re.is_match(entry.path().to_str().unwrap()))
         .sorted_by_key(|entry| entry.path())
 }
 
@@ -112,19 +82,6 @@ pub fn read_data(datadir: &Path, batch_size: usize) -> impl Iterator<Item = Batc
     }
 
     readers.into_iter().flatten()
-}
-
-pub fn stream_data(datadir: &Path, batch_size: usize) -> impl StreamingIterator<Item = Batch> {
-    let mut pos = 0;
-    let mut readers = Vec::<BatchingReader<File>>::new();
-    for entry in pos_files(datadir) {
-        let file = File::open(entry.path()).unwrap();
-        let len = file.metadata().unwrap().len();
-        readers.push(BatchingReader::new(file, pos, batch_size));
-        pos += len
-    }
-
-    readers.into_streaming_iter().flatten()
 }
 
 #[cfg(test)]

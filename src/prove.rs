@@ -6,9 +6,8 @@ use cipher::{block_padding::NoPadding, generic_array::GenericArray};
 use eyre::Context;
 
 use std::{collections::HashMap, ops::Range, path::Path};
-use streaming_iterator::StreamingIterator;
 
-use crate::{config::Config, difficulty::proving_difficulty, metadata, reader::stream_data};
+use crate::{config::Config, difficulty::proving_difficulty, metadata, reader::read_data};
 
 const BLOCK_SIZE: usize = 16; // size of the aes block
 const AES_BATCH: usize = 8; // will use encrypt8 asm method
@@ -20,7 +19,7 @@ pub struct Proof {
     pub indicies: Vec<u64>,
 }
 
-pub trait Prover<'a> {
+pub trait Prover {
     fn prove<F>(&self, batch: &[u8], index: u64, consume: F) -> Option<u32>
     where
         F: FnMut(u32, u64) -> bool;
@@ -63,7 +62,7 @@ impl ConstDProver {
     }
 }
 
-impl<'a> Prover<'a> for ConstDProver {
+impl Prover for ConstDProver {
     fn required_aeses(&self) -> usize {
         self.ciphers.len()
     }
@@ -74,7 +73,7 @@ impl<'a> Prover<'a> for ConstDProver {
     {
         let mut u64s = [0u64; CHUNK_SIZE / 8];
 
-        for chunk in batch.chunks(CHUNK_SIZE) {
+        for chunk in batch.chunks_exact(CHUNK_SIZE) {
             for cipher in &self.ciphers {
                 cipher
                     .aes
@@ -120,7 +119,7 @@ impl ConstDVarBProver {
     }
 }
 
-impl<'a> Prover<'a> for ConstDVarBProver {
+impl Prover for ConstDVarBProver {
     fn required_aeses(&self) -> usize {
         self.ciphers.len()
     }
@@ -132,8 +131,8 @@ impl<'a> Prover<'a> for ConstDVarBProver {
         let mut labels = [GenericArray::from([0u8; 16]); 8];
         let mut blocks = [GenericArray::from([0u8; 16]); 8];
 
-        for chunk in batch.chunks(self.b * AES_BATCH) {
-            for (i, block) in chunk.chunks(self.b).enumerate() {
+        for chunk in batch.chunks_exact(self.b * AES_BATCH) {
+            for (i, block) in chunk.chunks_exact(self.b).enumerate() {
                 let slice = labels[i].as_mut_slice();
                 slice[0..block.len()].copy_from_slice(block);
             }
@@ -170,9 +169,8 @@ pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre
     let mut end_nonce = start_nonce + cfg.n;
     loop {
         println!("Generating proof for nonces ({start_nonce}..{end_nonce})");
-        let mut stream = stream_data(datadir, 1024 * 1024);
 
-        while let Some(batch) = stream.next() {
+        for batch in read_data(datadir, 1024 * 1024) {
             let mut indicies = HashMap::<u32, Vec<u64>>::new();
 
             let prover = ConstDProver::new(challenge, difficulty, start_nonce..end_nonce);

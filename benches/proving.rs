@@ -1,7 +1,6 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use lazy_static::lazy_static;
 use post::Prover;
 use pprof::criterion::{Output, PProfProfiler};
 use rand::{thread_rng, RngCore};
@@ -11,14 +10,6 @@ const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;
 
 const CHALLENGE: &[u8; 32] = b"hello world, CHALLENGE me!!!!!!!";
-
-lazy_static! {
-    static ref DATA: Vec<u8> = {
-        let mut data = vec![0; 32 * MIB];
-        thread_rng().fill_bytes(&mut data);
-        data
-    };
-}
 
 fn threads_to_str(threads: usize) -> String {
     if threads == 0 {
@@ -30,7 +21,10 @@ fn threads_to_str(threads: usize) -> String {
 
 fn prover_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("proving");
-    group.throughput(criterion::Throughput::Bytes(DATA.len() as u64));
+
+    let mut data = vec![0; 32 * MIB];
+    thread_rng().fill_bytes(&mut data);
+    group.throughput(criterion::Throughput::Bytes(data.len() as u64));
 
     let chunk_size = 64 * KIB;
 
@@ -49,21 +43,26 @@ fn prover_bench(c: &mut Criterion) {
                 b.iter(|| {
                     let f = black_box(|_, _| false);
                     match threads {
-                        1 => DATA.chunks(chunk_size).for_each(|chunk| {
+                        1 => data.chunks_exact(chunk_size).for_each(|chunk| {
                             prover.prove(chunk, 0, f);
                         }),
-                        0 => DATA.chunks(chunk_size).par_bridge().for_each(|chunk| {
-                            prover.prove(chunk, 0, f);
-                        }),
+                        0 => data
+                            .chunks_exact(chunk_size)
+                            .par_bridge()
+                            .for_each(|chunk| {
+                                prover.prove(chunk, 0, f);
+                            }),
                         n => {
                             let pool = rayon::ThreadPoolBuilder::new()
                                 .num_threads(n)
                                 .build()
                                 .unwrap();
                             pool.install(|| {
-                                DATA.chunks(chunk_size).par_bridge().for_each(|chunk| {
-                                    prover.prove(chunk, 0, f);
-                                })
+                                data.chunks_exact(chunk_size)
+                                    .par_bridge()
+                                    .for_each(|chunk| {
+                                        prover.prove(chunk, 0, f);
+                                    })
                             });
                         }
                     }
@@ -75,7 +74,10 @@ fn prover_bench(c: &mut Criterion) {
 
 fn var_b_prover_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("proving");
-    group.throughput(criterion::Throughput::Bytes(DATA.len() as u64));
+
+    let mut data = vec![0; 32 * MIB];
+    thread_rng().fill_bytes(&mut data);
+    group.throughput(criterion::Throughput::Bytes(data.len() as u64));
 
     let chunk_size = 64 * KIB;
 
@@ -98,21 +100,26 @@ fn var_b_prover_bench(c: &mut Criterion) {
                 b.iter(|| {
                     let f = black_box(|_, _| false);
                     match threads {
-                        1 => DATA.chunks(chunk_size).for_each(|chunk| {
+                        1 => data.chunks_exact(chunk_size).for_each(|chunk| {
                             prover.prove(chunk, 0, f);
                         }),
-                        0 => DATA.chunks(chunk_size).par_bridge().for_each(|chunk| {
-                            prover.prove(chunk, 0, f);
-                        }),
+                        0 => data
+                            .chunks_exact(chunk_size)
+                            .par_bridge()
+                            .for_each(|chunk| {
+                                prover.prove(chunk, 0, f);
+                            }),
                         n => {
                             let pool = rayon::ThreadPoolBuilder::new()
                                 .num_threads(n)
                                 .build()
                                 .unwrap();
                             pool.install(|| {
-                                DATA.chunks(chunk_size).par_bridge().for_each(|chunk| {
-                                    prover.prove(chunk, 0, f);
-                                })
+                                data.chunks_exact(chunk_size)
+                                    .par_bridge()
+                                    .for_each(|chunk| {
+                                        prover.prove(chunk, 0, f);
+                                    })
                             });
                         }
                     }
