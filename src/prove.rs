@@ -1,88 +1,221 @@
 use aes::{
     cipher::{BlockEncrypt, KeyInit},
-    Aes128,
+    Aes128, Aes256,
 };
-use cipher::block_padding::NoPadding;
-use std::sync::mpsc;
+use cipher::{block_padding::NoPadding, generic_array::GenericArray};
+use eyre::Context;
+
+use std::{collections::HashMap, ops::Range, path::Path};
+
+use crate::{config::Config, difficulty::proving_difficulty, metadata, reader::read_data};
 
 const BLOCK_SIZE: usize = 16; // size of the aes block
-const BATCH: usize = 8; // will use encrypt8 asm method
-const CHUNK_SIZE: usize = BLOCK_SIZE * BATCH;
+const AES_BATCH: usize = 8; // will use encrypt8 asm method
+const CHUNK_SIZE: usize = BLOCK_SIZE * AES_BATCH;
 
-pub struct Prover<const N: usize = 1> {
-    ciphers: [Aes128; N],
-    output: [u8; CHUNK_SIZE],
-    d: u64,
+#[derive(Debug)]
+pub struct Proof {
+    pub nonce: u32,
+    pub indicies: Vec<u64>,
 }
 
-impl<const N: usize> Prover<N> {
-    pub fn new(challenge: &[u8; 16], d: u64) -> Self {
-        let ciphers: [Aes128; N] = (0..N as u32)
-            .map(|i: u32| {
-                let mut key = [0u8; BLOCK_SIZE];
-                key[..12].copy_from_slice(&challenge[..12]);
-                key[12..].copy_from_slice(&i.to_le_bytes());
-                Aes128::new(&key.into())
-            })
-            .collect::<Vec<_>>()
-            .try_into()
-            .unwrap();
-        let output = [0u8; CHUNK_SIZE];
-        Prover { ciphers, output, d }
+pub trait Prover {
+    fn prove<F>(&self, batch: &[u8], index: u64, consume: F) -> Option<u32>
+    where
+        F: FnMut(u32, u64) -> bool;
+
+    fn required_aeses(&self) -> usize;
+}
+
+#[derive(Debug)]
+struct AesCipher {
+    pub aes: Aes128,
+    pub nonce: u32,
+}
+
+impl AesCipher {
+    fn new(challenge: &[u8; 32], nonce: u32) -> Self {
+        let key_cipher = Aes256::new(challenge.into());
+        let mut key = GenericArray::from([0u8; BLOCK_SIZE]);
+        key[0..4].copy_from_slice(&nonce.to_le_bytes());
+        key_cipher.encrypt_block(&mut key);
+        Self {
+            aes: Aes128::new(&key),
+            nonce,
+        }
+    }
+}
+
+pub struct ConstDProver {
+    ciphers: Vec<AesCipher>,
+    difficulty: u64,
+}
+
+impl ConstDProver {
+    pub fn new(challenge: &[u8; 32], difficulty: u64, nonces: Range<u32>) -> Self {
+        let start = nonces.start / 2;
+        let end = 1.max(nonces.end / 2);
+        ConstDProver {
+            ciphers: (start..end).map(|n| AesCipher::new(challenge, n)).collect(),
+            difficulty,
+        }
+    }
+}
+
+impl Prover for ConstDProver {
+    fn required_aeses(&self) -> usize {
+        self.ciphers.len()
     }
 
-    pub fn prove<F>(&mut self, stream: &[u8], mut consume: F)
+    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<u32>
     where
-        F: FnMut(u64, u64) -> Result<(), ()>,
+        F: FnMut(u32, u64) -> bool,
     {
-        for i in 0..stream.len() / (CHUNK_SIZE) {
-            let chunk = &stream[i * CHUNK_SIZE..(i + 1) * CHUNK_SIZE];
-            for (j, cipher) in self.ciphers.iter().enumerate() {
+        let mut u64s = [0u64; CHUNK_SIZE / 8];
+
+        for chunk in batch.chunks_exact(CHUNK_SIZE) {
+            for cipher in &self.ciphers {
                 cipher
-                    .encrypt_padded_b2b::<NoPadding>(chunk, &mut self.output)
+                    .aes
+                    .encrypt_padded_b2b::<NoPadding>(chunk, bytemuck::cast_slice_mut(&mut u64s))
                     .unwrap();
-                let ints = unsafe {
-                    let (_, ints, _) = self.output.align_to::<u64>();
-                    ints
-                };
-                for (out_i, out) in ints.into_iter().enumerate() {
-                    if out.to_le() <= self.d {
-                        let j = j * 2;
-                        let i = i * 8 + out_i;
-                        match consume((j + i % 2) as u64, (i / 2) as u64) {
-                            Ok(()) => {}
-                            Err(()) => return,
+
+                for (i, out) in u64s.iter().enumerate() {
+                    if out.to_le() <= self.difficulty {
+                        let nonce = cipher.nonce * 2 + i as u32 % 2;
+                        let index = index + (i / 2) as u64;
+                        let stop = consume(nonce, index);
+                        if stop {
+                            return Some(nonce);
                         }
                     }
                 }
             }
+            index += AES_BATCH as u64;
+        }
+
+        None
+    }
+}
+
+pub struct ConstDVarBProver {
+    ciphers: Vec<AesCipher>,
+    difficulty: u64,
+    b: usize,
+}
+
+impl ConstDVarBProver {
+    pub fn new(challenge: &[u8; 32], difficulty: u64, nonces: Range<u32>, b: usize) -> Self {
+        // Every cipher contains output for 2 nonces.
+        let num_ciphers = nonces.len() / 2;
+        ConstDVarBProver {
+            ciphers: nonces
+                .take(num_ciphers) // each cipher encodes 2 nonces
+                .map(|n| AesCipher::new(challenge, n))
+                .collect(),
+            difficulty,
+            b,
         }
     }
 }
 
-pub fn prove(stream: &[u8], challenge: &[u8; 16], d: u64, tx: &mpsc::Sender<(u64, u64)>) {
-    let mut prover = Prover::<1>::new(challenge, d);
-    prover.prove(stream, |nonce, index| -> Result<(), ()> {
-        match tx.send((nonce, index)) {
-            Ok(()) => Ok(()),
-            Err(_) => Err(()),
+impl Prover for ConstDVarBProver {
+    fn required_aeses(&self) -> usize {
+        self.ciphers.len()
+    }
+
+    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<u32>
+    where
+        F: FnMut(u32, u64) -> bool,
+    {
+        let mut labels = [GenericArray::from([0u8; 16]); 8];
+        let mut blocks = [GenericArray::from([0u8; 16]); 8];
+
+        for chunk in batch.chunks_exact(self.b * AES_BATCH) {
+            for (i, block) in chunk.chunks_exact(self.b).enumerate() {
+                let slice = labels[i].as_mut_slice();
+                slice[0..block.len()].copy_from_slice(block);
+            }
+
+            for cipher in &self.ciphers {
+                cipher.aes.encrypt_blocks_b2b(&labels, &mut blocks).unwrap();
+
+                for (i, block) in blocks.iter().flat_map(|b| b.chunks_exact(8)).enumerate() {
+                    let val = u64::from_le_bytes(block.try_into().unwrap());
+                    if val <= self.difficulty {
+                        let nonce = cipher.nonce + i as u32 % 2;
+                        let index = index + (i / 2) as u64;
+                        let stop = consume(nonce, index);
+                        if stop {
+                            return Some(nonce);
+                        }
+                    }
+                }
+            }
+            index += AES_BATCH as u64;
         }
-    });
+        None
+    }
+}
+
+pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre::Result<Proof> {
+    let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
+
+    let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
+    let difficulty = proving_difficulty(num_labels, cfg.b, cfg.k1)?;
+    println!("Difficulty: {difficulty:08X}, num_labels: {num_labels}");
+
+    let mut start_nonce = 0;
+    let mut end_nonce = start_nonce + cfg.n;
+    loop {
+        println!("Generating proof for nonces ({start_nonce}..{end_nonce})");
+
+        for batch in read_data(datadir, 1024 * 1024) {
+            let mut indicies = HashMap::<u32, Vec<u64>>::new();
+
+            let prover = ConstDProver::new(challenge, difficulty, start_nonce..end_nonce);
+            let nonce = prover.prove(&batch.data, batch.index, |nonce, index| -> bool {
+                let vec = indicies.entry(nonce).or_default();
+                vec.push(index);
+                if vec.len() >= cfg.k2 as usize {
+                    return true;
+                }
+                false
+            });
+            if let Some(nonce) = nonce {
+                return Ok(Proof {
+                    nonce,
+                    // SAFETY: unwrap will never fail as we know that the key is present.
+                    indicies: indicies.remove(&nonce).unwrap(),
+                });
+            }
+        }
+
+        (start_nonce, end_nonce) = (end_nonce, end_nonce + cfg.n);
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use rand::{thread_rng, RngCore};
+
+    use crate::difficulty::proving_difficulty;
+
     use super::*;
 
     #[test]
     fn sanity() {
-        let (tx, rx) = mpsc::channel();
-        let challenge = b"dsadsadasdsaaaaa";
-        let stream = vec![0u8; 16 * 8];
-        prove(&stream, &challenge, u64::MAX, &tx);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let challenge = b"hello world, challenge me!!!!!!!";
+        let prover = ConstDProver::new(challenge, u64::MAX, 0..1);
+        let res = prover.prove(&[0u8; 16 * 8], 0, |nonce, index| -> bool {
+            tx.send((nonce, index)).is_err()
+        });
+        assert!(res.is_none());
         drop(tx);
-        let rst: Vec<(u64, u64)> = rx.into_iter().collect();
-        assert_eq!(rst.len(), 16);
+        let rst: Vec<(u32, u64)> = rx.into_iter().collect();
         assert_eq!(
             rst,
             vec![
@@ -104,5 +237,117 @@ mod tests {
                 (1, 7)
             ],
         );
+    }
+
+    #[test]
+    /// Test if indicies in a proof are distributed more less uniformly across the whole input range.
+    fn indicies_distribution() {
+        let challenge = b"hello world, challenge me!!!!!!!";
+
+        const NUM_LABELS: usize = 1024 * 1024;
+        const K1: u32 = 1000;
+        const K2: usize = 1000;
+        let difficulty = proving_difficulty(NUM_LABELS as u64, 16, K1).unwrap();
+
+        let mut data = vec![0u8; NUM_LABELS];
+        thread_rng().fill_bytes(&mut data);
+
+        let mut start_nonce = 0;
+        let mut end_nonce = start_nonce + 20;
+        let proof = loop {
+            let mut indicies = HashMap::<u32, Vec<u64>>::new();
+            let mut found_nonce = None;
+
+            let prover = ConstDProver::new(challenge, difficulty, start_nonce..end_nonce);
+            prover
+                .prove(&data, 0, |nonce, index| -> bool {
+                    let vec = indicies.entry(nonce).or_default();
+                    vec.push(index);
+                    if vec.len() >= K2 {
+                        found_nonce = Some(nonce);
+                        return true;
+                    }
+                    false
+                })
+                .unwrap();
+            if let Some(nonce) = found_nonce {
+                break Proof {
+                    nonce,
+                    // SAFETY: unwrap will never fail as we know that the key is present.
+                    indicies: indicies.remove(&nonce).unwrap(),
+                };
+            }
+            (start_nonce, end_nonce) = (end_nonce, end_nonce + 20);
+        };
+
+        // verify distribution
+        let buckets = 10;
+        let expected = K2 / buckets;
+        let bucket_id = |idx: u64| -> u64 { idx / (NUM_LABELS as u64 / 16 / buckets as u64) };
+
+        let buckets =
+            proof
+                .indicies
+                .into_iter()
+                .fold(HashMap::<u64, usize>::new(), |mut buckets, idx| {
+                    *buckets.entry(bucket_id(idx)).or_default() += 1;
+                    buckets
+                });
+
+        for (id, occurences) in buckets {
+            let deviation_from_expected =
+                (occurences as isize - expected as isize) as f64 / expected as f64;
+            // VERY rough check. The point is to make sure if indexes are not concentrated in any bucket.
+            assert!(
+                deviation_from_expected.abs() <= 1.0,
+                "Too big deviation in proof indexes distribution in bucket {id}: {deviation_from_expected} ({occurences} indexes of {expected} expected)"
+            );
+        }
+    }
+
+    #[test]
+    fn proving() {
+        let challenge = b"hello world, CHALLENGE me!!!!!!!";
+
+        let num_labels = 1e6 as usize;
+        let k1 = 1000;
+        let k2 = 1000;
+        let difficulty = proving_difficulty(num_labels as u64, 16, k1).unwrap();
+
+        let mut data = vec![0u8; num_labels];
+        thread_rng().fill_bytes(&mut data);
+
+        let prover = ConstDProver::new(challenge, difficulty, 0..20);
+
+        let mut indicies = HashMap::<u32, Vec<u64>>::new();
+
+        let nonce = prover
+            .prove(&data, 0, |nonce, index| -> bool {
+                let vec = indicies.entry(nonce).or_default();
+                vec.push(index);
+                if vec.len() >= k2 {
+                    return true;
+                }
+                false
+            })
+            .unwrap();
+
+        let indicies = indicies.remove(&nonce).unwrap();
+        assert_eq!(k2, indicies.len());
+        assert!(nonce < 20);
+
+        // Verify if all indicies really satisfy difficulty
+        let cipher = AesCipher::new(challenge, nonce / 2);
+        let mut out = [0u64; 2];
+
+        for idx in indicies {
+            let idx = idx as usize;
+            cipher.aes.encrypt_block_b2b(
+                data[idx * 16..(idx + 1) * 16].into(),
+                bytemuck::cast_slice_mut(out.as_mut_slice()).into(),
+            );
+
+            assert!(out[(nonce % 2) as usize] <= difficulty);
+        }
     }
 }
