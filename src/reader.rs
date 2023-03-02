@@ -33,7 +33,7 @@ impl<T: Read> BatchingReader<T> {
             batch_size,
             batch: Batch {
                 data: vec![0; batch_size],
-                index: 0,
+                index,
             },
         }
     }
@@ -68,8 +68,8 @@ impl<T: Read> StreamingIterator for BatchingReader<T> {
         match self.reader.read(&mut self.batch.data) {
             Ok(n) => {
                 self.batch.data.resize(n, 0);
+                self.batch.index = self.index;
                 self.index += n as u64;
-                self.batch.index = self.index
             }
             Err(_) => self.batch.data.clear(),
         }

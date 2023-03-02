@@ -37,11 +37,11 @@ struct AesCipher {
 impl AesCipher {
     fn new(challenge: &[u8; 32], nonce: u32) -> Self {
         let key_cipher = Aes256::new(challenge.into());
-        let mut key = [0u8; BLOCK_SIZE];
+        let mut key = GenericArray::from([0u8; BLOCK_SIZE]);
         key[0..4].copy_from_slice(&nonce.to_le_bytes());
-        key_cipher.encrypt_block(&mut key.into());
+        key_cipher.encrypt_block(&mut key);
         Self {
-            aes: Aes128::new(&key.into()),
+            aes: Aes128::new(&key),
             nonce,
         }
     }
