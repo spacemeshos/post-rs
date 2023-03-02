@@ -17,6 +17,7 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
+      - uses: Swatinem/rust-cache@v2
       - uses: actions-rs/cargo@v1
         with:
           command: check
@@ -32,6 +33,7 @@ jobs:
         with:
           profile: minimal
           toolchain: stable
+      - uses: Swatinem/rust-cache@v2
       - uses: actions-rs/cargo@v1
         with:
           command: test
@@ -45,6 +47,7 @@ jobs:
           profile: minimal
           toolchain: stable
           components: rustfmt
+      - uses: Swatinem/rust-cache@v2
       - uses: actions-rs/cargo@v1
         with:
           command: fmt
@@ -54,6 +57,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          components: clippy
+          override: true
+      - uses: Swatinem/rust-cache@v2
       - name: Annotate commit with clippy warnings
         uses: actions-rs/clippy-check@v1
         with:
@@ -89,6 +98,7 @@ jobs:
         with:
           profile: minimal
           toolchain: nightly
+      - uses: Swatinem/rust-cache@v2
       - run: cargo +nightly build --profile release-clib -p post
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
