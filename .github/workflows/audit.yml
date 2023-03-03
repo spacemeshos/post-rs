@@ -1,5 +1,6 @@
 name: Security audit
 on:
+  merge_group:
   schedule:
     - cron: "0 0 * * *"
   push:
