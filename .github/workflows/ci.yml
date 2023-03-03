@@ -117,9 +117,11 @@ jobs:
           profile: minimal
           toolchain: nightly
       - uses: Swatinem/rust-cache@v2
-      - run: cargo +nightly build --profile release-clib -p post
+      - run: cargo +nightly build --profile release-clib -p postc
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
+      - if: contains(matrix.os, 'macos')
+        run: otool -L target/release-clib/${{ matrix.dylib }}
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
