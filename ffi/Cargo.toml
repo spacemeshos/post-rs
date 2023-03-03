@@ -1,9 +1,11 @@
 [package]
-name = "post"
+name = "post-cbindings"
 version = "0.1.0"
 edition = "2021"
 
+
 [lib]
+name = "post"
 crate_type = ["staticlib", "cdylib"]
 
 [dependencies]
