@@ -82,13 +82,29 @@ jobs:
           - os: ubuntu-20.04
             dylib: libpost.so
             staticlib: libpost.a
-          - os: ubuntu-latest
+
+          - os: ubuntu-22.04
             dylibn: libpost.so
             staticlib: libpost.a
-          - os: macos-latest
+
+          - os: [self-hosted, linux, arm64]
+            dylibn: libpost.so
+            staticlib: libpost.a
+            rustflags: --cfg=aes_armv8
+
+          - os: [self-hosted, macos, arm64]
             dylib: libpost.dylib
             staticlib: libpost.a
             rustflags: --cfg=aes_armv8
+
+          - os: macos-12
+            dylib: libpost.dylib
+            staticlib: libpost.a
+
+          - os: macos-11
+            dylib: libpost.dylib
+            staticlib: libpost.a
+
           - os: windows-latest
             dylib: post.dll
             staticlib: post.lib
