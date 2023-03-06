@@ -80,36 +80,36 @@ jobs:
       matrix:
         include:
           - os: ubuntu-20.04
-            dylib: libpostc.so
-            staticlib: libpostc.a
+            dylib: libpost.so
+            staticlib: libpost.a
 
           - os: ubuntu-22.04
-            dylib: libpostc.so
-            staticlib: libpostc.a
+            dylib: libpost.so
+            staticlib: libpost.a
 
           - os: [self-hosted, linux, arm64]
-            dylib: libpostc.so
-            staticlib: libpostc.a
+            dylib: libpost.so
+            staticlib: libpost.a
             rustflags: --cfg=aes_armv8
             artifact-name: linux-arm64
 
           - os: [self-hosted, macos, arm64]
-            dylib: libpostc.dylib
-            staticlib: libpostc.a
+            dylib: libpost.dylib
+            staticlib: libpost.a
             rustflags: --cfg=aes_armv8
             artifact-name: macos-arm64
 
           - os: macos-12
-            dylib: libpostc.dylib
-            staticlib: libpostc.a
+            dylib: libpost.dylib
+            staticlib: libpost.a
 
           - os: macos-11
-            dylib: libpostc.dylib
-            staticlib: libpostc.a
+            dylib: libpost.dylib
+            staticlib: libpost.a
 
           - os: windows-latest
-            dylib: postc.dll
-            staticlib: postc.lib
+            dylib: post.dll
+            staticlib: post.lib
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -117,7 +117,7 @@ jobs:
           profile: minimal
           toolchain: nightly
       - uses: Swatinem/rust-cache@v2
-      - run: cargo +nightly build --profile release-clib -p postc
+      - run: cd ffi && cargo build --profile release-clib
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
       - if: contains(matrix.os, 'macos')
