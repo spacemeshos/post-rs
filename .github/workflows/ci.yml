@@ -82,13 +82,27 @@ jobs:
           - os: ubuntu-20.04
             dylib: libpost.so
             staticlib: libpost.a
-          - os: ubuntu-latest
-            dylibn: libpost.so
+
+          - os: ubuntu-22.04
+            dylib: libpost.so
             staticlib: libpost.a
-          - os: macos-latest
+
+          - os: [self-hosted, linux, arm64]
+            dylib: libpost.so
+            staticlib: libpost.a
+            rustflags: --cfg=aes_armv8
+            artifact-name: linux-arm64
+
+          - os: [self-hosted, macos, arm64]
             dylib: libpost.dylib
             staticlib: libpost.a
             rustflags: --cfg=aes_armv8
+            artifact-name: macos-m1
+
+          - os: macos-latest
+            dylib: libpost.dylib
+            staticlib: libpost.a
+
           - os: windows-latest
             dylib: post.dll
             staticlib: post.lib
@@ -99,13 +113,13 @@ jobs:
           profile: minimal
           toolchain: nightly
       - uses: Swatinem/rust-cache@v2
-      - run: cargo +nightly build --profile release-clib -p post
+      - run: cd ffi && cargo build --profile release-clib
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: libpost-${{ matrix.os }}
+          name: libpost-${{ matrix.artifact-name || matrix.os }}
           path: |
             ffi/prover.h
             target/release-clib/${{ matrix.dylib }}
