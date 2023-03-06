@@ -116,8 +116,6 @@ jobs:
       - run: cd ffi && cargo build --profile release-clib
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-      - if: contains(matrix.os, 'macos')
-        run: otool -L target/release-clib/${{ matrix.dylib }}
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
