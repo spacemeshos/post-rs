@@ -20,7 +20,7 @@ serde_json = "1.0.93"
 bytemuck = "1.13.0"
 serde_with = { version = "2.2.0", features = ["base64"] }
 
-scrypt-jane = { git = "https://github.com/spacemeshos/scrypt-jane", branch = "main" }
+scrypt-jane = { git = "https://github.com/spacemeshos/scrypt-jane-rs", branch = "main" }
 
 [dev-dependencies]
 criterion = "0.4"
