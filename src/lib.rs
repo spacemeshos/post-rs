@@ -1,3 +1,4 @@
+mod cipher;
 pub mod config;
 mod difficulty;
 mod metadata;

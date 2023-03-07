@@ -1,13 +1,13 @@
-use aes::{
-    cipher::{BlockEncrypt, KeyInit},
-    Aes128, Aes256,
-};
+use aes::cipher::BlockEncrypt;
 use cipher::{block_padding::NoPadding, generic_array::GenericArray};
 use eyre::Context;
+use scrypt_jane::scrypt::ScryptParams;
 
 use std::{collections::HashMap, ops::Range, path::Path};
 
-use crate::{config::Config, difficulty::proving_difficulty, metadata, reader::read_data};
+use crate::{
+    cipher::AesCipher, config::Config, difficulty::proving_difficulty, metadata, reader::read_data,
+};
 
 const BLOCK_SIZE: usize = 16; // size of the aes block
 const AES_BATCH: usize = 8; // will use encrypt8 asm method
@@ -27,36 +27,24 @@ pub trait Prover {
     fn required_aeses(&self) -> usize;
 }
 
-#[derive(Debug)]
-struct AesCipher {
-    pub aes: Aes128,
-    pub nonce: u32,
-}
-
-impl AesCipher {
-    fn new(challenge: &[u8; 32], nonce: u32) -> Self {
-        let key_cipher = Aes256::new(challenge.into());
-        let mut key = GenericArray::from([0u8; BLOCK_SIZE]);
-        key[0..4].copy_from_slice(&nonce.to_le_bytes());
-        key_cipher.encrypt_block(&mut key);
-        Self {
-            aes: Aes128::new(&key),
-            nonce,
-        }
-    }
-}
-
 pub struct ConstDProver {
     ciphers: Vec<AesCipher>,
     difficulty: u64,
 }
 
 impl ConstDProver {
-    pub fn new(challenge: &[u8; 32], difficulty: u64, nonces: Range<u32>) -> Self {
+    pub fn new(
+        challenge: &[u8; 32],
+        difficulty: u64,
+        nonces: Range<u32>,
+        params: ScryptParams,
+    ) -> Self {
         let start = nonces.start / 2;
         let end = 1.max(nonces.end / 2);
         ConstDProver {
-            ciphers: (start..end).map(|n| AesCipher::new(challenge, n)).collect(),
+            ciphers: (start..end)
+                .map(|n| AesCipher::new(challenge, n, params))
+                .collect(),
             difficulty,
         }
     }
@@ -105,13 +93,19 @@ pub struct ConstDVarBProver {
 }
 
 impl ConstDVarBProver {
-    pub fn new(challenge: &[u8; 32], difficulty: u64, nonces: Range<u32>, b: usize) -> Self {
+    pub fn new(
+        challenge: &[u8; 32],
+        difficulty: u64,
+        nonces: Range<u32>,
+        b: usize,
+        params: ScryptParams,
+    ) -> Self {
         // Every cipher contains output for 2 nonces.
         let num_ciphers = nonces.len() / 2;
         ConstDVarBProver {
             ciphers: nonces
-                .take(num_ciphers) // each cipher encodes 2 nonces
-                .map(|n| AesCipher::new(challenge, n))
+                .take(num_ciphers)
+                .map(|n| AesCipher::new(challenge, n, params))
                 .collect(),
             difficulty,
             b,
@@ -167,13 +161,20 @@ pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre
 
     let mut start_nonce = 0;
     let mut end_nonce = start_nonce + cfg.n;
+    let aes_pow_params = ScryptParams::new(8, 0, 0);
+
     loop {
         println!("Generating proof for nonces ({start_nonce}..{end_nonce})");
 
         for batch in read_data(datadir, 1024 * 1024) {
             let mut indicies = HashMap::<u32, Vec<u64>>::new();
 
-            let prover = ConstDProver::new(challenge, difficulty, start_nonce..end_nonce);
+            let prover = ConstDProver::new(
+                challenge,
+                difficulty,
+                start_nonce..end_nonce,
+                aes_pow_params,
+            );
             let nonce = prover.prove(&batch.data, batch.index, |nonce, index| -> bool {
                 let vec = indicies.entry(nonce).or_default();
                 vec.push(index);
@@ -209,7 +210,8 @@ mod tests {
     fn sanity() {
         let (tx, rx) = std::sync::mpsc::channel();
         let challenge = b"hello world, challenge me!!!!!!!";
-        let prover = ConstDProver::new(challenge, u64::MAX, 0..1);
+        let aes_pow_params = ScryptParams::new(8, 0, 0);
+        let prover = ConstDProver::new(challenge, u64::MAX, 0..1, aes_pow_params);
         let res = prover.prove(&[0u8; 16 * 8], 0, |nonce, index| -> bool {
             tx.send((nonce, index)).is_err()
         });
@@ -254,11 +256,18 @@ mod tests {
 
         let mut start_nonce = 0;
         let mut end_nonce = start_nonce + 20;
+        let aes_pow_params = ScryptParams::new(8, 0, 0);
+
         let proof = loop {
             let mut indicies = HashMap::<u32, Vec<u64>>::new();
             let mut found_nonce = None;
 
-            let prover = ConstDProver::new(challenge, difficulty, start_nonce..end_nonce);
+            let prover = ConstDProver::new(
+                challenge,
+                difficulty,
+                start_nonce..end_nonce,
+                aes_pow_params,
+            );
             prover
                 .prove(&data, 0, |nonce, index| -> bool {
                     let vec = indicies.entry(nonce).or_default();
@@ -313,11 +322,11 @@ mod tests {
         let k1 = 1000;
         let k2 = 1000;
         let difficulty = proving_difficulty(num_labels as u64, 16, k1).unwrap();
-
+        let aes_pow_params = ScryptParams::new(8, 0, 0);
         let mut data = vec![0u8; num_labels];
         thread_rng().fill_bytes(&mut data);
 
-        let prover = ConstDProver::new(challenge, difficulty, 0..20);
+        let prover = ConstDProver::new(challenge, difficulty, 0..20, aes_pow_params);
 
         let mut indicies = HashMap::<u32, Vec<u64>>::new();
 
@@ -337,7 +346,7 @@ mod tests {
         assert!(nonce < 20);
 
         // Verify if all indicies really satisfy difficulty
-        let cipher = AesCipher::new(challenge, nonce / 2);
+        let cipher = AesCipher::new(challenge, nonce / 2, aes_pow_params);
         let mut out = [0u64; 2];
 
         for idx in indicies {

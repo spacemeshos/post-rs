@@ -56,7 +56,7 @@ pub extern "C" fn generate_proof(
         Ok(proof) => proof,
         Err(e) => {
             //TODO(brozansk) communicate errors better
-            eprintln!("{:?}", e);
+            eprintln!("{e:?}");
             std::ptr::null_mut()
         }
     }
@@ -74,9 +74,6 @@ fn _generate_proof(
 
     let challenge = unsafe { std::slice::from_raw_parts(challenge, challenge_len) };
     let challenge = challenge.try_into()?;
-
-    println!("datadir: {:?}, challenge: {:?}", datadir, challenge);
-    println!("config: {:?}", cfg);
 
     //FIXME Figure out how to reuse the Config type instead of duplicating it.
     let cfg = post::config::Config {
