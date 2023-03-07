@@ -10,12 +10,8 @@ pub(crate) struct AesCipher {
 
 impl AesCipher {
     pub(crate) fn new(challenge: &[u8; 32], nonce: u32, params: ScryptParams) -> Self {
-        // input = [challenge | nonce]
-        let mut input = Vec::from(challenge.as_slice());
-        input.extend(nonce.to_le_bytes());
-
         let mut key = [0u8; 16];
-        scrypt(&input, &[], params, &mut key);
+        scrypt(challenge, &nonce.to_le_bytes(), params, &mut key);
 
         Self {
             aes: Aes128::new(&key.into()),
