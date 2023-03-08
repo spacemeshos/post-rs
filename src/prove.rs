@@ -198,7 +198,7 @@ pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::{collections::HashMap, iter::repeat};
 
     use rand::{thread_rng, RngCore};
 
@@ -358,5 +358,45 @@ mod tests {
 
             assert!(out[(nonce % 2) as usize] <= difficulty);
         }
+    }
+
+    #[test]
+    fn proving_vector() {
+        let challenge = b"hello world, CHALLENGE me!!!!!!!";
+
+        let num_labels = 1024;
+        let k1 = 4;
+        let k2 = 32;
+        let difficulty = proving_difficulty(num_labels as u64, 16, k1).unwrap();
+        let aes_pow_params = ScryptParams::new(8, 0, 0);
+        let data = repeat(0..=11) // it's important for range len to not be a multiple of AES block
+            .flatten()
+            .take(num_labels)
+            .collect::<Vec<u8>>();
+
+        let prover = ConstDProver::new(challenge, difficulty, 0..20, aes_pow_params);
+
+        let mut indicies = HashMap::<u32, Vec<u64>>::new();
+
+        let nonce = prover
+            .prove(&data, 0, |nonce, index| -> bool {
+                let vec = indicies.entry(nonce).or_default();
+                vec.push(index);
+                if vec.len() >= k2 {
+                    return true;
+                }
+                false
+            })
+            .unwrap();
+        assert_eq!(12, nonce);
+
+        let indicies = indicies.remove(&nonce).unwrap();
+        assert_eq!(
+            &[
+                0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22, 24, 25, 27, 28, 30, 31,
+                33, 34, 36, 37, 39, 40, 42, 43, 45, 46
+            ],
+            indicies.as_slice()
+        );
     }
 }
