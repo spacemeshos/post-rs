@@ -376,11 +376,11 @@ mod tests {
 
         let prover = ConstDProver::new(challenge, difficulty, 0..20, aes_pow_params);
 
-        let mut indicies = HashMap::<u32, Vec<u64>>::new();
+        let mut indexes = HashMap::<u32, Vec<u64>>::new();
 
         let nonce = prover
             .prove(&data, 0, |nonce, index| -> bool {
-                let vec = indicies.entry(nonce).or_default();
+                let vec = indexes.entry(nonce).or_default();
                 vec.push(index);
                 if vec.len() >= k2 {
                     return true;
@@ -390,13 +390,13 @@ mod tests {
             .unwrap();
         assert_eq!(12, nonce);
 
-        let indicies = indicies.remove(&nonce).unwrap();
+        let indexes = indexes.remove(&nonce).unwrap();
         assert_eq!(
             &[
                 0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22, 24, 25, 27, 28, 30, 31,
                 33, 34, 36, 37, 39, 40, 42, 43, 45, 46
             ],
-            indicies.as_slice()
+            indexes.as_slice()
         );
     }
 }
