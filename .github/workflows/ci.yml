@@ -12,15 +12,10 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions-rs/cargo@v1
-        with:
-          command: check
+      - run: cargo check
 
   test:
     name: Test Suite
@@ -28,40 +23,28 @@ jobs:
       - check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions-rs/cargo@v1
-        with:
-          command: test
+      - run: cargo test --all-features
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: stable
           components: rustfmt
       - uses: Swatinem/rust-cache@v2
-      - uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all -- --check
+      - run: cargo fmt --all -- --check
 
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@nightly
         with:
-          toolchain: nightly
           components: clippy
-          override: true
       - uses: Swatinem/rust-cache@v2
       - name: Annotate commit with clippy warnings
         uses: actions-rs/clippy-check@v1
@@ -77,13 +60,10 @@ jobs:
       - fmt
       - clippy
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-20.04
-            dylib: libpost.so
-            staticlib: libpost.a
-
-          - os: ubuntu-22.04
             dylib: libpost.so
             staticlib: libpost.a
 
@@ -107,12 +87,11 @@ jobs:
             dylib: post.dll
             staticlib: post.lib
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ join( matrix.os, '-' ) }}
       - run: cd ffi && cargo build --profile release-clib
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
