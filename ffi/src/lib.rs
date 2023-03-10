@@ -30,8 +30,6 @@ pub struct Config {
     pub k2: u32,
     /// TODO: document
     pub k2_pow_difficulty: u64,
-    /// K3 is the number of indexes selected to be included in the final proof.
-    pub k3: u32,
     /// TODO: document
     pub k3_pow_difficulty: u64,
     /// B is the number of labels used per AES invocation when generating a proof.
@@ -87,7 +85,6 @@ fn _generate_proof(
         k1: cfg.k1,
         k2: cfg.k2,
         k2_pow_difficulty: cfg.k2_pow_difficulty,
-        k3: cfg.k3,
         k3_pow_difficulty: cfg.k3_pow_difficulty,
         b: cfg.b,
         n: cfg.n,
