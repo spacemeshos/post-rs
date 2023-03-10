@@ -24,14 +24,20 @@ pub struct Proof {
 #[derive(Debug)]
 pub struct Config {
     pub labels_per_unit: u64,
-    // K1 specifies the difficulty for a label to be a candidate for a proof.
+    /// K1 specifies the difficulty for a label to be a candidate for a proof.
     pub k1: u32,
-    // K2 is the number of labels below the required difficulty required for a proof.
+    /// K2 is the number of labels below the required difficulty required for a proof.
     pub k2: u32,
-    // B is the number of labels used per AES invocation when generating a proof.
-    // Lower values speed up verification, higher values proof generation.
+    /// TODO: document
+    pub k2_pow_difficulty: u64,
+    /// K3 is the number of indexes selected to be included in the final proof.
+    pub k3: u32,
+    /// TODO: document
+    pub k3_pow_difficulty: u64,
+    /// B is the number of labels used per AES invocation when generating a proof.
+    /// Lower values speed up verification, higher values proof generation.
     pub b: u32,
-    // n is the number of nonces to try at the same time.
+    /// n is the number of nonces to try at the same time.
     pub n: u32,
 }
 
@@ -80,6 +86,9 @@ fn _generate_proof(
         labels_per_unit: cfg.labels_per_unit,
         k1: cfg.k1,
         k2: cfg.k2,
+        k2_pow_difficulty: cfg.k2_pow_difficulty,
+        k3: cfg.k3,
+        k3_pow_difficulty: cfg.k3_pow_difficulty,
         b: cfg.b,
         n: cfg.n,
     };

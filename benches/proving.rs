@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use post::Prover;
+use post::{Prover, ProvingParams};
 use pprof::criterion::{Output, PProfProfiler};
 use rand::{thread_rng, RngCore};
 use rayon::prelude::{ParallelBridge, ParallelIterator};
@@ -28,7 +28,12 @@ fn prover_bench(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Bytes(data.len() as u64));
 
     let chunk_size = 64 * KIB;
-    let aes_pow_params = ScryptParams::new(8, 0, 0);
+    let params = ProvingParams {
+        scrypt: ScryptParams::new(8, 0, 0),
+        difficulty: 0,               // impossible to find a proof
+        k2_pow_difficulty: u64::MAX, // extremely easy to find k2_pow
+        k3_pow_difficulty: u64::MAX,
+    };
 
     for (nonces, threads) in itertools::iproduct!(
         [2, 20, 200],
@@ -41,7 +46,7 @@ fn prover_bench(c: &mut Criterion) {
             ),
             &(nonces, threads),
             |b, &(nonces, threads)| {
-                let prover = post::ConstDProver::new(CHALLENGE, 0, 0..nonces, aes_pow_params);
+                let prover = post::ConstDProver::new(CHALLENGE, 0..nonces, params.clone());
                 b.iter(|| {
                     let f = black_box(|_, _| false);
                     match threads {
@@ -82,7 +87,12 @@ fn var_b_prover_bench(c: &mut Criterion) {
     group.throughput(criterion::Throughput::Bytes(data.len() as u64));
 
     let chunk_size = 64 * KIB;
-    let aes_pow_params = ScryptParams::new(8, 0, 0);
+    let params = ProvingParams {
+        scrypt: ScryptParams::new(8, 0, 0),
+        difficulty: 0,               // impossible to find a proof
+        k2_pow_difficulty: u64::MAX, // extremely easy to find k2_pow
+        k3_pow_difficulty: u64::MAX,
+    };
 
     for (nonces, threads, param_b) in itertools::iproduct!(
         [2, 20, 200],
@@ -100,7 +110,7 @@ fn var_b_prover_bench(c: &mut Criterion) {
             &(nonces, threads, param_b),
             |b, &(nonces, threads, param_b)| {
                 let prover =
-                    post::ConstDVarBProver::new(CHALLENGE, 0, 0..nonces, param_b, aes_pow_params);
+                    post::ConstDVarBProver::new(CHALLENGE, 0..nonces, param_b, params.clone());
                 b.iter(|| {
                     let f = black_box(|_, _| false);
                     match threads {

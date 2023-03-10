@@ -21,6 +21,8 @@ bytemuck = "1.13.0"
 serde_with = { version = "2.2.0", features = ["base64"] }
 
 scrypt-jane = { git = "https://github.com/spacemeshos/scrypt-jane-rs", branch = "main" }
+blake3 = "1.3.3"
+bitvec = "1.0.1"
 
 [dev-dependencies]
 criterion = "0.4"
@@ -38,6 +40,9 @@ block-padding = ["cipher/block-padding"]
 name = "proving"
 harness = false
 
+[[bench]]
+name = "pow"
+harness = false
 
 [profile.release-clib]
 inherits = "release"
