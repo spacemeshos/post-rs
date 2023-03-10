@@ -65,7 +65,7 @@ impl ConstDProver {
     }
 
     fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
-        self.ciphers.get(nonce as usize / 2)
+        self.ciphers.get((nonce as usize % self.ciphers.len()) / 2)
     }
 }
 
@@ -128,6 +128,10 @@ impl ConstDVarBProver {
             b,
         }
     }
+
+    fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
+        self.ciphers.get((nonce as usize % self.ciphers.len()) / 2)
+    }
 }
 
 impl Prover for ConstDVarBProver {
@@ -136,7 +140,7 @@ impl Prover for ConstDVarBProver {
     }
 
     fn get_k2_pow(&self, nonce: u32) -> Option<u64> {
-        self.ciphers.get(nonce as usize / 2).map(|aes| aes.k2_pow)
+        self.cipher(nonce).map(|aes| aes.k2_pow)
     }
 
     fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<u32>
