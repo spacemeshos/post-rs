@@ -18,6 +18,8 @@ pub struct ArrayU64 {
 pub struct Proof {
     nonce: u32,
     indicies: ArrayU64,
+    k2_pow: u64,
+    k3_pow: u64,
 }
 
 #[repr(C)]
@@ -95,6 +97,8 @@ fn _generate_proof(
     let proof = Box::new(Proof {
         nonce: proof.nonce,
         indicies: ArrayU64 { ptr, len, cap },
+        k2_pow: proof.k2_pow,
+        k3_pow: proof.k3_pow,
     });
 
     Ok(Box::into_raw(proof))

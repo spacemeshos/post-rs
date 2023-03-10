@@ -65,7 +65,7 @@ impl ConstDProver {
     }
 
     fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
-        self.ciphers.get((nonce as usize % self.ciphers.len()) / 2)
+        self.ciphers.get((nonce as usize / 2) % self.ciphers.len())
     }
 }
 
