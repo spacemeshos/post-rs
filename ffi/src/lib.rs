@@ -5,6 +5,7 @@ use std::{
     path::Path,
 };
 
+pub use post::config::Config;
 use post::prove;
 
 #[repr(C)]
@@ -20,25 +21,6 @@ pub struct Proof {
     indicies: ArrayU64,
     k2_pow: u64,
     k3_pow: u64,
-}
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct Config {
-    pub labels_per_unit: u64,
-    /// K1 specifies the difficulty for a label to be a candidate for a proof.
-    pub k1: u32,
-    /// K2 is the number of labels below the required difficulty required for a proof.
-    pub k2: u32,
-    /// TODO: document
-    pub k2_pow_difficulty: u64,
-    /// TODO: document
-    pub k3_pow_difficulty: u64,
-    /// B is the number of labels used per AES invocation when generating a proof.
-    /// Lower values speed up verification, higher values proof generation.
-    pub b: u32,
-    /// n is the number of nonces to try at the same time.
-    pub n: u32,
 }
 
 /// # Safety
@@ -81,16 +63,6 @@ fn _generate_proof(
     let challenge = unsafe { std::slice::from_raw_parts(challenge, challenge_len) };
     let challenge = challenge.try_into()?;
 
-    //FIXME Figure out how to reuse the Config type instead of duplicating it.
-    let cfg = post::config::Config {
-        labels_per_unit: cfg.labels_per_unit,
-        k1: cfg.k1,
-        k2: cfg.k2,
-        k2_pow_difficulty: cfg.k2_pow_difficulty,
-        k3_pow_difficulty: cfg.k3_pow_difficulty,
-        b: cfg.b,
-        n: cfg.n,
-    };
     let proof = prove::generate_proof(datadir, challenge, cfg)?;
 
     let (ptr, len, cap) = proof.indicies.into_raw_parts();
