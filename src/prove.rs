@@ -42,9 +42,9 @@ pub struct ProvingParams {
 }
 
 pub trait Prover {
-    fn prove<F>(&self, batch: &[u8], index: u64, consume: F) -> Option<u32>
+    fn prove<F>(&self, batch: &[u8], index: u64, consume: F) -> Option<(u32, Vec<u64>)>
     where
-        F: FnMut(u32, u64) -> bool;
+        F: FnMut(u32, u64) -> Option<Vec<u64>>;
 
     fn required_aeses(&self) -> usize;
 
@@ -82,9 +82,9 @@ impl Prover for ConstDProver {
         self.cipher(nonce).map(|aes| aes.k2_pow)
     }
 
-    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<u32>
+    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<(u32, Vec<u64>)>
     where
-        F: FnMut(u32, u64) -> bool,
+        F: FnMut(u32, u64) -> Option<Vec<u64>>,
     {
         let mut u64s = [0u64; CHUNK_SIZE / 8];
 
@@ -99,9 +99,8 @@ impl Prover for ConstDProver {
                     if out.to_le() <= self.difficulty {
                         let nonce = cipher.nonce_group * 2 + i as u32 % 2;
                         let index = index + (i / 2) as u64;
-                        let stop = consume(nonce, index);
-                        if stop {
-                            return Some(nonce);
+                        if let Some(indexes) = consume(nonce, index) {
+                            return Some((nonce, indexes));
                         }
                     }
                 }
@@ -147,9 +146,9 @@ impl Prover for ConstDVarBProver {
         self.cipher(nonce).map(|aes| aes.k2_pow)
     }
 
-    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<u32>
+    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<(u32, Vec<u64>)>
     where
-        F: FnMut(u32, u64) -> bool,
+        F: FnMut(u32, u64) -> Option<Vec<u64>>,
     {
         let mut labels = [GenericArray::from([0u8; 16]); 8];
         let mut blocks = [GenericArray::from([0u8; 16]); 8];
@@ -168,9 +167,8 @@ impl Prover for ConstDVarBProver {
                     if val <= self.difficulty {
                         let nonce = cipher.nonce_group + i as u32 % 2;
                         let index = index + (i / 2) as u64;
-                        let stop = consume(nonce, index);
-                        if stop {
-                            return Some(nonce);
+                        if let Some(indexes) = consume(nonce, index) {
+                            return Some((nonce, indexes));
                         }
                     }
                 }
@@ -203,12 +201,15 @@ pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre
             let mut indexes = HashMap::<u32, Vec<u64>>::new();
 
             let prover = ConstDProver::new(challenge, start_nonce..end_nonce, params.clone());
-            let nonce = prover.prove(&batch.data, batch.index, |nonce, index| -> bool {
+            let result = prover.prove(&batch.data, batch.index, |nonce, index| {
                 let vec = indexes.entry(nonce).or_default();
                 vec.push(index);
-                vec.len() >= cfg.k2 as usize
+                if vec.len() >= cfg.k2 as usize {
+                    return Some(std::mem::take(vec));
+                }
+                None
             });
-            if let Some(nonce) = nonce {
+            if let Some((nonce, indexes)) = result {
                 let total_labels = metadata.num_units as u64
                     * metadata.labels_per_unit
                     * metadata.bits_per_label as u64
@@ -217,8 +218,6 @@ pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre
                 let max_index = total_labels / 16;
                 let required_bits = (max_index as f64).log2() as usize + 1;
 
-                // SAFETY: unwrap will never fail as we know that the key is present.
-                let indexes = indexes.remove(&nonce).unwrap();
                 let compressed_indexes = compress_indexes(&indexes, required_bits);
                 let k3_pow = crate::pow::find_k3_pow(
                     challenge,
@@ -260,8 +259,9 @@ mod tests {
             k3_pow_difficulty: u64::MAX,
         };
         let prover = ConstDProver::new(challenge, 0..1, params);
-        let res = prover.prove(&[0u8; 16 * 8], 0, |nonce, index| -> bool {
-            tx.send((nonce, index)).is_err()
+        let res = prover.prove(&[0u8; 16 * 8], 0, |nonce, index| {
+            let _ = tx.send((nonce, index));
+            None
         });
         assert!(res.is_none());
         drop(tx);
@@ -315,13 +315,16 @@ mod tests {
 
             let prover = ConstDProver::new(challenge, start_nonce..end_nonce, params.clone());
 
-            let nonce = prover.prove(&data, 0, |nonce, index| -> bool {
+            let result = prover.prove(&data, 0, |nonce, index| {
                 let vec = indicies.entry(nonce).or_default();
                 vec.push(index);
-                vec.len() >= K2
+                if vec.len() >= K2 {
+                    return Some(std::mem::take(vec));
+                }
+                None
             });
-            if let Some(nonce) = nonce {
-                break indicies.remove(&nonce).unwrap();
+            if let Some((_, indexes)) = result {
+                break indexes;
             }
             (start_nonce, end_nonce) = (end_nonce, end_nonce + 20);
         };
@@ -369,26 +372,25 @@ mod tests {
 
         let mut indicies = HashMap::<u32, Vec<u64>>::new();
 
-        let nonce = prover
-            .prove(&data, 0, |nonce, index| -> bool {
+        let (nonce, indexes) = prover
+            .prove(&data, 0, |nonce, index| {
                 let vec = indicies.entry(nonce).or_default();
                 vec.push(index);
                 if vec.len() >= k2 {
-                    return true;
+                    return Some(std::mem::take(vec));
                 }
-                false
+                None
             })
             .unwrap();
 
-        let indicies = indicies.remove(&nonce).unwrap();
-        assert_eq!(k2, indicies.len());
+        assert_eq!(k2, indexes.len());
         assert!(nonce < 20);
 
         // Verify if all indicies really satisfy difficulty
         let cipher = prover.cipher(nonce).unwrap();
         let mut out = [0u64; 2];
 
-        for idx in indicies {
+        for idx in indexes {
             let idx = idx as usize;
             cipher.aes.encrypt_block_b2b(
                 data[idx * 16..(idx + 1) * 16].into(),
@@ -421,19 +423,18 @@ mod tests {
 
         let mut indexes = HashMap::<u32, Vec<u64>>::new();
 
-        let nonce = prover
-            .prove(&data, 0, |nonce, index| -> bool {
+        let (nonce, indexes) = prover
+            .prove(&data, 0, |nonce, index| {
                 let vec = indexes.entry(nonce).or_default();
                 vec.push(index);
                 if vec.len() >= k2 {
-                    return true;
+                    return Some(std::mem::take(vec));
                 }
-                false
+                None
             })
             .unwrap();
         assert_eq!(2, nonce);
 
-        let indexes = indexes.remove(&nonce).unwrap();
         assert_eq!(
             &[
                 2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 44, 47, 50, 53, 56, 59, 62,
