@@ -1,9 +1,10 @@
 mod cipher;
+mod compression;
 pub mod config;
 mod difficulty;
 mod metadata;
+pub mod pow;
 pub mod prove;
 pub mod reader;
 mod verify;
 pub use crate::prove::*;
-pub use crate::verify::*;

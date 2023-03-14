@@ -18,20 +18,26 @@ pub struct ArrayU64 {
 pub struct Proof {
     nonce: u32,
     indicies: ArrayU64,
+    k2_pow: u64,
+    k3_pow: u64,
 }
 
 #[repr(C)]
 #[derive(Debug)]
 pub struct Config {
     pub labels_per_unit: u64,
-    // K1 specifies the difficulty for a label to be a candidate for a proof.
+    /// K1 specifies the difficulty for a label to be a candidate for a proof.
     pub k1: u32,
-    // K2 is the number of labels below the required difficulty required for a proof.
+    /// K2 is the number of labels below the required difficulty required for a proof.
     pub k2: u32,
-    // B is the number of labels used per AES invocation when generating a proof.
-    // Lower values speed up verification, higher values proof generation.
+    /// TODO: document
+    pub k2_pow_difficulty: u64,
+    /// TODO: document
+    pub k3_pow_difficulty: u64,
+    /// B is the number of labels used per AES invocation when generating a proof.
+    /// Lower values speed up verification, higher values proof generation.
     pub b: u32,
-    // n is the number of nonces to try at the same time.
+    /// n is the number of nonces to try at the same time.
     pub n: u32,
 }
 
@@ -80,6 +86,8 @@ fn _generate_proof(
         labels_per_unit: cfg.labels_per_unit,
         k1: cfg.k1,
         k2: cfg.k2,
+        k2_pow_difficulty: cfg.k2_pow_difficulty,
+        k3_pow_difficulty: cfg.k3_pow_difficulty,
         b: cfg.b,
         n: cfg.n,
     };
@@ -89,6 +97,8 @@ fn _generate_proof(
     let proof = Box::new(Proof {
         nonce: proof.nonce,
         indicies: ArrayU64 { ptr, len, cap },
+        k2_pow: proof.k2_pow,
+        k3_pow: proof.k3_pow,
     });
 
     Ok(Box::into_raw(proof))

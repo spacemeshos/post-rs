@@ -1,21 +1,36 @@
 use aes::Aes128;
-use cipher::KeyInit;
-use scrypt_jane::scrypt::{scrypt, ScryptParams};
+use cipher::{generic_array::GenericArray, KeyInit};
+use scrypt_jane::scrypt::ScryptParams;
+
+use crate::pow;
 
 #[derive(Debug)]
 pub(crate) struct AesCipher {
     pub(crate) aes: Aes128,
-    pub(crate) nonce: u32,
+    pub(crate) nonce_group: u32,
+    pub(crate) k2_pow: u64,
 }
 
 impl AesCipher {
-    pub(crate) fn new(challenge: &[u8; 32], nonce: u32, params: ScryptParams) -> Self {
-        let mut key = [0u8; 16];
-        scrypt(challenge, &nonce.to_le_bytes(), params, &mut key);
-
+    /// Create new AES cipher for the given challenge and nonce.
+    /// AES key = blake3(challenge, nonce_group, k2_pow)
+    pub(crate) fn new(
+        challenge: &[u8; 32],
+        nonce_group: u32,
+        params: ScryptParams,
+        k2_pow_difficulty: u64,
+    ) -> Self {
+        let k2_pow = pow::find_k2_pow(challenge, nonce_group, params, k2_pow_difficulty);
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(challenge);
+        hasher.update(&nonce_group.to_le_bytes());
+        hasher.update(&k2_pow.to_le_bytes());
         Self {
-            aes: Aes128::new(&key.into()),
-            nonce,
+            aes: Aes128::new(GenericArray::from_slice(
+                &hasher.finalize().as_bytes()[..16],
+            )),
+            nonce_group,
+            k2_pow,
         }
     }
 }
@@ -31,10 +46,10 @@ mod tests {
     proptest! {
         #[test]
         fn different_nonces_give_different_ciphers(a: u32, b: u32, challenge: [u8; 32], data: [u8; 16]) {
-            let params = ScryptParams::new(8, 0, 0);
+            let params = ScryptParams::new(2, 0, 0);
             let data = GenericArray::from(data);
-            let cipher1 = AesCipher::new(&challenge, a, params);
-            let cipher2 = AesCipher::new(&challenge, b, params);
+            let cipher1 = AesCipher::new(&challenge, a, params, u64::MAX);
+            let cipher2 = AesCipher::new(&challenge, b, params, u64::MAX);
 
             let mut out1 = GenericArray::from([0u8; 16]);
             cipher1.aes.encrypt_block_b2b(&data, &mut out1);
@@ -50,10 +65,10 @@ mod tests {
         }
         #[test]
         fn different_challenges_give_different_ciphers(challenge1: [u8; 32], challenge2: [u8; 32], nonce: u32, data: [u8; 16]) {
-            let params = ScryptParams::new(8, 0, 0);
+            let params = ScryptParams::new(2, 0, 0);
             let data = GenericArray::from(data);
-            let cipher1 = AesCipher::new(&challenge1, nonce, params);
-            let cipher2 = AesCipher::new(&challenge2, nonce, params);
+            let cipher1 = AesCipher::new(&challenge1, nonce, params, u64::MAX);
+            let cipher2 = AesCipher::new(&challenge2, nonce, params, u64::MAX);
 
             let mut out1 = GenericArray::from([0u8; 16]);
             cipher1.aes.encrypt_block_b2b(&data, &mut out1);

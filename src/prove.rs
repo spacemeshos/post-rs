@@ -1,12 +1,24 @@
+//! Generating [proofs](Proof) that the _Proof Of Space_ data is still held, given the challenge.
+//!
+//! # parameters
+//! Proof generation is configured via [Config](crate::config::Config).
+//!
+//! # proving algorithm
+//! TODO: describe the algorithm
+//! ## k2 proof of work
+//! TODO: explain
+//! ## k3 proof of work
+//! TODO: explain
+
 use aes::cipher::BlockEncrypt;
 use cipher::{block_padding::NoPadding, generic_array::GenericArray};
 use eyre::Context;
 use scrypt_jane::scrypt::ScryptParams;
-
 use std::{collections::HashMap, ops::Range, path::Path};
 
 use crate::{
-    cipher::AesCipher, config::Config, difficulty::proving_difficulty, metadata, reader::read_data,
+    cipher::AesCipher, compression::compress_indexes, config::Config,
+    difficulty::proving_difficulty, metadata, reader::read_data,
 };
 
 const BLOCK_SIZE: usize = 16; // size of the aes block
@@ -17,6 +29,16 @@ const CHUNK_SIZE: usize = BLOCK_SIZE * AES_BATCH;
 pub struct Proof {
     pub nonce: u32,
     pub indicies: Vec<u64>,
+    pub k2_pow: u64,
+    pub k3_pow: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProvingParams {
+    pub difficulty: u64,
+    pub k2_pow_difficulty: u64,
+    pub k3_pow_difficulty: u64,
+    pub scrypt: ScryptParams,
 }
 
 pub trait Prover {
@@ -25,6 +47,8 @@ pub trait Prover {
         F: FnMut(u32, u64) -> bool;
 
     fn required_aeses(&self) -> usize;
+
+    fn get_k2_pow(&self, nonce: u32) -> Option<u64>;
 }
 
 pub struct ConstDProver {
@@ -33,26 +57,29 @@ pub struct ConstDProver {
 }
 
 impl ConstDProver {
-    pub fn new(
-        challenge: &[u8; 32],
-        difficulty: u64,
-        nonces: Range<u32>,
-        params: ScryptParams,
-    ) -> Self {
+    pub fn new(challenge: &[u8; 32], nonces: Range<u32>, params: ProvingParams) -> Self {
         let start = nonces.start / 2;
         let end = 1.max(nonces.end / 2);
         ConstDProver {
             ciphers: (start..end)
-                .map(|n| AesCipher::new(challenge, n, params))
+                .map(|n| AesCipher::new(challenge, n, params.scrypt, params.k2_pow_difficulty))
                 .collect(),
-            difficulty,
+            difficulty: params.difficulty,
         }
+    }
+
+    fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
+        self.ciphers.get((nonce as usize / 2) % self.ciphers.len())
     }
 }
 
 impl Prover for ConstDProver {
     fn required_aeses(&self) -> usize {
         self.ciphers.len()
+    }
+
+    fn get_k2_pow(&self, nonce: u32) -> Option<u64> {
+        self.cipher(nonce).map(|aes| aes.k2_pow)
     }
 
     fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<u32>
@@ -70,7 +97,7 @@ impl Prover for ConstDProver {
 
                 for (i, out) in u64s.iter().enumerate() {
                     if out.to_le() <= self.difficulty {
-                        let nonce = cipher.nonce * 2 + i as u32 % 2;
+                        let nonce = cipher.nonce_group * 2 + i as u32 % 2;
                         let index = index + (i / 2) as u64;
                         let stop = consume(nonce, index);
                         if stop {
@@ -93,29 +120,31 @@ pub struct ConstDVarBProver {
 }
 
 impl ConstDVarBProver {
-    pub fn new(
-        challenge: &[u8; 32],
-        difficulty: u64,
-        nonces: Range<u32>,
-        b: usize,
-        params: ScryptParams,
-    ) -> Self {
+    pub fn new(challenge: &[u8; 32], nonces: Range<u32>, b: usize, params: ProvingParams) -> Self {
         // Every cipher contains output for 2 nonces.
         let num_ciphers = nonces.len() / 2;
         ConstDVarBProver {
             ciphers: nonces
                 .take(num_ciphers)
-                .map(|n| AesCipher::new(challenge, n, params))
+                .map(|n| AesCipher::new(challenge, n, params.scrypt, params.k2_pow_difficulty))
                 .collect(),
-            difficulty,
+            difficulty: params.difficulty,
             b,
         }
+    }
+
+    fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
+        self.ciphers.get((nonce as usize % self.ciphers.len()) / 2)
     }
 }
 
 impl Prover for ConstDVarBProver {
     fn required_aeses(&self) -> usize {
         self.ciphers.len()
+    }
+
+    fn get_k2_pow(&self, nonce: u32) -> Option<u64> {
+        self.cipher(nonce).map(|aes| aes.k2_pow)
     }
 
     fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<u32>
@@ -137,7 +166,7 @@ impl Prover for ConstDVarBProver {
                 for (i, block) in blocks.iter().flat_map(|b| b.chunks_exact(8)).enumerate() {
                     let val = u64::from_le_bytes(block.try_into().unwrap());
                     if val <= self.difficulty {
-                        let nonce = cipher.nonce + i as u32 % 2;
+                        let nonce = cipher.nonce_group + i as u32 % 2;
                         let index = index + (i / 2) as u64;
                         let stop = consume(nonce, index);
                         if stop {
@@ -152,42 +181,59 @@ impl Prover for ConstDVarBProver {
     }
 }
 
+/// Generate a proof that data is still held, given the challenge.
 pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre::Result<Proof> {
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
 
     let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
     let difficulty = proving_difficulty(num_labels, cfg.b, cfg.k1)?;
-    println!("Difficulty: {difficulty:08X}, num_labels: {num_labels}");
 
     let mut start_nonce = 0;
     let mut end_nonce = start_nonce + cfg.n;
-    let aes_pow_params = ScryptParams::new(8, 0, 0);
+
+    let params = ProvingParams {
+        scrypt: ScryptParams::new(8, 0, 0),
+        difficulty,
+        k2_pow_difficulty: cfg.k2_pow_difficulty,
+        k3_pow_difficulty: cfg.k3_pow_difficulty,
+    };
 
     loop {
-        println!("Generating proof for nonces ({start_nonce}..{end_nonce})");
-
         for batch in read_data(datadir, 1024 * 1024) {
-            let mut indicies = HashMap::<u32, Vec<u64>>::new();
+            let mut indexes = HashMap::<u32, Vec<u64>>::new();
 
-            let prover = ConstDProver::new(
-                challenge,
-                difficulty,
-                start_nonce..end_nonce,
-                aes_pow_params,
-            );
+            let prover = ConstDProver::new(challenge, start_nonce..end_nonce, params.clone());
             let nonce = prover.prove(&batch.data, batch.index, |nonce, index| -> bool {
-                let vec = indicies.entry(nonce).or_default();
+                let vec = indexes.entry(nonce).or_default();
                 vec.push(index);
-                if vec.len() >= cfg.k2 as usize {
-                    return true;
-                }
-                false
+                vec.len() >= cfg.k2 as usize
             });
             if let Some(nonce) = nonce {
+                let total_labels = metadata.num_units as u64
+                    * metadata.labels_per_unit
+                    * metadata.bits_per_label as u64
+                    / 8;
+                // Labels are indexed in blocks of 16
+                let max_index = total_labels / 16;
+                let required_bits = (max_index as f64).log2() as usize + 1;
+
+                // SAFETY: unwrap will never fail as we know that the key is present.
+                let indexes = indexes.remove(&nonce).unwrap();
+                let compressed_indexes = compress_indexes(&indexes, required_bits);
+                let k3_pow = crate::pow::find_k3_pow(
+                    challenge,
+                    nonce,
+                    &compressed_indexes,
+                    params.scrypt,
+                    params.k3_pow_difficulty,
+                    prover.cipher(nonce).unwrap().k2_pow,
+                );
                 return Ok(Proof {
                     nonce,
-                    // SAFETY: unwrap will never fail as we know that the key is present.
-                    indicies: indicies.remove(&nonce).unwrap(),
+                    // TODO(poszu) include compressed indexes once we move verification to this library.
+                    indicies: indexes,
+                    k2_pow: prover.get_k2_pow(nonce).unwrap(),
+                    k3_pow,
                 });
             }
         }
@@ -198,20 +244,22 @@ pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashMap, iter::repeat};
-
-    use rand::{thread_rng, RngCore};
-
-    use crate::difficulty::proving_difficulty;
-
     use super::*;
+    use crate::difficulty::proving_difficulty;
+    use rand::{thread_rng, RngCore};
+    use std::{collections::HashMap, iter::repeat};
 
     #[test]
     fn sanity() {
         let (tx, rx) = std::sync::mpsc::channel();
         let challenge = b"hello world, challenge me!!!!!!!";
-        let aes_pow_params = ScryptParams::new(8, 0, 0);
-        let prover = ConstDProver::new(challenge, u64::MAX, 0..1, aes_pow_params);
+        let params = ProvingParams {
+            scrypt: ScryptParams::new(8, 0, 0),
+            difficulty: u64::MAX,
+            k2_pow_difficulty: u64::MAX,
+            k3_pow_difficulty: u64::MAX,
+        };
+        let prover = ConstDProver::new(challenge, 0..1, params);
         let res = prover.prove(&[0u8; 16 * 8], 0, |nonce, index| -> bool {
             tx.send((nonce, index)).is_err()
         });
@@ -249,42 +297,31 @@ mod tests {
         const NUM_LABELS: usize = 1024 * 1024;
         const K1: u32 = 1000;
         const K2: usize = 1000;
-        let difficulty = proving_difficulty(NUM_LABELS as u64, 16, K1).unwrap();
 
         let mut data = vec![0u8; NUM_LABELS];
         thread_rng().fill_bytes(&mut data);
 
         let mut start_nonce = 0;
         let mut end_nonce = start_nonce + 20;
-        let aes_pow_params = ScryptParams::new(8, 0, 0);
+        let params = ProvingParams {
+            scrypt: ScryptParams::new(8, 0, 0),
+            difficulty: proving_difficulty(NUM_LABELS as u64, 16, K1).unwrap(),
+            k2_pow_difficulty: u64::MAX,
+            k3_pow_difficulty: u64::MAX,
+        };
 
-        let proof = loop {
+        let indexes = loop {
             let mut indicies = HashMap::<u32, Vec<u64>>::new();
-            let mut found_nonce = None;
 
-            let prover = ConstDProver::new(
-                challenge,
-                difficulty,
-                start_nonce..end_nonce,
-                aes_pow_params,
-            );
-            prover
-                .prove(&data, 0, |nonce, index| -> bool {
-                    let vec = indicies.entry(nonce).or_default();
-                    vec.push(index);
-                    if vec.len() >= K2 {
-                        found_nonce = Some(nonce);
-                        return true;
-                    }
-                    false
-                })
-                .unwrap();
-            if let Some(nonce) = found_nonce {
-                break Proof {
-                    nonce,
-                    // SAFETY: unwrap will never fail as we know that the key is present.
-                    indicies: indicies.remove(&nonce).unwrap(),
-                };
+            let prover = ConstDProver::new(challenge, start_nonce..end_nonce, params.clone());
+
+            let nonce = prover.prove(&data, 0, |nonce, index| -> bool {
+                let vec = indicies.entry(nonce).or_default();
+                vec.push(index);
+                vec.len() >= K2
+            });
+            if let Some(nonce) = nonce {
+                break indicies.remove(&nonce).unwrap();
             }
             (start_nonce, end_nonce) = (end_nonce, end_nonce + 20);
         };
@@ -294,14 +331,12 @@ mod tests {
         let expected = K2 / buckets;
         let bucket_id = |idx: u64| -> u64 { idx / (NUM_LABELS as u64 / 16 / buckets as u64) };
 
-        let buckets =
-            proof
-                .indicies
-                .into_iter()
-                .fold(HashMap::<u64, usize>::new(), |mut buckets, idx| {
-                    *buckets.entry(bucket_id(idx)).or_default() += 1;
-                    buckets
-                });
+        let buckets = indexes
+            .into_iter()
+            .fold(HashMap::<u64, usize>::new(), |mut buckets, idx| {
+                *buckets.entry(bucket_id(idx)).or_default() += 1;
+                buckets
+            });
 
         for (id, occurences) in buckets {
             let deviation_from_expected =
@@ -321,12 +356,16 @@ mod tests {
         let num_labels = 1e6 as usize;
         let k1 = 1000;
         let k2 = 1000;
-        let difficulty = proving_difficulty(num_labels as u64, 16, k1).unwrap();
-        let aes_pow_params = ScryptParams::new(8, 0, 0);
+        let params = ProvingParams {
+            scrypt: ScryptParams::new(8, 0, 0),
+            difficulty: proving_difficulty(num_labels as u64, 16, k1).unwrap(),
+            k2_pow_difficulty: u64::MAX,
+            k3_pow_difficulty: u64::MAX,
+        };
         let mut data = vec![0u8; num_labels];
         thread_rng().fill_bytes(&mut data);
 
-        let prover = ConstDProver::new(challenge, difficulty, 0..20, aes_pow_params);
+        let prover = ConstDProver::new(challenge, 0..20, params.clone());
 
         let mut indicies = HashMap::<u32, Vec<u64>>::new();
 
@@ -346,7 +385,7 @@ mod tests {
         assert!(nonce < 20);
 
         // Verify if all indicies really satisfy difficulty
-        let cipher = AesCipher::new(challenge, nonce / 2, aes_pow_params);
+        let cipher = prover.cipher(nonce).unwrap();
         let mut out = [0u64; 2];
 
         for idx in indicies {
@@ -356,7 +395,7 @@ mod tests {
                 bytemuck::cast_slice_mut(out.as_mut_slice()).into(),
             );
 
-            assert!(out[(nonce % 2) as usize] <= difficulty);
+            assert!(out[(nonce % 2) as usize] <= params.difficulty);
         }
     }
 
@@ -364,17 +403,21 @@ mod tests {
     fn proving_vector() {
         let challenge = b"hello world, CHALLENGE me!!!!!!!";
 
-        let num_labels = 1024;
+        let num_labels = 2048;
         let k1 = 4;
         let k2 = 32;
-        let difficulty = proving_difficulty(num_labels as u64, 16, k1).unwrap();
-        let aes_pow_params = ScryptParams::new(8, 0, 0);
+        let params = ProvingParams {
+            scrypt: ScryptParams::new(8, 0, 0),
+            difficulty: proving_difficulty(num_labels as u64, 16, k1).unwrap(),
+            k2_pow_difficulty: u64::MAX,
+            k3_pow_difficulty: u64::MAX,
+        };
         let data = repeat(0..=11) // it's important for range len to not be a multiple of AES block
             .flatten()
             .take(num_labels)
             .collect::<Vec<u8>>();
 
-        let prover = ConstDProver::new(challenge, difficulty, 0..20, aes_pow_params);
+        let prover = ConstDProver::new(challenge, 0..20, params);
 
         let mut indexes = HashMap::<u32, Vec<u64>>::new();
 
@@ -388,13 +431,13 @@ mod tests {
                 false
             })
             .unwrap();
-        assert_eq!(12, nonce);
+        assert_eq!(2, nonce);
 
         let indexes = indexes.remove(&nonce).unwrap();
         assert_eq!(
             &[
-                0, 1, 3, 4, 6, 7, 9, 10, 12, 13, 15, 16, 18, 19, 21, 22, 24, 25, 27, 28, 30, 31,
-                33, 34, 36, 37, 39, 40, 42, 43, 45, 46
+                2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 44, 47, 50, 53, 56, 59, 62,
+                65, 68, 71, 74, 77, 80, 83, 86, 89, 92, 95
             ],
             indexes.as_slice()
         );
