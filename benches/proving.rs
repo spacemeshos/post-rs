@@ -48,7 +48,7 @@ fn prover_bench(c: &mut Criterion) {
             |b, &(nonces, threads)| {
                 let prover = post::ConstDProver::new(CHALLENGE, 0..nonces, params.clone());
                 b.iter(|| {
-                    let f = black_box(|_, _| false);
+                    let f = black_box(|_, _| None);
                     match threads {
                         1 => data.chunks_exact(chunk_size).for_each(|chunk| {
                             prover.prove(chunk, 0, f);
@@ -112,7 +112,7 @@ fn var_b_prover_bench(c: &mut Criterion) {
                 let prover =
                     post::ConstDVarBProver::new(CHALLENGE, 0..nonces, param_b, params.clone());
                 b.iter(|| {
-                    let f = black_box(|_, _| false);
+                    let f = black_box(|_, _| None);
                     match threads {
                         1 => data.chunks_exact(chunk_size).for_each(|chunk| {
                             prover.prove(chunk, 0, f);
