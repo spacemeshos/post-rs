@@ -63,16 +63,6 @@ fn _generate_proof(
     let challenge = unsafe { std::slice::from_raw_parts(challenge, challenge_len) };
     let challenge = challenge.try_into()?;
 
-    //FIXME Figure out how to reuse the Config type instead of duplicating it.
-    let cfg = post::config::Config {
-        labels_per_unit: cfg.labels_per_unit,
-        k1: cfg.k1,
-        k2: cfg.k2,
-        k2_pow_difficulty: cfg.k2_pow_difficulty,
-        k3_pow_difficulty: cfg.k3_pow_difficulty,
-        b: cfg.b,
-        n: cfg.n,
-    };
     let proof = prove::generate_proof(datadir, challenge, cfg)?;
 
     let (ptr, len, cap) = proof.indicies.into_raw_parts();
