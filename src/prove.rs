@@ -11,7 +11,7 @@
 //! TODO: explain
 
 use aes::cipher::BlockEncrypt;
-use cipher::{block_padding::NoPadding, generic_array::GenericArray};
+use cipher::block_padding::NoPadding;
 use eyre::Context;
 use scrypt_jane::scrypt::ScryptParams;
 use std::{collections::HashMap, ops::Range, path::Path};
@@ -46,8 +46,6 @@ pub trait Prover {
     where
         F: FnMut(u32, u64) -> Option<Vec<u64>>;
 
-    fn required_aeses(&self) -> usize;
-
     fn get_k2_pow(&self, nonce: u32) -> Option<u64>;
 }
 
@@ -74,10 +72,6 @@ impl ConstDProver {
 }
 
 impl Prover for ConstDProver {
-    fn required_aeses(&self) -> usize {
-        self.ciphers.len()
-    }
-
     fn get_k2_pow(&self, nonce: u32) -> Option<u64> {
         self.cipher(nonce).map(|aes| aes.k2_pow)
     }
@@ -112,79 +106,12 @@ impl Prover for ConstDProver {
     }
 }
 
-pub struct ConstDVarBProver {
-    ciphers: Vec<AesCipher>,
-    difficulty: u64,
-    b: usize,
-}
-
-impl ConstDVarBProver {
-    pub fn new(challenge: &[u8; 32], nonces: Range<u32>, b: usize, params: ProvingParams) -> Self {
-        // Every cipher contains output for 2 nonces.
-        let num_ciphers = nonces.len() / 2;
-        ConstDVarBProver {
-            ciphers: nonces
-                .take(num_ciphers)
-                .map(|n| AesCipher::new(challenge, n, params.scrypt, params.k2_pow_difficulty))
-                .collect(),
-            difficulty: params.difficulty,
-            b,
-        }
-    }
-
-    fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
-        self.ciphers.get((nonce as usize % self.ciphers.len()) / 2)
-    }
-}
-
-impl Prover for ConstDVarBProver {
-    fn required_aeses(&self) -> usize {
-        self.ciphers.len()
-    }
-
-    fn get_k2_pow(&self, nonce: u32) -> Option<u64> {
-        self.cipher(nonce).map(|aes| aes.k2_pow)
-    }
-
-    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<(u32, Vec<u64>)>
-    where
-        F: FnMut(u32, u64) -> Option<Vec<u64>>,
-    {
-        let mut labels = [GenericArray::from([0u8; 16]); 8];
-        let mut blocks = [GenericArray::from([0u8; 16]); 8];
-
-        for chunk in batch.chunks_exact(self.b * AES_BATCH) {
-            for (i, block) in chunk.chunks_exact(self.b).enumerate() {
-                let slice = labels[i].as_mut_slice();
-                slice[0..block.len()].copy_from_slice(block);
-            }
-
-            for cipher in &self.ciphers {
-                cipher.aes.encrypt_blocks_b2b(&labels, &mut blocks).unwrap();
-
-                for (i, block) in blocks.iter().flat_map(|b| b.chunks_exact(8)).enumerate() {
-                    let val = u64::from_le_bytes(block.try_into().unwrap());
-                    if val <= self.difficulty {
-                        let nonce = cipher.nonce_group + i as u32 % 2;
-                        let index = index + (i / 2) as u64;
-                        if let Some(indexes) = consume(nonce, index) {
-                            return Some((nonce, indexes));
-                        }
-                    }
-                }
-            }
-            index += AES_BATCH as u64;
-        }
-        None
-    }
-}
-
 /// Generate a proof that data is still held, given the challenge.
 pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre::Result<Proof> {
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
 
     let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
-    let difficulty = proving_difficulty(num_labels, cfg.b, cfg.k1)?;
+    let difficulty = proving_difficulty(num_labels, 16, cfg.k1)?;
 
     let mut start_nonce = 0;
     let mut end_nonce = start_nonce + cfg.n;
@@ -210,14 +137,8 @@ pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre
                 None
             });
             if let Some((nonce, indexes)) = result {
-                let total_labels = metadata.num_units as u64
-                    * metadata.labels_per_unit
-                    * metadata.bits_per_label as u64
-                    / 8;
-                // Labels are indexed in blocks of 16
-                let max_index = total_labels / 16;
-                let required_bits = (max_index as f64).log2() as usize + 1;
-
+                let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
+                let required_bits = num_labels.ilog2() as usize + 1;
                 let compressed_indexes = compress_indexes(&indexes, required_bits);
                 let k3_pow = crate::pow::find_k3_pow(
                     challenge,
@@ -298,7 +219,7 @@ mod tests {
         const K1: u32 = 1000;
         const K2: usize = 1000;
 
-        let mut data = vec![0u8; NUM_LABELS];
+        let mut data = vec![0u8; NUM_LABELS * 16];
         thread_rng().fill_bytes(&mut data);
 
         let mut start_nonce = 0;
@@ -365,7 +286,7 @@ mod tests {
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
         };
-        let mut data = vec![0u8; num_labels];
+        let mut data = vec![0u8; num_labels * 16];
         thread_rng().fill_bytes(&mut data);
 
         let prover = ConstDProver::new(challenge, 0..20, params.clone());
@@ -416,7 +337,7 @@ mod tests {
         };
         let data = repeat(0..=11) // it's important for range len to not be a multiple of AES block
             .flatten()
-            .take(num_labels)
+            .take(num_labels * 16)
             .collect::<Vec<u8>>();
 
         let prover = ConstDProver::new(challenge, 0..20, params);
