@@ -5,6 +5,10 @@
 //!
 //! # proving algorithm
 //! TODO: describe the algorithm
+//! ## k2 proof of work
+//! TODO: explain
+//! ## k3 proof of work
+//! TODO: explain
 
 use aes::cipher::BlockEncrypt;
 use cipher::{block_padding::NoPadding, generic_array::GenericArray};

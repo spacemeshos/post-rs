@@ -6,9 +6,11 @@ pub struct Config {
     pub k1: u32,
     /// K2 is the number of labels below the required difficulty required for a proof.
     pub k2: u32,
-    /// TODO: document
+    /// Difficulty for K2 proof of work. Lower values increase difficulty of finding
+    /// `k2_pow` for [Proof][crate::prove::Proof].
     pub k2_pow_difficulty: u64,
-    /// TODO: document
+    /// Difficulty for K3 proof of work. Lower values increase difficulty of finding
+    /// `k3_pow` for [Proof][crate::prove::Proof].
     pub k3_pow_difficulty: u64,
     /// B is the number of labels used per AES invocation when generating a proof.
     /// Lower values speed up verification, higher values proof generation.
