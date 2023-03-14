@@ -18,7 +18,7 @@ pub struct ArrayU64 {
 #[repr(C)]
 pub struct Proof {
     nonce: u32,
-    indicies: ArrayU8,
+    indicies: ArrayU64,
     k2_pow: u64,
     k3_pow: u64,
 }
