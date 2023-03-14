@@ -29,7 +29,7 @@ fn prover_bench(c: &mut Criterion) {
 
     let chunk_size = 64 * KIB;
     let params = ProvingParams {
-        scrypt: ScryptParams::new(8, 0, 0),
+        scrypt: ScryptParams::new(12, 0, 0),
         difficulty: 0,               // impossible to find a proof
         k2_pow_difficulty: u64::MAX, // extremely easy to find k2_pow
         k3_pow_difficulty: u64::MAX,

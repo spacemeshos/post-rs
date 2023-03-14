@@ -117,7 +117,7 @@ pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre
     let mut end_nonce = start_nonce + cfg.n;
 
     let params = ProvingParams {
-        scrypt: ScryptParams::new(8, 0, 0),
+        scrypt: ScryptParams::new(12, 0, 0),
         difficulty,
         k2_pow_difficulty: cfg.k2_pow_difficulty,
         k3_pow_difficulty: cfg.k3_pow_difficulty,

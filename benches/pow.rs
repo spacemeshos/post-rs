@@ -13,7 +13,7 @@ fn bench_k2_pow(c: &mut Criterion) {
             post::pow::find_k2_pow(
                 CHALLENGE,
                 0,
-                ScryptParams::new(8, 0, 0),
+                ScryptParams::new(12, 0, 0),
                 black_box(0x0FFFFFFF_FFFFFFFF),
             )
         })
