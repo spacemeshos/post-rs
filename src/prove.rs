@@ -111,7 +111,7 @@ pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
 
     let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
-    let difficulty = proving_difficulty(num_labels, 16, cfg.k1)?;
+    let difficulty = proving_difficulty(num_labels, cfg.k1)?;
 
     let mut start_nonce = 0;
     let mut end_nonce = start_nonce + cfg.n;
@@ -226,7 +226,7 @@ mod tests {
         let mut end_nonce = start_nonce + 20;
         let params = ProvingParams {
             scrypt: ScryptParams::new(8, 0, 0),
-            difficulty: proving_difficulty(NUM_LABELS as u64, 16, K1).unwrap(),
+            difficulty: proving_difficulty(NUM_LABELS as u64, K1).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
         };
@@ -277,12 +277,12 @@ mod tests {
     fn proving() {
         let challenge = b"hello world, CHALLENGE me!!!!!!!";
 
-        let num_labels = 1e6 as usize;
+        let num_labels = 1e5 as usize;
         let k1 = 1000;
         let k2 = 1000;
         let params = ProvingParams {
             scrypt: ScryptParams::new(8, 0, 0),
-            difficulty: proving_difficulty(num_labels as u64, 16, k1).unwrap(),
+            difficulty: proving_difficulty(num_labels as u64, k1).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
         };
@@ -326,12 +326,12 @@ mod tests {
     fn proving_vector() {
         let challenge = b"hello world, CHALLENGE me!!!!!!!";
 
-        let num_labels = 2048;
+        let num_labels = 128;
         let k1 = 4;
         let k2 = 32;
         let params = ProvingParams {
             scrypt: ScryptParams::new(8, 0, 0),
-            difficulty: proving_difficulty(num_labels as u64, 16, k1).unwrap(),
+            difficulty: proving_difficulty(num_labels as u64, k1).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
         };
