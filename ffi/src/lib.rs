@@ -91,7 +91,7 @@ pub enum VerifyResult {
 /// Verify a proof
 ///
 /// # Safety
-/// `proof` and `metadata` must be initialized and properly aligned.
+/// `metadata` must be initialized and properly aligned.
 #[no_mangle]
 pub unsafe extern "C" fn verify_proof(
     proof: Proof,
@@ -136,7 +136,7 @@ pub unsafe extern "C" fn verify_proof(
             VerifyResult::Invalid
         }
     };
-    // avoid deallocating proof.indexes as this memory is owned by the other side.
+    // avoid deallocating proof.indices as this memory is owned by the other side.
     mem::forget(proof.indices);
     result
 }
