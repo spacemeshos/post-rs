@@ -29,7 +29,7 @@ fn prover_bench(c: &mut Criterion) {
 
     let chunk_size = 64 * KIB;
     let params = ProvingParams {
-        scrypt: ScryptParams::new(8, 0, 0),
+        scrypt: ScryptParams::new(12, 0, 0),
         difficulty: 0,               // impossible to find a proof
         k2_pow_difficulty: u64::MAX, // extremely easy to find k2_pow
         k3_pow_difficulty: u64::MAX,
@@ -41,7 +41,7 @@ fn prover_bench(c: &mut Criterion) {
     ) {
         group.bench_with_input(
             BenchmarkId::new(
-                format!("D=8/B=16/chunk={}KiB", chunk_size as f64 / KIB as f64),
+                format!("D=8/chunk={}KiB", chunk_size as f64 / KIB as f64),
                 format!("nonces={nonces}/threads={}", threads_to_str(threads)),
             ),
             &(nonces, threads),
@@ -79,76 +79,10 @@ fn prover_bench(c: &mut Criterion) {
     }
 }
 
-fn var_b_prover_bench(c: &mut Criterion) {
-    let mut group = c.benchmark_group("proving");
-
-    let mut data = vec![0; 32 * MIB];
-    thread_rng().fill_bytes(&mut data);
-    group.throughput(criterion::Throughput::Bytes(data.len() as u64));
-
-    let chunk_size = 64 * KIB;
-    let params = ProvingParams {
-        scrypt: ScryptParams::new(8, 0, 0),
-        difficulty: 0,               // impossible to find a proof
-        k2_pow_difficulty: u64::MAX, // extremely easy to find k2_pow
-        k3_pow_difficulty: u64::MAX,
-    };
-
-    for (nonces, threads, param_b) in itertools::iproduct!(
-        [2, 20, 200],
-        [0, 1], // 0 == automatic
-        [8]
-    ) {
-        group.bench_with_input(
-            BenchmarkId::new(
-                format!("D=8/chunk={}KiB", chunk_size as f64 / KIB as f64),
-                format!(
-                    "B={param_b}/nonces={nonces}/threads={}",
-                    threads_to_str(threads)
-                ),
-            ),
-            &(nonces, threads, param_b),
-            |b, &(nonces, threads, param_b)| {
-                let prover =
-                    post::ConstDVarBProver::new(CHALLENGE, 0..nonces, param_b, params.clone());
-                b.iter(|| {
-                    let f = black_box(|_, _| None);
-                    match threads {
-                        1 => data.chunks_exact(chunk_size).for_each(|chunk| {
-                            prover.prove(chunk, 0, f);
-                        }),
-                        0 => data
-                            .chunks_exact(chunk_size)
-                            .par_bridge()
-                            .for_each(|chunk| {
-                                prover.prove(chunk, 0, f);
-                            }),
-                        n => {
-                            let pool = rayon::ThreadPoolBuilder::new()
-                                .num_threads(n)
-                                .build()
-                                .unwrap();
-                            pool.install(|| {
-                                data.chunks_exact(chunk_size)
-                                    .par_bridge()
-                                    .for_each(|chunk| {
-                                        prover.prove(chunk, 0, f);
-                                    })
-                            });
-                        }
-                    }
-                });
-            },
-        );
-    }
-}
-
 criterion_group!(
     name = benches;
     config = Criterion::default().with_profiler(PProfProfiler::new(1000, Output::Flamegraph(None)));
-    targets=
-        prover_bench,
-        var_b_prover_bench,
+    targets=prover_bench,
 );
 
 criterion_main!(benches);
