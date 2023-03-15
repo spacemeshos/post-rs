@@ -10,8 +10,8 @@
 //! ## k3 proof of work
 //! TODO: explain
 
+use aes::cipher::block_padding::NoPadding;
 use aes::cipher::BlockEncrypt;
-use cipher::block_padding::NoPadding;
 use eyre::Context;
 use scrypt_jane::scrypt::ScryptParams;
 use std::{collections::HashMap, ops::Range, path::Path};
