@@ -2,9 +2,12 @@ mod cipher;
 mod compression;
 pub mod config;
 mod difficulty;
-mod metadata;
+pub mod initialize;
+pub mod metadata;
 pub mod pow;
 pub mod prove;
-pub mod reader;
-mod verify;
-pub use crate::prove::*;
+mod reader;
+pub mod verification;
+
+// Reexport scrypt-jane params
+pub use scrypt_jane::scrypt::ScryptParams;

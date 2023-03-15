@@ -80,15 +80,15 @@ mod tests {
         #[test]
         fn test_k2_pow(nonce: u32) {
             let difficulty = 0x7FFFFFFF_FFFFFFFF;
-            let k2_pow = find_k2_pow(&[0; 32], nonce, ScryptParams::new(8,0,0), difficulty);
-            assert!(hash_k2_pow(&[0; 32], nonce, ScryptParams::new(8,0,0), k2_pow) < difficulty);
+            let k2_pow = find_k2_pow(&[0; 32], nonce, ScryptParams::new(2,0,0), difficulty);
+            assert!(hash_k2_pow(&[0; 32], nonce, ScryptParams::new(2,0,0), k2_pow) < difficulty);
         }
 
         #[test]
         fn test_k3_pow(nonce: u32, k2_pow: u64, indexes: [u8; 64]) {
             let difficulty = 0x7FFFFFFF_FFFFFFFF;
-            let k3_pow = find_k3_pow(&[0; 32], nonce, &indexes, ScryptParams::new(8,0,0), difficulty, k2_pow);
-            assert!(hash_k3_pow(&[0; 32], nonce, &indexes, ScryptParams::new(8,0,0), k2_pow, k3_pow) < difficulty);
+            let k3_pow = find_k3_pow(&[0; 32], nonce, &indexes, ScryptParams::new(2,0,0), difficulty, k2_pow);
+            assert!(hash_k3_pow(&[0; 32], nonce, &indexes, ScryptParams::new(2,0,0), k2_pow, k3_pow) < difficulty);
         }
     }
 }

@@ -25,12 +25,13 @@ serde_with = { version = "2.2.0", features = ["base64"] }
 scrypt-jane = { git = "https://github.com/spacemeshos/scrypt-jane-rs", branch = "main" }
 blake3 = "1.3.3"
 bitvec = "1.0.1"
+sha2 = "0.10.6"
+rayon = "1.6.1"
 
 [dev-dependencies]
 criterion = "0.4"
 pprof = { version = "0.11.1", features = ["flamegraph", "criterion"] }
 tempfile = "3.3.0"
-rayon = "1.6.1"
 rand = "0.8.5"
 proptest = "1.1.0"
 
@@ -40,6 +41,10 @@ harness = false
 
 [[bench]]
 name = "pow"
+harness = false
+
+[[bench]]
+name = "verifying"
 harness = false
 
 [profile.release-clib]

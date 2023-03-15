@@ -17,8 +17,12 @@ use scrypt_jane::scrypt::ScryptParams;
 use std::{collections::HashMap, ops::Range, path::Path};
 
 use crate::{
-    cipher::AesCipher, compression::compress_indexes, config::Config,
-    difficulty::proving_difficulty, metadata, reader::read_data,
+    cipher::AesCipher,
+    compression::{compress_indices, required_bits},
+    config::Config,
+    difficulty::proving_difficulty,
+    metadata,
+    reader::read_data,
 };
 
 const BLOCK_SIZE: usize = 16; // size of the aes block
@@ -28,9 +32,20 @@ const CHUNK_SIZE: usize = BLOCK_SIZE * AES_BATCH;
 #[derive(Debug)]
 pub struct Proof {
     pub nonce: u32,
-    pub indicies: Vec<u64>,
+    pub indices: Vec<u8>,
     pub k2_pow: u64,
     pub k3_pow: u64,
+}
+
+impl Proof {
+    pub fn new(nonce: u32, indices: &[u64], keep_bits: usize, k2_pow: u64, k3_pow: u64) -> Self {
+        Self {
+            nonce,
+            indices: compress_indices(indices, keep_bits),
+            k2_pow,
+            k3_pow,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -107,17 +122,22 @@ impl Prover for ConstDProver {
 }
 
 /// Generate a proof that data is still held, given the challenge.
-pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre::Result<Proof> {
+pub fn generate_proof(
+    datadir: &Path,
+    challenge: &[u8; 32],
+    cfg: Config,
+    nonces: usize,
+) -> eyre::Result<Proof> {
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
 
     let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
     let difficulty = proving_difficulty(num_labels, cfg.k1)?;
 
     let mut start_nonce = 0;
-    let mut end_nonce = start_nonce + cfg.n;
+    let mut end_nonce = start_nonce + nonces as u32;
 
     let params = ProvingParams {
-        scrypt: ScryptParams::new(12, 0, 0),
+        scrypt: cfg.scrypt,
         difficulty,
         k2_pow_difficulty: cfg.k2_pow_difficulty,
         k3_pow_difficulty: cfg.k3_pow_difficulty,
@@ -138,27 +158,26 @@ pub fn generate_proof(datadir: &Path, challenge: &[u8; 32], cfg: Config) -> eyre
             });
             if let Some((nonce, indexes)) = result {
                 let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
-                let required_bits = num_labels.ilog2() as usize + 1;
-                let compressed_indexes = compress_indexes(&indexes, required_bits);
+                let required_bits = required_bits(num_labels);
+                let compressed_indices = compress_indices(&indexes, required_bits);
                 let k3_pow = crate::pow::find_k3_pow(
                     challenge,
                     nonce,
-                    &compressed_indexes,
+                    &compressed_indices,
                     params.scrypt,
                     params.k3_pow_difficulty,
                     prover.cipher(nonce).unwrap().k2_pow,
                 );
                 return Ok(Proof {
                     nonce,
-                    // TODO(poszu) include compressed indexes once we move verification to this library.
-                    indicies: indexes,
+                    indices: compressed_indices,
                     k2_pow: prover.get_k2_pow(nonce).unwrap(),
                     k3_pow,
                 });
             }
         }
 
-        (start_nonce, end_nonce) = (end_nonce, end_nonce + cfg.n);
+        (start_nonce, end_nonce) = (end_nonce, end_nonce + nonces as u32);
     }
 }
 
@@ -174,7 +193,7 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         let challenge = b"hello world, challenge me!!!!!!!";
         let params = ProvingParams {
-            scrypt: ScryptParams::new(8, 0, 0),
+            scrypt: ScryptParams::new(1, 0, 0),
             difficulty: u64::MAX,
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
@@ -225,7 +244,7 @@ mod tests {
         let mut start_nonce = 0;
         let mut end_nonce = start_nonce + 20;
         let params = ProvingParams {
-            scrypt: ScryptParams::new(8, 0, 0),
+            scrypt: ScryptParams::new(1, 0, 0),
             difficulty: proving_difficulty(NUM_LABELS as u64, K1).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
@@ -239,6 +258,7 @@ mod tests {
             let result = prover.prove(&data, 0, |nonce, index| {
                 let vec = indicies.entry(nonce).or_default();
                 vec.push(index);
+
                 if vec.len() >= K2 {
                     return Some(std::mem::take(vec));
                 }
@@ -281,7 +301,7 @@ mod tests {
         let k1 = 1000;
         let k2 = 1000;
         let params = ProvingParams {
-            scrypt: ScryptParams::new(8, 0, 0),
+            scrypt: ScryptParams::new(1, 0, 0),
             difficulty: proving_difficulty(num_labels as u64, k1).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
