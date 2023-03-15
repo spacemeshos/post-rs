@@ -5,10 +5,11 @@ use scrypt_jane::scrypt::{self, ScryptParams};
 use crate::{
     cipher::AesCipher,
     compression::{decompress_indexes, required_bits},
+    difficulty::proving_difficulty,
     initialize::calc_commitment,
     metadata::ProofMetadata,
     pow::{hash_k2_pow, hash_k3_pow},
-    Proof,
+    prove::Proof,
 };
 
 #[inline]
@@ -29,6 +30,18 @@ pub struct VerifyingParams {
     pub k2_pow_difficulty: u64,
     pub k3_pow_difficulty: u64,
     pub scrypt: ScryptParams,
+}
+
+impl VerifyingParams {
+    pub fn new(num_labels: u64, cfg: crate::config::Config) -> eyre::Result<Self> {
+        Ok(Self {
+            difficulty: proving_difficulty(num_labels, cfg.k1)?,
+            k2: cfg.k2,
+            k2_pow_difficulty: cfg.k2_pow_difficulty,
+            k3_pow_difficulty: cfg.k3_pow_difficulty,
+            scrypt: cfg.scrypt,
+        })
+    }
 }
 
 /// Verify if a proof is valid.
@@ -143,11 +156,10 @@ mod tests {
     use crate::{
         metadata::ProofMetadata,
         pow::{find_k2_pow, find_k3_pow},
-        verification::{expected_indices_bytes, next_multiple_of, verify},
-        Proof,
+        prove::Proof,
     };
 
-    use super::VerifyingParams;
+    use super::{expected_indices_bytes, next_multiple_of, verify, VerifyingParams};
 
     #[test]
     fn test_next_mutliple_of() {

@@ -1,8 +1,8 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use post::{
     metadata::ProofMetadata,
+    prove::Proof,
     verification::{verify, VerifyingParams},
-    Proof,
 };
 use pprof::criterion::{Output, PProfProfiler};
 

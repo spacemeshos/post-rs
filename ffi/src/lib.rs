@@ -10,7 +10,10 @@ use eyre::Context;
 pub use post::config::Config;
 pub use post::metadata::ProofMetadata;
 pub use post::ScryptParams;
-use post::{difficulty::proving_difficulty, prove, verification::verify};
+use post::{
+    prove,
+    verification::{verify, VerifyingParams},
+};
 
 #[repr(C)]
 pub struct ArrayU8 {
@@ -102,7 +105,7 @@ pub unsafe extern "C" fn verify_proof(
     let proof = {
         let indices =
             unsafe { Vec::from_raw_parts(proof.indices.ptr, proof.indices.len, proof.indices.cap) };
-        post::Proof {
+        post::prove::Proof {
             nonce: proof.nonce,
             indices,
             k2_pow: proof.k2_pow,
@@ -116,17 +119,9 @@ pub unsafe extern "C" fn verify_proof(
     };
 
     let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
-    let difficulty = if let Ok(d) = proving_difficulty(num_labels, cfg.k1) {
-        d
-    } else {
-        return VerifyResult::InvalidArgument;
-    };
-    let params = post::verification::VerifyingParams {
-        difficulty,
-        k2: cfg.k2,
-        k2_pow_difficulty: cfg.k2_pow_difficulty,
-        k3_pow_difficulty: cfg.k3_pow_difficulty,
-        scrypt: cfg.scrypt,
+    let params = match VerifyingParams::new(num_labels, cfg) {
+        Ok(params) => params,
+        Err(_) => return VerifyResult::InvalidArgument,
     };
 
     let result = match verify(&proof, metadata, params, threads) {

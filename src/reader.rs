@@ -8,12 +8,12 @@ use itertools::Itertools;
 use regex::Regex;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Batch {
+pub(crate) struct Batch {
     pub data: Vec<u8>,
     pub index: u64,
 }
 
-pub struct BatchingReader<T>
+pub(crate) struct BatchingReader<T>
 where
     T: Read,
 {
@@ -71,7 +71,7 @@ fn pos_files(datadir: &Path) -> impl Iterator<Item = DirEntry> {
         .sorted_by_key(|entry| entry.path())
 }
 
-pub fn read_data(datadir: &Path, batch_size: usize) -> impl Iterator<Item = Batch> {
+pub(crate) fn read_data(datadir: &Path, batch_size: usize) -> impl Iterator<Item = Batch> {
     let mut pos = 0;
     let mut readers = Vec::<BatchingReader<File>>::new();
     for entry in pos_files(datadir) {

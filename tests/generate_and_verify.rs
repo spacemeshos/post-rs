@@ -1,6 +1,8 @@
 use post::{
-    difficulty::proving_difficulty, generate_proof, initialize::initialize,
-    metadata::ProofMetadata, verification::verify,
+    initialize::initialize,
+    metadata::ProofMetadata,
+    prove::generate_proof,
+    verification::{verify, VerifyingParams},
 };
 use scrypt_jane::scrypt::ScryptParams;
 use tempfile::tempdir;
@@ -34,13 +36,6 @@ fn test_generate_and_verify() {
     let proof = generate_proof(datadir.path(), challenge, cfg, 10).unwrap();
 
     // Verify the proof
-    let params = post::verification::VerifyingParams {
-        difficulty: proving_difficulty(num_labels, cfg.k1).unwrap(),
-        k2: cfg.k2,
-        k2_pow_difficulty: cfg.k2_pow_difficulty,
-        k3_pow_difficulty: cfg.k3_pow_difficulty,
-        scrypt: cfg.scrypt,
-    };
     let valid = verify(
         &proof,
         &ProofMetadata {
@@ -50,7 +45,7 @@ fn test_generate_and_verify() {
             num_units: metadata.num_units,
             labels_per_unit: metadata.labels_per_unit,
         },
-        params,
+        VerifyingParams::new(num_labels, cfg).unwrap(),
         0,
     );
 
