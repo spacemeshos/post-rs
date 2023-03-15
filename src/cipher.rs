@@ -21,6 +21,10 @@ impl AesCipher {
         k2_pow_difficulty: u64,
     ) -> Self {
         let k2_pow = pow::find_k2_pow(challenge, nonce_group, params, k2_pow_difficulty);
+        Self::new_with_k2pow(challenge, nonce_group, k2_pow)
+    }
+
+    pub(crate) fn new_with_k2pow(challenge: &[u8; 32], nonce_group: u32, k2_pow: u64) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(challenge);
         hasher.update(&nonce_group.to_le_bytes());
@@ -46,7 +50,7 @@ mod tests {
     proptest! {
         #[test]
         fn different_nonces_give_different_ciphers(a: u32, b: u32, challenge: [u8; 32], data: [u8; 16]) {
-            let params = ScryptParams::new(2, 0, 0);
+            let params = ScryptParams::new(1, 0, 0);
             let data = GenericArray::from(data);
             let cipher1 = AesCipher::new(&challenge, a, params, u64::MAX);
             let cipher2 = AesCipher::new(&challenge, b, params, u64::MAX);
@@ -65,7 +69,7 @@ mod tests {
         }
         #[test]
         fn different_challenges_give_different_ciphers(challenge1: [u8; 32], challenge2: [u8; 32], nonce: u32, data: [u8; 16]) {
-            let params = ScryptParams::new(2, 0, 0);
+            let params = ScryptParams::new(1, 0, 0);
             let data = GenericArray::from(data);
             let cipher1 = AesCipher::new(&challenge1, nonce, params, u64::MAX);
             let cipher2 = AesCipher::new(&challenge2, nonce, params, u64::MAX);

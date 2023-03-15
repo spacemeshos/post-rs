@@ -11,6 +11,6 @@ pub struct Config {
     /// Difficulty for K3 proof of work. Lower values increase difficulty of finding
     /// `k3_pow` for [Proof][crate::prove::Proof].
     pub k3_pow_difficulty: u64,
-    /// n is the number of nonces to try at the same time.
-    pub n: u32,
+
+    pub scrypt: scrypt_jane::scrypt::ScryptParams,
 }
