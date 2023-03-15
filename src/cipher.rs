@@ -1,5 +1,5 @@
+use aes::cipher::{generic_array::GenericArray, KeyInit};
 use aes::Aes128;
-use cipher::{generic_array::GenericArray, KeyInit};
 use scrypt_jane::scrypt::ScryptParams;
 
 use crate::pow;
@@ -37,7 +37,7 @@ impl AesCipher {
 
 #[cfg(test)]
 mod tests {
-    use cipher::{generic_array::GenericArray, BlockEncrypt};
+    use aes::cipher::{generic_array::GenericArray, BlockEncrypt};
     use proptest::prelude::*;
     use scrypt_jane::scrypt::ScryptParams;
 

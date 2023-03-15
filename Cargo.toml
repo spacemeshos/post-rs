@@ -11,7 +11,9 @@ name = "post"
 
 [dependencies]
 aes = "0.8.2"
-cipher = "0.4.2"
+# Take a dependency on cipher to enable block-padding feature
+# as `aes` doesn't expose it.
+cipher = { version = "*", features = ["block-padding"] }
 eyre = "0.6.8"
 regex = "1.7.1"
 itertools = "0.10.5"
@@ -31,10 +33,6 @@ tempfile = "3.3.0"
 rayon = "1.6.1"
 rand = "0.8.5"
 proptest = "1.1.0"
-
-[features]
-default = ["block-padding"]
-block-padding = ["cipher/block-padding"]
 
 [[bench]]
 name = "proving"
