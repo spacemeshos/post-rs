@@ -1,4 +1,43 @@
+//! # Proof verification
+//!
+//! ## Steps to verify a proof:
+//!
+//! 1. verify k2_pow
+//! 2. verify k3_pow
+//! 3. verify number of indices == K2
+//! 4. select K3 indices
+//! 5. verify each of K3 selected indices satisfy difficulty (inferred from K1)
+//!
+//! ## Selecting subset of K3 proven indices
+//!
+//! ```text
+//! seed = concat(ch, nonce, all_indices, k2pow, k3pow)
+//! random_bytes = blake3(seed) // infinite blake output
+//! for (j:=0; j<K3; j++)
+//!   max_allowed = u16::MAX - (u16::MAX % (K2 - j))
+//!   do {
+//!     rand_num = random_bytes.read_u16_le()
+//!   } while rand_num > max_allowed;
+//!
+//!   index = rand_num % (K2 - j)
+//!   if validate_label(all_indices[index]) is INVALID
+//!     return INVALID
+//!   all_indices[index] = all_indices[k2-j-1]
+//! return true
+//! ```
+//!
+//! ## Verifying K3 indexes
+//!
+//! We must check if every index satisfies the difficulty condition.
+//! To do so, we must repeat similar work as proving. Steps:
+//! 1. Initialize AES cipher for proof's nonce.
+//! 2. For each index:
+//!     - replicate the label it points to,
+//!     - encrypt it with AES,
+//!     - convert AES output to u64,
+//!     - compare it with difficulty.
 use cipher::BlockEncrypt;
+use itertools::Itertools;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 use scrypt_jane::scrypt::{self, ScryptParams};
 
@@ -10,6 +49,7 @@ use crate::{
     metadata::ProofMetadata,
     pow::{hash_k2_pow, hash_k3_pow},
     prove::Proof,
+    random_values_gen::FisherYatesShuffle,
 };
 
 #[inline]
@@ -27,8 +67,10 @@ fn generate_label(commitment: &[u8; 32], params: ScryptParams, index: u64) -> [u
 pub struct VerifyingParams {
     pub difficulty: u64,
     pub k2: u32,
+    pub k3: u32,
     pub k2_pow_difficulty: u64,
     pub k3_pow_difficulty: u64,
+    pub pow_scrypt: ScryptParams,
     pub scrypt: ScryptParams,
 }
 
@@ -37,8 +79,10 @@ impl VerifyingParams {
         Ok(Self {
             difficulty: proving_difficulty(num_labels, cfg.k1)?,
             k2: cfg.k2,
+            k3: cfg.k3,
             k2_pow_difficulty: cfg.k2_pow_difficulty,
             k3_pow_difficulty: cfg.k3_pow_difficulty,
+            pow_scrypt: cfg.pow_scrypt,
             scrypt: cfg.scrypt,
         })
     }
@@ -48,14 +92,10 @@ impl VerifyingParams {
 ///
 /// Arguments:
 ///
-/// * `proof`: The proof that we're verifying.
+/// * `proof`: The proof that to verify
 /// * `metadata`: ProofMetadata
 /// * `params`: VerifyingParams
 /// * `threads`: The number of threads to use for verification.
-///
-/// Returns:
-///
-/// A boolean value.
 pub fn verify(
     proof: &Proof,
     metadata: &ProofMetadata,
@@ -66,7 +106,7 @@ pub fn verify(
 
     // Verify K2 PoW
     let nonce_group = proof.nonce / 2;
-    let k2_pow_value = hash_k2_pow(&challenge, nonce_group, params.scrypt, proof.k2_pow);
+    let k2_pow_value = hash_k2_pow(&challenge, nonce_group, params.pow_scrypt, proof.k2_pow);
     if k2_pow_value >= params.k2_pow_difficulty {
         return Err(format!(
             "k2 pow is invalid: {k2_pow_value} >= {}",
@@ -79,7 +119,7 @@ pub fn verify(
         &challenge,
         proof.nonce,
         &proof.indices,
-        params.scrypt,
+        params.pow_scrypt,
         proof.k2_pow,
         proof.k3_pow,
     );
@@ -101,12 +141,22 @@ pub fn verify(
         ));
     }
 
-    let indexes = decompress_indexes(&proof.indices, bits_per_index);
+    let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index).collect_vec();
     let commitment = calc_commitment(&metadata.node_id, &metadata.commitment_atx_id);
-
     let nonce_group = proof.nonce / 2;
     let cipher = AesCipher::new_with_k2pow(&challenge, nonce_group, proof.k2_pow);
     let output_index = (proof.nonce % 2) as usize;
+
+    // Select K3 indices
+    let seed = &[
+        challenge.as_slice(),
+        &proof.nonce.to_le_bytes(),
+        proof.indices.as_slice(),
+        &proof.k2_pow.to_le_bytes(),
+        &proof.k3_pow.to_le_bytes(),
+    ];
+
+    let k3_indices = FisherYatesShuffle::new(indices_unpacked, seed).take(params.k3 as usize);
 
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
@@ -114,7 +164,7 @@ pub fn verify(
         .unwrap();
 
     pool.install(|| {
-        indexes.par_bridge().try_for_each(|index| {
+        k3_indices.par_bridge().try_for_each(|index| {
             let mut u64s = [0u64; 2];
             let label = generate_label(&commitment, params.scrypt, index);
             cipher.aes.encrypt_block_b2b(
@@ -181,8 +231,10 @@ mod tests {
         let params = VerifyingParams {
             difficulty: u64::MAX,
             k2: 10,
+            k3: 10,
             k2_pow_difficulty: u64::MAX / 16,
             k3_pow_difficulty: u64::MAX / 16,
+            pow_scrypt: scrypt_params,
             scrypt: scrypt_params,
         };
 

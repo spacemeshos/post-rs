@@ -17,9 +17,11 @@ fn test_generate_and_verify() {
     let cfg = post::config::Config {
         k1: 32,
         k2: 32,
+        k3: 10,
         k2_pow_difficulty: u64::MAX / 8,
         k3_pow_difficulty: u64::MAX / 8,
-        scrypt: ScryptParams::new(1, 0, 0),
+        pow_scrypt: ScryptParams::new(1, 0, 0),
+        scrypt: ScryptParams::new(2, 0, 0),
     };
 
     let metadata = initialize(
