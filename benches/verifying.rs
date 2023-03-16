@@ -28,8 +28,8 @@ fn verifying(c: &mut Criterion) {
     let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
 
     for (k2, k3, threads) in itertools::iproduct!(
-        [200u32, 2000],
-        [25u32, 50],
+        [200, 300],
+        [50, 100],
         [0, 1] // 0 == automatic
     ) {
         c.bench_with_input(
