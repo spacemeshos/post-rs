@@ -11,20 +11,20 @@
 //! ## Selecting subset of K3 proven indices
 //!
 //! ```text
-//! seed = concat(ch, nonce, all_indices, k2pow, k3pow)
+//! seed = concat(ch, nonce, indices, k2pow, k3pow)
 //! random_bytes = blake3(seed) // infinite blake output
-//! for (j:=0; j<K3; j++)
-//!   max_allowed = u16::MAX - (u16::MAX % (K2 - j))
+//! for (index=0; index<K3; index++) {
+//!   remaining = K2 - index
+//!   max_allowed = u16::MAX - (u16::MAX % remaining)
 //!   do {
 //!     rand_num = random_bytes.read_u16_le()
-//!   } while rand_num > max_allowed;
+//!   } while rand_num >= max_allowed;
 //!
-//!   index = rand_num % (K2 - j)
-//!   if validate_label(all_indices[index]) is INVALID
-//!     return INVALID
-//!   all_indices[index] = all_indices[k2-j-1]
-//! return true
+//!   to_swap = (rand_num % remaining) + index
+//!   indices.swap(index, to_swap)
+//! }
 //! ```
+//! indices[0..K3] now contains randomly picked values
 //!
 //! ## Verifying K3 indexes
 //!
@@ -49,7 +49,7 @@ use crate::{
     metadata::ProofMetadata,
     pow::{hash_k2_pow, hash_k3_pow},
     prove::Proof,
-    random_values_gen::FisherYatesShuffle,
+    random_values_gen::RandomValuesIterator,
 };
 
 #[inline]
@@ -156,7 +156,7 @@ pub fn verify(
         &proof.k3_pow.to_le_bytes(),
     ];
 
-    let k3_indices = FisherYatesShuffle::new(indices_unpacked, seed).take(params.k3 as usize);
+    let k3_indices = RandomValuesIterator::new(indices_unpacked, seed).take(params.k3 as usize);
 
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
