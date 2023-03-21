@@ -1,12 +1,11 @@
 use std::{error::Error, fs::File, io::Write, path::Path};
 
 use scrypt_jane::scrypt::{scrypt, ScryptParams};
-use sha2::{Digest, Sha256};
 
 use crate::metadata::PostMetadata;
 
 pub(crate) fn calc_commitment(node_id: &[u8; 32], commitment_atx_id: &[u8; 32]) -> [u8; 32] {
-    let mut hasher = Sha256::new();
+    let mut hasher = blake3::Hasher::new();
     hasher.update(node_id);
     hasher.update(commitment_atx_id);
     hasher.finalize().into()
