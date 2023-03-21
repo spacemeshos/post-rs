@@ -27,17 +27,18 @@ fn verifying(c: &mut Criterion) {
     };
     let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
 
-    for (k2, threads) in itertools::iproduct!(
-        [200u32, 2000],
+    for (k2, k3, threads) in itertools::iproduct!(
+        [200, 300],
+        [50, 100],
         [0, 1] // 0 == automatic
     ) {
         c.bench_with_input(
             BenchmarkId::new(
                 "verify",
-                format!("k2={k2}/threads={}", threads_to_str(threads)),
+                format!("k2={k2}/k3={k3}/threads={}", threads_to_str(threads)),
             ),
-            &(k2, threads),
-            |b, &(k2, _threads)| {
+            &(k2, k3, threads),
+            |b, &(k2, k3, threads)| {
                 let proof = Proof::new(
                     0,
                     (0..k2 as u64).collect::<Vec<u64>>().as_slice(),
@@ -48,8 +49,10 @@ fn verifying(c: &mut Criterion) {
                 let params = VerifyingParams {
                     difficulty: u64::MAX,
                     k2,
+                    k3,
                     k2_pow_difficulty: u64::MAX,
                     k3_pow_difficulty: u64::MAX,
+                    pow_scrypt: ScryptParams::new(6, 0, 0),
                     scrypt: ScryptParams::new(12, 0, 0),
                 };
 

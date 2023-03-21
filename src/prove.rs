@@ -137,7 +137,7 @@ pub fn generate_proof(
     let mut end_nonce = start_nonce + nonces as u32;
 
     let params = ProvingParams {
-        scrypt: cfg.scrypt,
+        scrypt: cfg.pow_scrypt,
         difficulty,
         k2_pow_difficulty: cfg.k2_pow_difficulty,
         k3_pow_difficulty: cfg.k3_pow_difficulty,
