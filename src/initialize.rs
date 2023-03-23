@@ -171,7 +171,7 @@ mod tests {
                     total_size += size;
                 }
                 _ => {
-                    assert_eq!(16 * 15, size); // Last one is smaller
+                    assert_eq!(16 * 15, size);
                     total_size += size;
                 }
             }
