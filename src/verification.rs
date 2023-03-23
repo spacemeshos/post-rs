@@ -39,29 +39,18 @@
 use cipher::BlockEncrypt;
 use itertools::Itertools;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
-use scrypt_jane::scrypt::{self, ScryptParams};
+use scrypt_jane::scrypt::ScryptParams;
 
 use crate::{
     cipher::AesCipher,
     compression::{decompress_indexes, required_bits},
     difficulty::proving_difficulty,
-    initialize::calc_commitment,
+    initialize::{calc_commitment, generate_label},
     metadata::ProofMetadata,
     pow::{hash_k2_pow, hash_k3_pow},
     prove::Proof,
     random_values_gen::RandomValuesIterator,
 };
-
-#[inline]
-fn generate_label(commitment: &[u8; 32], params: ScryptParams, index: u64) -> [u8; 16] {
-    let mut data = [0u8; 72];
-    data[0..32].copy_from_slice(commitment);
-    data[32..40].copy_from_slice(&index.to_le_bytes());
-
-    let mut label = [0u8; 16];
-    scrypt::scrypt(&data, &[], params, &mut label);
-    label
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct VerifyingParams {
