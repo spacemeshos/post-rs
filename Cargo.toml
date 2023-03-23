@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "ffi"]
+members = [".", "ffi", "profiler"]
 
 [package]
 name = "post-rs"
