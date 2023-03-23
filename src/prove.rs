@@ -25,6 +25,7 @@ use crate::{
     reader::read_data,
 };
 
+const LABEL_SIZE: usize = 16; // size of the label in bytes
 const BLOCK_SIZE: usize = 16; // size of the aes block
 const AES_BATCH: usize = 8; // will use encrypt8 asm method
 const CHUNK_SIZE: usize = BLOCK_SIZE * AES_BATCH;
@@ -144,18 +145,22 @@ pub fn generate_proof(
     };
 
     loop {
-        for batch in read_data(datadir, 1024 * 1024) {
-            let mut indexes = HashMap::<u32, Vec<u64>>::new();
+        let mut indexes = HashMap::<u32, Vec<u64>>::new();
 
+        for batch in read_data(datadir, 1024 * 1024, metadata.max_file_size) {
             let prover = ConstDProver::new(challenge, start_nonce..end_nonce, params.clone());
-            let result = prover.prove(&batch.data, batch.index, |nonce, index| {
-                let vec = indexes.entry(nonce).or_default();
-                vec.push(index);
-                if vec.len() >= cfg.k2 as usize {
-                    return Some(std::mem::take(vec));
-                }
-                None
-            });
+            let result = prover.prove(
+                &batch.data,
+                batch.pos / LABEL_SIZE as u64,
+                |nonce, index| {
+                    let vec = indexes.entry(nonce).or_default();
+                    vec.push(index);
+                    if vec.len() >= cfg.k2 as usize {
+                        return Some(std::mem::take(vec));
+                    }
+                    None
+                },
+            );
             if let Some((nonce, indexes)) = result {
                 let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
                 let required_bits = required_bits(num_labels);
@@ -199,7 +204,7 @@ mod tests {
             k3_pow_difficulty: u64::MAX,
         };
         let prover = ConstDProver::new(challenge, 0..1, params);
-        let res = prover.prove(&[0u8; 16 * 8], 0, |nonce, index| {
+        let res = prover.prove(&[0u8; 8 * LABEL_SIZE], 0, |nonce, index| {
             let _ = tx.send((nonce, index));
             None
         });
@@ -238,7 +243,7 @@ mod tests {
         const K1: u32 = 1000;
         const K2: usize = 1000;
 
-        let mut data = vec![0u8; NUM_LABELS * 16];
+        let mut data = vec![0u8; NUM_LABELS * LABEL_SIZE];
         thread_rng().fill_bytes(&mut data);
 
         let mut start_nonce = 0;
@@ -273,7 +278,7 @@ mod tests {
         // verify distribution
         let buckets = 10;
         let expected = K2 / buckets;
-        let bucket_id = |idx: u64| -> u64 { idx / (NUM_LABELS as u64 / 16 / buckets as u64) };
+        let bucket_id = |idx: u64| -> u64 { idx / (NUM_LABELS / LABEL_SIZE / buckets) as u64 };
 
         let buckets = indexes
             .into_iter()
@@ -306,7 +311,7 @@ mod tests {
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
         };
-        let mut data = vec![0u8; num_labels * 16];
+        let mut data = vec![0u8; num_labels * LABEL_SIZE];
         thread_rng().fill_bytes(&mut data);
 
         let prover = ConstDProver::new(challenge, 0..20, params.clone());
@@ -334,7 +339,7 @@ mod tests {
         for idx in indexes {
             let idx = idx as usize;
             cipher.aes.encrypt_block_b2b(
-                data[idx * 16..(idx + 1) * 16].into(),
+                data[idx * LABEL_SIZE..(idx + 1) * LABEL_SIZE].into(),
                 bytemuck::cast_slice_mut(out.as_mut_slice()).into(),
             );
 
@@ -357,7 +362,7 @@ mod tests {
         };
         let data = repeat(0..=11) // it's important for range len to not be a multiple of AES block
             .flatten()
-            .take(num_labels * 16)
+            .take(num_labels * LABEL_SIZE)
             .collect::<Vec<u8>>();
 
         let prover = ConstDProver::new(challenge, 0..20, params);

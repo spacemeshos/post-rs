@@ -11,7 +11,7 @@ use tempfile::tempdir;
 fn test_generate_and_verify() {
     // Initialize some data
     let challenge = b"hello world, challenge me!!!!!!!";
-    let num_labels = 256;
+    let labels_per_unit = 256;
     let datadir = tempdir().unwrap();
 
     let cfg = post::config::Config {
@@ -28,8 +28,9 @@ fn test_generate_and_verify() {
         datadir.path(),
         &[0u8; 32],
         &[0u8; 32],
-        num_labels,
-        1,
+        labels_per_unit,
+        3,
+        labels_per_unit,
         cfg.scrypt,
     )
     .unwrap();
@@ -47,7 +48,7 @@ fn test_generate_and_verify() {
             num_units: metadata.num_units,
             labels_per_unit: metadata.labels_per_unit,
         },
-        VerifyingParams::new(num_labels, cfg).unwrap(),
+        VerifyingParams::new(labels_per_unit, cfg).unwrap(),
         0,
     );
 
