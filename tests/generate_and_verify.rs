@@ -29,7 +29,7 @@ fn test_generate_and_verify() {
         &[0u8; 32],
         &[0u8; 32],
         labels_per_unit,
-        3,
+        31,
         labels_per_unit,
         cfg.scrypt,
     )

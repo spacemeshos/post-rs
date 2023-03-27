@@ -69,16 +69,19 @@ impl<T: Read> Iterator for BatchingReader<T> {
 }
 
 fn pos_files(datadir: &Path) -> impl Iterator<Item = DirEntry> {
-    let file_re = Regex::new(r"postdata_\d+\.bin").unwrap();
+    let file_re = Regex::new(r"postdata_(\d+)\.bin").unwrap();
     datadir
         .read_dir()
         .expect("read_dir call failed")
-        .filter_map(|entry| match entry {
-            Ok(entry) => Some(entry),
-            Err(_) => None,
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            file_re
+                .captures(entry.file_name().to_string_lossy().as_ref())
+                .and_then(|c| c.get(1).unwrap().as_str().parse::<u64>().ok())
+                .map(|id| (id, entry))
         })
-        .filter(|entry| file_re.is_match(entry.path().to_str().unwrap()))
-        .sorted_by_key(|entry| entry.path())
+        .sorted_by_key(|(id, _)| *id)
+        .map(|(_, entry)| entry)
 }
 
 pub(crate) fn read_data(
@@ -110,9 +113,7 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use crate::reader::{Batch, BatchingReader};
-
-    use super::read_data;
+    use super::{pos_files, read_data, Batch, BatchingReader};
 
     #[test]
     fn batching_reader() {
@@ -173,5 +174,23 @@ mod tests {
         write!(tmp_file, "some data").unwrap();
 
         assert!(read_data(tmp_dir.path(), 4, 4).next().is_none());
+    }
+
+    #[test]
+    fn pos_files_are_sorted() {
+        let tmp_dir = tempdir().unwrap();
+        let total_files = 100;
+        for i in 0..total_files {
+            File::create(tmp_dir.path().join(format!("postdata_{i}.bin"))).unwrap();
+        }
+
+        assert_eq!(total_files, pos_files(tmp_dir.path()).count());
+
+        for (i, file) in pos_files(tmp_dir.path()).enumerate() {
+            assert_eq!(
+                format!("postdata_{i}.bin"),
+                file.file_name().to_string_lossy()
+            );
+        }
     }
 }
