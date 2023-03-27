@@ -46,6 +46,10 @@ harness = false
 name = "verifying"
 harness = false
 
+[[bench]]
+name = "initializing"
+harness = false
+
 [profile.release-clib]
 inherits = "release"
 strip = true
