@@ -51,8 +51,9 @@ pub extern "C" fn generate_proof(
     challenge: *const c_uchar,
     cfg: Config,
     nonces: usize,
+    threads: usize,
 ) -> *mut Proof {
-    match _generate_proof(datadir, challenge, cfg, nonces) {
+    match _generate_proof(datadir, challenge, cfg, nonces, threads) {
         Ok(proof) => proof,
         Err(e) => {
             //TODO(poszu) communicate errors better
@@ -67,6 +68,7 @@ fn _generate_proof(
     challenge: *const c_uchar,
     cfg: Config,
     nonces: usize,
+    threads: usize,
 ) -> eyre::Result<*mut Proof> {
     let datadir = unsafe { CStr::from_ptr(datadir) };
     let datadir = Path::new(datadir.to_str().context("parsing datadir as UTF-8")?);
@@ -74,7 +76,7 @@ fn _generate_proof(
     let challenge = unsafe { std::slice::from_raw_parts(challenge, 32) };
     let challenge = challenge.try_into()?;
 
-    let proof = prove::generate_proof(datadir, challenge, cfg, nonces)?;
+    let proof = prove::generate_proof(datadir, challenge, cfg, nonces, threads)?;
 
     let (ptr, len, cap) = proof.indices.into_raw_parts();
     let proof = Box::new(Proof {
