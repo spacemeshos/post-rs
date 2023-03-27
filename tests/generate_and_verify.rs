@@ -36,7 +36,7 @@ fn test_generate_and_verify() {
     .unwrap();
 
     // Generate a proof
-    let proof = generate_proof(datadir.path(), challenge, cfg, 10).unwrap();
+    let proof = generate_proof(datadir.path(), challenge, cfg, 10, 0).unwrap();
 
     // Verify the proof
     let valid = verify(

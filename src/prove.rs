@@ -13,8 +13,9 @@
 use aes::cipher::block_padding::NoPadding;
 use aes::cipher::BlockEncrypt;
 use eyre::Context;
+use rayon::prelude::{ParallelBridge, ParallelIterator};
 use scrypt_jane::scrypt::ScryptParams;
-use std::{collections::HashMap, ops::Range, path::Path};
+use std::{collections::HashMap, ops::Range, path::Path, sync::Mutex};
 
 use crate::{
     cipher::AesCipher,
@@ -128,6 +129,7 @@ pub fn generate_proof(
     challenge: &[u8; 32],
     cfg: Config,
     nonces: usize,
+    threads: usize,
 ) -> eyre::Result<Proof> {
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
 
@@ -145,41 +147,52 @@ pub fn generate_proof(
     };
 
     loop {
-        let mut indexes = HashMap::<u32, Vec<u64>>::new();
+        let indexes = Mutex::new(HashMap::<u32, Vec<u64>>::new());
+        let prover = ConstDProver::new(challenge, start_nonce..end_nonce, params.clone());
 
-        for batch in read_data(datadir, 1024 * 1024, metadata.max_file_size) {
-            let prover = ConstDProver::new(challenge, start_nonce..end_nonce, params.clone());
-            let result = prover.prove(
-                &batch.data,
-                batch.pos / LABEL_SIZE as u64,
-                |nonce, index| {
-                    let vec = indexes.entry(nonce).or_default();
-                    vec.push(index);
-                    if vec.len() >= cfg.k2 as usize {
-                        return Some(std::mem::take(vec));
-                    }
-                    None
-                },
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build()
+            .wrap_err("building thread pool")?;
+
+        let result = pool.install(|| {
+            read_data(datadir, 1024 * 1024, metadata.max_file_size)
+                .par_bridge()
+                .find_map_any(|batch| {
+                    prover.prove(
+                        &batch.data,
+                        batch.pos / LABEL_SIZE as u64,
+                        |nonce, index| {
+                            let mut indexes = indexes.lock().unwrap();
+                            let vec = indexes.entry(nonce).or_default();
+                            vec.push(index);
+                            if vec.len() >= cfg.k2 as usize {
+                                return Some(std::mem::take(vec));
+                            }
+                            None
+                        },
+                    )
+                })
+        });
+
+        if let Some((nonce, indexes)) = result {
+            let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
+            let required_bits = required_bits(num_labels);
+            let compressed_indices = compress_indices(&indexes, required_bits);
+            let k3_pow = crate::pow::find_k3_pow(
+                challenge,
+                nonce,
+                &compressed_indices,
+                params.scrypt,
+                params.k3_pow_difficulty,
+                prover.cipher(nonce).unwrap().k2_pow,
             );
-            if let Some((nonce, indexes)) = result {
-                let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
-                let required_bits = required_bits(num_labels);
-                let compressed_indices = compress_indices(&indexes, required_bits);
-                let k3_pow = crate::pow::find_k3_pow(
-                    challenge,
-                    nonce,
-                    &compressed_indices,
-                    params.scrypt,
-                    params.k3_pow_difficulty,
-                    prover.cipher(nonce).unwrap().k2_pow,
-                );
-                return Ok(Proof {
-                    nonce,
-                    indices: compressed_indices,
-                    k2_pow: prover.get_k2_pow(nonce).unwrap(),
-                    k3_pow,
-                });
-            }
+            return Ok(Proof {
+                nonce,
+                indices: compressed_indices,
+                k2_pow: prover.get_k2_pow(nonce).unwrap(),
+                k3_pow,
+            });
         }
 
         (start_nonce, end_nonce) = (end_nonce, end_nonce + nonces as u32);
