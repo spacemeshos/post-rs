@@ -44,6 +44,7 @@ use scrypt_jane::scrypt::ScryptParams;
 use crate::{
     cipher::AesCipher,
     compression::{decompress_indexes, required_bits},
+    config::Config,
     difficulty::proving_difficulty,
     initialize::{calc_commitment, generate_label},
     metadata::ProofMetadata,
@@ -64,13 +65,18 @@ pub struct VerifyingParams {
 }
 
 impl VerifyingParams {
-    pub fn new(num_labels: u64, cfg: crate::config::Config) -> eyre::Result<Self> {
+    pub fn new(metadata: &ProofMetadata, cfg: &Config) -> eyre::Result<Self> {
+        let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
         Ok(Self {
             difficulty: proving_difficulty(num_labels, cfg.k1)?,
             k2: cfg.k2,
             k3: cfg.k3,
-            k2_pow_difficulty: cfg.k2_pow_difficulty,
-            k3_pow_difficulty: cfg.k3_pow_difficulty,
+            k2_pow_difficulty: cfg
+                .k2_pow_difficulty
+                .saturating_mul(metadata.num_units as u64),
+            k3_pow_difficulty: cfg
+                .k3_pow_difficulty
+                .saturating_mul(metadata.num_units as u64),
             pow_scrypt: cfg.pow_scrypt,
             scrypt: cfg.scrypt,
         })

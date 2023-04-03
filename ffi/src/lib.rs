@@ -123,8 +123,7 @@ pub unsafe extern "C" fn verify_proof(
         None => return VerifyResult::InvalidArgument,
     };
 
-    let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
-    let params = match VerifyingParams::new(num_labels, cfg) {
+    let params = match VerifyingParams::new(metadata, &cfg) {
         Ok(params) => params,
         Err(_) => return VerifyResult::InvalidArgument,
     };

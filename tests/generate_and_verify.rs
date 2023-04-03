@@ -36,19 +36,20 @@ fn test_generate_and_verify() {
     .unwrap();
 
     // Generate a proof
-    let proof = generate_proof(datadir.path(), challenge, cfg, 10, 0).unwrap();
+    let proof = generate_proof(datadir.path(), challenge, cfg, 10, 2).unwrap();
 
     // Verify the proof
+    let metadata = ProofMetadata {
+        node_id: metadata.node_id,
+        commitment_atx_id: metadata.commitment_atx_id,
+        challenge: *challenge,
+        num_units: metadata.num_units,
+        labels_per_unit: metadata.labels_per_unit,
+    };
     let valid = verify(
         &proof,
-        &ProofMetadata {
-            node_id: metadata.node_id,
-            commitment_atx_id: metadata.commitment_atx_id,
-            challenge: *challenge,
-            num_units: metadata.num_units,
-            labels_per_unit: metadata.labels_per_unit,
-        },
-        VerifyingParams::new(labels_per_unit, cfg).unwrap(),
+        &metadata,
+        VerifyingParams::new(&metadata, &cfg).unwrap(),
         0,
     );
 
