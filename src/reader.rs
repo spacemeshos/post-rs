@@ -90,15 +90,16 @@ pub(crate) fn read_data(
     file_size: u64,
 ) -> impl Iterator<Item = Batch> {
     let mut readers = Vec::<BatchingReader<File>>::new();
-    for (id, entry) in pos_files(datadir).enumerate() {
+    let mut files = pos_files(datadir).enumerate().peekable();
+
+    while let Some((id, entry)) = files.next() {
         let pos = id as u64 * file_size;
         let file = File::open(entry.path()).unwrap();
         let pos_file_size = file.metadata().unwrap().len();
-        if pos_file_size != file_size {
-            eprintln!(
-                "corrupted POS file, expected size: {}, actual size: {}",
-                file_size, pos_file_size
-            );
+
+        // If there are more files, check if the size of the file is correct
+        if files.peek().is_some() && pos_file_size != file_size {
+            eprintln!("too short POS file: {pos_file_size}, <  {file_size}");
         }
         readers.push(BatchingReader::new(file, pos, batch_size, file_size));
     }
