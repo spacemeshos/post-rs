@@ -55,7 +55,7 @@ pub struct ProvingParams {
     pub difficulty: u64,
     pub k2_pow_difficulty: u64,
     pub k3_pow_difficulty: u64,
-    pub scrypt: ScryptParams,
+    pub pow_scrypt: ScryptParams,
 }
 
 impl ProvingParams {
@@ -63,13 +63,9 @@ impl ProvingParams {
         let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
         Ok(Self {
             difficulty: proving_difficulty(num_labels, cfg.k1)?,
-            k2_pow_difficulty: cfg
-                .k2_pow_difficulty
-                .saturating_mul(metadata.num_units as u64),
-            k3_pow_difficulty: cfg
-                .k3_pow_difficulty
-                .saturating_mul(metadata.num_units as u64),
-            scrypt: cfg.scrypt,
+            k2_pow_difficulty: cfg.k2_pow_difficulty / metadata.num_units as u64,
+            k3_pow_difficulty: cfg.k3_pow_difficulty / metadata.num_units as u64,
+            pow_scrypt: cfg.pow_scrypt,
         })
     }
 }
@@ -93,7 +89,7 @@ impl ConstDProver {
         let end = 1.max(nonces.end / 2);
         ConstDProver {
             ciphers: (start..end)
-                .map(|n| AesCipher::new(challenge, n, params.scrypt, params.k2_pow_difficulty))
+                .map(|n| AesCipher::new(challenge, n, params.pow_scrypt, params.k2_pow_difficulty))
                 .collect(),
             difficulty: params.difficulty,
         }
@@ -190,7 +186,7 @@ pub fn generate_proof(
                 challenge,
                 nonce,
                 &compressed_indices,
-                params.scrypt,
+                params.pow_scrypt,
                 params.k3_pow_difficulty,
                 prover.cipher(nonce).unwrap().k2_pow,
             );
@@ -237,10 +233,13 @@ mod tests {
 
         let params = ProvingParams::new(&metadata, &cfg).unwrap();
         assert_eq!(
-            cfg.k2_pow_difficulty * metadata.num_units as u64,
+            cfg.k2_pow_difficulty / metadata.num_units as u64,
             params.k2_pow_difficulty
         );
-        assert_eq!(u64::MAX, params.k3_pow_difficulty);
+        assert_eq!(
+            cfg.k3_pow_difficulty / metadata.num_units as u64,
+            params.k3_pow_difficulty
+        );
     }
 
     #[test]
@@ -248,7 +247,7 @@ mod tests {
         let (tx, rx) = std::sync::mpsc::channel();
         let challenge = b"hello world, challenge me!!!!!!!";
         let params = ProvingParams {
-            scrypt: ScryptParams::new(1, 0, 0),
+            pow_scrypt: ScryptParams::new(1, 0, 0),
             difficulty: u64::MAX,
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
@@ -299,7 +298,7 @@ mod tests {
         let mut start_nonce = 0;
         let mut end_nonce = start_nonce + 20;
         let params = ProvingParams {
-            scrypt: ScryptParams::new(1, 0, 0),
+            pow_scrypt: ScryptParams::new(1, 0, 0),
             difficulty: proving_difficulty(NUM_LABELS as u64, K1).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
@@ -356,7 +355,7 @@ mod tests {
         let k1 = 1000;
         let k2 = 1000;
         let params = ProvingParams {
-            scrypt: ScryptParams::new(1, 0, 0),
+            pow_scrypt: ScryptParams::new(1, 0, 0),
             difficulty: proving_difficulty(num_labels as u64, k1).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
@@ -405,7 +404,7 @@ mod tests {
         let k1 = 4;
         let k2 = 32;
         let params = ProvingParams {
-            scrypt: ScryptParams::new(8, 0, 0),
+            pow_scrypt: ScryptParams::new(8, 0, 0),
             difficulty: proving_difficulty(num_labels as u64, k1).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,

@@ -71,12 +71,8 @@ impl VerifyingParams {
             difficulty: proving_difficulty(num_labels, cfg.k1)?,
             k2: cfg.k2,
             k3: cfg.k3,
-            k2_pow_difficulty: cfg
-                .k2_pow_difficulty
-                .saturating_mul(metadata.num_units as u64),
-            k3_pow_difficulty: cfg
-                .k3_pow_difficulty
-                .saturating_mul(metadata.num_units as u64),
+            k2_pow_difficulty: cfg.k2_pow_difficulty / metadata.num_units as u64,
+            k3_pow_difficulty: cfg.k3_pow_difficulty / metadata.num_units as u64,
             pow_scrypt: cfg.pow_scrypt,
             scrypt: cfg.scrypt,
         })
