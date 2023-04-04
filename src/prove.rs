@@ -22,7 +22,7 @@ use crate::{
     compression::{compress_indices, required_bits},
     config::Config,
     difficulty::proving_difficulty,
-    metadata,
+    metadata::{self, PostMetadata},
     reader::read_data,
 };
 
@@ -55,7 +55,19 @@ pub struct ProvingParams {
     pub difficulty: u64,
     pub k2_pow_difficulty: u64,
     pub k3_pow_difficulty: u64,
-    pub scrypt: ScryptParams,
+    pub pow_scrypt: ScryptParams,
+}
+
+impl ProvingParams {
+    pub fn new(metadata: &PostMetadata, cfg: &Config) -> eyre::Result<Self> {
+        let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
+        Ok(Self {
+            difficulty: proving_difficulty(num_labels, cfg.k1)?,
+            k2_pow_difficulty: cfg.k2_pow_difficulty / metadata.num_units as u64,
+            k3_pow_difficulty: cfg.k3_pow_difficulty / metadata.num_units as u64,
+            pow_scrypt: cfg.pow_scrypt,
+        })
+    }
 }
 
 pub trait Prover {
@@ -77,7 +89,7 @@ impl ConstDProver {
         let end = 1.max(nonces.end / 2);
         ConstDProver {
             ciphers: (start..end)
-                .map(|n| AesCipher::new(challenge, n, params.scrypt, params.k2_pow_difficulty))
+                .map(|n| AesCipher::new(challenge, n, params.pow_scrypt, params.k2_pow_difficulty))
                 .collect(),
             difficulty: params.difficulty,
         }
@@ -132,19 +144,10 @@ pub fn generate_proof(
     threads: usize,
 ) -> eyre::Result<Proof> {
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
-
-    let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
-    let difficulty = proving_difficulty(num_labels, cfg.k1)?;
+    let params = ProvingParams::new(&metadata, &cfg)?;
 
     let mut start_nonce = 0;
     let mut end_nonce = start_nonce + nonces as u32;
-
-    let params = ProvingParams {
-        scrypt: cfg.pow_scrypt,
-        difficulty,
-        k2_pow_difficulty: cfg.k2_pow_difficulty,
-        k3_pow_difficulty: cfg.k3_pow_difficulty,
-    };
 
     loop {
         let indexes = Mutex::new(HashMap::<u32, Vec<u64>>::new());
@@ -183,7 +186,7 @@ pub fn generate_proof(
                 challenge,
                 nonce,
                 &compressed_indices,
-                params.scrypt,
+                params.pow_scrypt,
                 params.k3_pow_difficulty,
                 prover.cipher(nonce).unwrap().k2_pow,
             );
@@ -206,12 +209,45 @@ mod tests {
     use rand::{thread_rng, RngCore};
     use std::{collections::HashMap, iter::repeat};
 
+    /// Test that PoW thresholds are scaled with num_units.
+    #[test]
+    fn scaling_pows_thresholds() {
+        let cfg = Config {
+            k1: 32,
+            k2: 32,
+            k3: 10,
+            k2_pow_difficulty: u64::MAX / 100,
+            k3_pow_difficulty: u64::MAX / 8,
+            pow_scrypt: ScryptParams::new(1, 0, 0),
+            scrypt: ScryptParams::new(2, 0, 0),
+        };
+        let metadata = PostMetadata {
+            num_units: 10,
+            labels_per_unit: 100,
+            max_file_size: 1,
+            node_id: [0u8; 32],
+            commitment_atx_id: [0u8; 32],
+            nonce: None,
+            last_position: None,
+        };
+
+        let params = ProvingParams::new(&metadata, &cfg).unwrap();
+        assert_eq!(
+            cfg.k2_pow_difficulty / metadata.num_units as u64,
+            params.k2_pow_difficulty
+        );
+        assert_eq!(
+            cfg.k3_pow_difficulty / metadata.num_units as u64,
+            params.k3_pow_difficulty
+        );
+    }
+
     #[test]
     fn sanity() {
         let (tx, rx) = std::sync::mpsc::channel();
         let challenge = b"hello world, challenge me!!!!!!!";
         let params = ProvingParams {
-            scrypt: ScryptParams::new(1, 0, 0),
+            pow_scrypt: ScryptParams::new(1, 0, 0),
             difficulty: u64::MAX,
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
@@ -262,7 +298,7 @@ mod tests {
         let mut start_nonce = 0;
         let mut end_nonce = start_nonce + 20;
         let params = ProvingParams {
-            scrypt: ScryptParams::new(1, 0, 0),
+            pow_scrypt: ScryptParams::new(1, 0, 0),
             difficulty: proving_difficulty(NUM_LABELS as u64, K1).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
@@ -319,7 +355,7 @@ mod tests {
         let k1 = 1000;
         let k2 = 1000;
         let params = ProvingParams {
-            scrypt: ScryptParams::new(1, 0, 0),
+            pow_scrypt: ScryptParams::new(1, 0, 0),
             difficulty: proving_difficulty(num_labels as u64, k1).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
@@ -368,7 +404,7 @@ mod tests {
         let k1 = 4;
         let k2 = 32;
         let params = ProvingParams {
-            scrypt: ScryptParams::new(8, 0, 0),
+            pow_scrypt: ScryptParams::new(8, 0, 0),
             difficulty: proving_difficulty(num_labels as u64, k1).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
