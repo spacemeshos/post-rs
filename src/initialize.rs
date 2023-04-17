@@ -63,7 +63,7 @@ pub fn initialize(
     Ok(metadata)
 }
 
-fn initialize_to<W: Write + ?Sized>(
+pub fn initialize_to<W: Write + ?Sized>(
     writer: &mut W,
     commitment: &[u8; 32],
     labels: Range<u64>,
