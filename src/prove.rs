@@ -15,7 +15,7 @@ use aes::cipher::BlockEncrypt;
 use eyre::Context;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 use scrypt_jane::scrypt::ScryptParams;
-use std::{collections::HashMap, ops::Range, path::Path, sync::Mutex};
+use std::{cmp::Ordering, collections::HashMap, ops::Range, path::Path, sync::Mutex};
 
 use crate::{
     cipher::AesCipher,
@@ -26,7 +26,6 @@ use crate::{
     reader::read_data,
 };
 
-const LABEL_SIZE: usize = 16; // size of the label in bytes
 const BLOCK_SIZE: usize = 16; // size of the aes block
 const AES_BATCH: usize = 8; // will use encrypt8 asm method
 const CHUNK_SIZE: usize = BLOCK_SIZE * AES_BATCH;
@@ -111,15 +110,14 @@ impl Prover for ConstDProver {
     {
         let mut u64s = [0u64; CHUNK_SIZE / 8];
 
-        for chunk in batch.chunks_exact(CHUNK_SIZE) {
+        for chunk in batch.array_chunks::<CHUNK_SIZE>() {
             for cipher in &self.ciphers {
-                cipher
+                _ = cipher
                     .aes
-                    .encrypt_padded_b2b::<NoPadding>(chunk, bytemuck::cast_slice_mut(&mut u64s))
-                    .unwrap();
+                    .encrypt_padded_b2b::<NoPadding>(chunk, bytemuck::cast_slice_mut(&mut u64s));
 
                 for (i, out) in u64s.iter().enumerate() {
-                    if out.to_le() <= self.difficulty {
+                    if out.to_le() < self.difficulty {
                         let nonce = cipher.nonce_group * 2 + i as u32 % 2;
                         let index = index + (i / 2) as u64;
                         if let Some(indexes) = consume(nonce, index) {
@@ -131,6 +129,332 @@ impl Prover for ConstDProver {
             index += AES_BATCH as u64;
         }
 
+        None
+    }
+}
+
+pub struct Prover8_56 {
+    ciphers: Vec<AesCipher>,
+    shadow_ciphers: Vec<AesCipher>,
+    difficulty_msb: u8,
+    difficulty_lsb: u64,
+}
+
+impl Prover8_56 {
+    pub fn new(challenge: &[u8; 32], nonces: Range<u32>, params: ProvingParams) -> Self {
+        let nonces_per_aes = 16;
+        let start = nonces.start / nonces_per_aes;
+        let end = 1.max(nonces.end / nonces_per_aes);
+        let ciphers: Vec<AesCipher> = (start..end)
+            .map(|n| AesCipher::new(challenge, n, params.pow_scrypt, params.k2_pow_difficulty))
+            .collect();
+        Self {
+            shadow_ciphers: (nonces.start..nonces.end)
+                .step_by(2)
+                .map(|n| {
+                    AesCipher::new_shadow(
+                        challenge,
+                        n,
+                        n / nonces_per_aes,
+                        ciphers[(n / nonces_per_aes) as usize].k2_pow,
+                    )
+                })
+                .collect(),
+            ciphers,
+            difficulty_msb: (params.difficulty >> 56) as u8,
+            difficulty_lsb: params.difficulty & 0x00ff_ffff_ffff_ffff,
+        }
+    }
+
+    fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
+        self.ciphers.get((nonce as usize / 16) % self.ciphers.len())
+    }
+
+    fn try_shadow<F>(
+        &self,
+        label: &[u8],
+        nonce_group: u32,
+        nonce_id: usize,
+        base_index: u64,
+        mut consume: F,
+    ) -> Option<(u32, Vec<u64>)>
+    where
+        F: FnMut(u32, u64) -> Option<Vec<u64>>,
+    {
+        // Second half of the difficulty is checked with the shadow ciphers.
+        let mut out = [0u64; 2];
+
+        self.shadow_ciphers[nonce_id % self.shadow_ciphers.len()]
+            .aes
+            .encrypt_block_b2b(label.into(), bytemuck::cast_slice_mut(&mut out).into());
+
+        if out[nonce_id % 2].to_le() & 0x00ff_ffff_ffff_ffff < self.difficulty_lsb {
+            let index = base_index + (nonce_id / 16) as u64;
+            let nonce = nonce_group * 16 + (nonce_id % 16) as u32;
+            if let Some(indexes) = consume(nonce, index) {
+                return Some((nonce, indexes));
+            }
+        }
+        None
+    }
+}
+
+impl Prover for Prover8_56 {
+    fn get_k2_pow(&self, nonce: u32) -> Option<u64> {
+        self.cipher(nonce).map(|aes| aes.k2_pow)
+    }
+
+    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<(u32, Vec<u64>)>
+    where
+        F: FnMut(u32, u64) -> Option<Vec<u64>>,
+    {
+        let mut u8s = [0u8; CHUNK_SIZE];
+
+        for chunk in batch.array_chunks::<CHUNK_SIZE>() {
+            for cipher in &self.ciphers {
+                _ = cipher.aes.encrypt_padded_b2b::<NoPadding>(chunk, &mut u8s);
+
+                for (i, msb) in u8s.iter().copied().enumerate() {
+                    if msb == 0 {
+                        let label_offset = i / 16;
+                        if let Some(p) = self.try_shadow(
+                            &chunk[label_offset..label_offset + 16],
+                            cipher.nonce_group,
+                            i,
+                            index,
+                            &mut consume,
+                        ) {
+                            return Some(p);
+                        }
+                    }
+                }
+            }
+            index += AES_BATCH as u64;
+        }
+
+        None
+    }
+}
+
+pub struct Prover16_48 {
+    ciphers: Vec<AesCipher>,
+    shadow_ciphers: Vec<AesCipher>,
+    difficulty_msb: u16,
+    difficulty_lsb: u64,
+}
+
+impl Prover16_48 {
+    pub fn new(challenge: &[u8; 32], nonces: Range<u32>, params: ProvingParams) -> Self {
+        let nonces_per_aes = 8;
+        let start = nonces.start / nonces_per_aes;
+        let end = 1.max(nonces.end / nonces_per_aes);
+        let ciphers: Vec<AesCipher> = (start..end)
+            .map(|n| AesCipher::new(challenge, n, params.pow_scrypt, params.k2_pow_difficulty))
+            .collect();
+        Self {
+            shadow_ciphers: (nonces.start..nonces.end)
+                .step_by(2)
+                .map(|n| {
+                    AesCipher::new_shadow(
+                        challenge,
+                        n,
+                        n / nonces_per_aes,
+                        ciphers[(n / nonces_per_aes) as usize].k2_pow,
+                    )
+                })
+                .collect(),
+            ciphers,
+            difficulty_msb: (params.difficulty >> 48) as u16,
+            difficulty_lsb: params.difficulty & 0x0000_ffff_ffff_ffff,
+        }
+    }
+
+    fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
+        self.ciphers.get((nonce as usize / 16) % self.ciphers.len())
+    }
+
+    fn try_shadow<F>(
+        &self,
+        label: &[u8],
+        nonce_group: u32,
+        nonce_id: usize,
+        base_index: u64,
+        mut consume: F,
+    ) -> Option<(u32, Vec<u64>)>
+    where
+        F: FnMut(u32, u64) -> Option<Vec<u64>>,
+    {
+        // Second half of the difficulty is checked with the shadow ciphers.
+        let mut out = [0u64; 2];
+
+        self.shadow_ciphers[nonce_id % self.shadow_ciphers.len()]
+            .aes
+            .encrypt_block_b2b(label.into(), bytemuck::cast_slice_mut(&mut out).into());
+
+        if out[nonce_id % 2].to_le() & 0x0000_ffff_ffff_ffff < self.difficulty_lsb {
+            let index = base_index + (nonce_id / 8) as u64;
+            let nonce = nonce_group * 8 + (nonce_id % 8) as u32;
+            if let Some(indexes) = consume(nonce, index) {
+                return Some((nonce, indexes));
+            }
+        }
+        None
+    }
+}
+
+impl Prover for Prover16_48 {
+    fn get_k2_pow(&self, nonce: u32) -> Option<u64> {
+        self.cipher(nonce).map(|aes| aes.k2_pow)
+    }
+
+    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<(u32, Vec<u64>)>
+    where
+        F: FnMut(u32, u64) -> Option<Vec<u64>>,
+    {
+        let mut u16s = [0u16; CHUNK_SIZE / 2];
+
+        for chunk in batch.array_chunks::<CHUNK_SIZE>() {
+            for cipher in &self.ciphers {
+                _ = cipher
+                    .aes
+                    .encrypt_padded_b2b::<NoPadding>(chunk, bytemuck::cast_slice_mut(&mut u16s));
+
+                for (i, msb) in u16s.iter().enumerate() {
+                    if msb.to_le().eq(&0) {
+                        let label_offset = i / 8;
+                        if let Some(p) = self.try_shadow(
+                            &chunk[label_offset..label_offset + 16],
+                            cipher.nonce_group,
+                            i,
+                            index,
+                            &mut consume,
+                        ) {
+                            return Some(p);
+                        }
+                    }
+                }
+            }
+            index += AES_BATCH as u64;
+        }
+
+        None
+    }
+}
+
+pub struct Prover32_32 {
+    ciphers: Vec<AesCipher>,
+    shadow_ciphers: Vec<AesCipher>,
+    difficulty_msb: u32,
+    difficulty_lsb: u32,
+}
+
+impl Prover32_32 {
+    pub fn new(challenge: &[u8; 32], nonces: Range<u32>, params: ProvingParams) -> Self {
+        let nonces_per_aes = 4;
+        let start = nonces.start / nonces_per_aes;
+        let end = 1.max(nonces.end / nonces_per_aes);
+        let ciphers: Vec<AesCipher> = (start..end)
+            .map(|n| AesCipher::new(challenge, n, params.pow_scrypt, params.k2_pow_difficulty))
+            .collect();
+        Self {
+            shadow_ciphers: (start..end)
+                .enumerate()
+                .map(|(id, n)| {
+                    AesCipher::new_shadow(
+                        challenge,
+                        n + 1000,
+                        n,
+                        ciphers[id / nonces_per_aes as usize].k2_pow,
+                    )
+                })
+                .collect(),
+            ciphers,
+            difficulty_msb: (params.difficulty >> 32) as u32,
+            difficulty_lsb: params.difficulty as u32,
+        }
+    }
+
+    fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
+        self.ciphers.get((nonce as usize / 4) % self.ciphers.len())
+    }
+
+    fn try_shadow<F>(
+        &self,
+        label: &[u8],
+        nonce_group: u32,
+        nonce_id: usize,
+        base_index: u64,
+        mut consume: F,
+    ) -> Option<(u32, Vec<u64>)>
+    where
+        F: FnMut(u32, u64) -> Option<Vec<u64>>,
+    {
+        // Second half of the difficulty is checked with the shadow ciphers.
+        let mut out = [0u32; 4];
+
+        self.shadow_ciphers[nonce_id % self.shadow_ciphers.len()]
+            .aes
+            .encrypt_block_b2b(label.into(), bytemuck::cast_slice_mut(&mut out).into());
+
+        if out[nonce_id % 4].to_le() < self.difficulty_lsb {
+            let index = base_index + (nonce_id / 4) as u64;
+            let nonce = nonce_group * 4 + (nonce_id % 4) as u32;
+            if let Some(indexes) = consume(nonce, index) {
+                return Some((nonce, indexes));
+            }
+        }
+        None
+    }
+}
+
+impl Prover for Prover32_32 {
+    fn get_k2_pow(&self, nonce: u32) -> Option<u64> {
+        self.cipher(nonce).map(|aes| aes.k2_pow)
+    }
+
+    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<(u32, Vec<u64>)>
+    where
+        F: FnMut(u32, u64) -> Option<Vec<u64>>,
+    {
+        let mut u32s = [0u32; CHUNK_SIZE / 4];
+
+        for chunk in batch.array_chunks::<CHUNK_SIZE>() {
+            for cipher in &self.ciphers {
+                cipher
+                    .aes
+                    .encrypt_padded_b2b::<NoPadding>(chunk, bytemuck::cast_slice_mut(&mut u32s))
+                    .unwrap();
+
+                for (i, msb) in u32s.iter().enumerate() {
+                    match msb.to_le().cmp(&self.difficulty_msb) {
+                        Ordering::Greater => {
+                            // invalid label
+                        }
+                        Ordering::Less => {
+                            // valid label
+                            let index = index + (i / 16) as u64;
+                            let nonce = cipher.nonce_group * 16 + (i % 16) as u32;
+                            if let Some(indexes) = consume(nonce, index) {
+                                return Some((nonce, indexes));
+                            }
+                        }
+                        Ordering::Equal => {
+                            let label_offset = i / 16;
+                            if let Some(p) = self.try_shadow(
+                                &chunk[label_offset..label_offset + 16],
+                                cipher.nonce_group,
+                                i,
+                                index,
+                                &mut consume,
+                            ) {
+                                return Some(p);
+                            }
+                        }
+                    }
+                }
+            }
+            index += AES_BATCH as u64;
+        }
         None
     }
 }
@@ -164,7 +488,7 @@ pub fn generate_proof(
                 .find_map_any(|batch| {
                     prover.prove(
                         &batch.data,
-                        batch.pos / LABEL_SIZE as u64,
+                        batch.pos / BLOCK_SIZE as u64,
                         |nonce, index| {
                             let mut indexes = indexes.lock().unwrap();
                             let vec = indexes.entry(nonce).or_default();
@@ -208,6 +532,8 @@ mod tests {
     use crate::difficulty::proving_difficulty;
     use rand::{thread_rng, RngCore};
     use std::{collections::HashMap, iter::repeat};
+
+    const LABEL_SIZE: usize = 16;
 
     /// Test that PoW thresholds are scaled with num_units.
     #[test]
@@ -253,7 +579,7 @@ mod tests {
             k3_pow_difficulty: u64::MAX,
         };
         let prover = ConstDProver::new(challenge, 0..1, params);
-        let res = prover.prove(&[0u8; 8 * LABEL_SIZE], 0, |nonce, index| {
+        let res = prover.prove(&[0u8; 8 * BLOCK_SIZE], 0, |nonce, index| {
             let _ = tx.send((nonce, index));
             None
         });
@@ -388,7 +714,7 @@ mod tests {
         for idx in indexes {
             let idx = idx as usize;
             cipher.aes.encrypt_block_b2b(
-                data[idx * LABEL_SIZE..(idx + 1) * LABEL_SIZE].into(),
+                data[idx * BLOCK_SIZE..(idx + 1) * BLOCK_SIZE].into(),
                 bytemuck::cast_slice_mut(out.as_mut_slice()).into(),
             );
 

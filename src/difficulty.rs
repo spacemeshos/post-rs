@@ -1,6 +1,6 @@
 /// Calculate proving difficulty.
 /// The lower the value of K1 - the more difficult it will be to find a good label.
-pub(crate) fn proving_difficulty(num_labels: u64, k1: u32) -> eyre::Result<u64> {
+pub fn proving_difficulty(num_labels: u64, k1: u32) -> eyre::Result<u64> {
     eyre::ensure!(num_labels > 0, "number of label blocks must be > 0");
     eyre::ensure!(
         num_labels >= k1 as u64,

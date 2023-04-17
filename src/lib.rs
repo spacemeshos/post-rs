@@ -1,7 +1,9 @@
+#![feature(array_chunks)]
+
 mod cipher;
 mod compression;
 pub mod config;
-mod difficulty;
+pub mod difficulty;
 pub mod initialize;
 pub mod metadata;
 pub mod pow;
