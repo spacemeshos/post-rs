@@ -724,8 +724,6 @@ static void scrypt_ROMix(uint4 *restrict X, global uint4 *restrict lookup,
   /* implicit */
 }
 
-#pragma OPENCL EXTENSION cl_khr_int64_extended_atomics : enable
-
 kernel void scrypt(private const uint N, private const ulong starting_index,
                    global const uint4 *const restrict input,
                    global uchar *const restrict output,
@@ -736,7 +734,7 @@ kernel void scrypt(private const uint N, private const ulong starting_index,
 
   const uint gid = get_global_id(0);
 
-  static volatile atomic_ulong vrf_found;
+  static volatile atomic_uint vrf_found;
   if (gid == 0) {
     atomic_init(&vrf_found, 0);
   }
@@ -774,7 +772,7 @@ kernel void scrypt(private const uint N, private const ulong starting_index,
 
   for (uint i = 0; i < 32; i++) {
     if (label_bytes[i] < vrf_difficulty[i]) {
-      if (atomic_exchange(&vrf_found, 1ul) == 0) {
+      if (atomic_exchange(&vrf_found, 1) == 0) {
         *vrf_nonce = index;
       }
       return;
