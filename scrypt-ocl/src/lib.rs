@@ -28,7 +28,7 @@ impl Scrypter {
         let mut pro_que = ProQue::builder().src(src).build()?;
 
         let max_wg_size = pro_que.device().max_wg_size()?;
-        let global_work_size = max_wg_size;
+        let global_work_size = max_wg_size * 2;
 
         pro_que.set_dims(SpatialDims::One(global_work_size));
 
