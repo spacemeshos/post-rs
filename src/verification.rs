@@ -124,7 +124,7 @@ pub fn verify(
     // Verify the number of indices against K2
     let num_lables = metadata.num_units as u64 * metadata.labels_per_unit;
     let bits_per_index = required_bits(num_lables);
-    let expected_indices_len = expected_indices_bytes(required_bits(num_lables), params.k2);
+    let expected_indices_len = expected_indices_bytes(bits_per_index, params.k2);
     if proof.indices.len() != expected_indices_len {
         return Err(format!(
             "indices length is invalid ({} != {expected_indices_len})",
