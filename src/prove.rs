@@ -129,7 +129,7 @@ impl Prover for Prover64_0 {
     {
         let mut u64s = [0u64; CHUNK_SIZE / 8];
 
-        for chunk in batch.array_chunks::<CHUNK_SIZE>() {
+        for chunk in batch.chunks_exact(CHUNK_SIZE) {
             for cipher in &self.ciphers {
                 _ = cipher
                     .aes
@@ -249,7 +249,7 @@ impl Prover for Prover8_56 {
     {
         let mut u8s = [0u8; CHUNK_SIZE];
 
-        for chunk in batch.array_chunks::<CHUNK_SIZE>() {
+        for chunk in batch.chunks_exact(CHUNK_SIZE) {
             for cipher in &self.ciphers {
                 _ = cipher.aes.encrypt_padded_b2b::<NoPadding>(chunk, &mut u8s);
 
@@ -373,7 +373,7 @@ impl Prover for Prover16_48 {
     {
         let mut u16s = [0u16; CHUNK_SIZE / 2];
 
-        for chunk in batch.array_chunks::<CHUNK_SIZE>() {
+        for chunk in batch.chunks_exact(CHUNK_SIZE) {
             for cipher in &self.ciphers {
                 _ = cipher
                     .aes
@@ -486,7 +486,7 @@ impl Prover for Prover32_32 {
     {
         let mut u32s = [0u32; CHUNK_SIZE / 4];
 
-        for chunk in batch.array_chunks::<CHUNK_SIZE>() {
+        for chunk in batch.chunks_exact(CHUNK_SIZE) {
             for cipher in &self.ciphers {
                 cipher
                     .aes

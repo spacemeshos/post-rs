@@ -1,5 +1,3 @@
-#![feature(array_chunks)]
-
 mod cipher;
 mod compression;
 pub mod config;
