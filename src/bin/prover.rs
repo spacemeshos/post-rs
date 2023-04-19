@@ -3,7 +3,7 @@ use std::hint::black_box;
 #[allow(unused_imports)]
 use post::{
     difficulty,
-    prove::{ConstDProver, Prover, Prover16_48, Prover8_56},
+    prove::{Prover, Prover16_48, Prover64_0, Prover8_56},
     prove::{Prover32_32, ProvingParams},
 };
 
@@ -88,7 +88,7 @@ fn main() {
     );
 
     // 64/0:
-    let prover = ConstDProver::new(challenge, 0..parallel_nonces, params);
+    let prover = Prover64_0::new(challenge, 0..parallel_nonces, params);
     let start = std::time::Instant::now();
     let mut good = 0;
     for i in 0..10 {

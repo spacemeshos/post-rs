@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use post::{prove::ConstDProver, prove::Prover, prove::ProvingParams};
+use post::{prove::Prover, prove::Prover64_0, prove::ProvingParams};
 use pprof::criterion::{Output, PProfProfiler};
 use rand::{thread_rng, RngCore};
 use rayon::prelude::{ParallelBridge, ParallelIterator};
@@ -46,7 +46,7 @@ fn prover_bench(c: &mut Criterion) {
             ),
             &(nonces, threads),
             |b, &(nonces, threads)| {
-                let prover = ConstDProver::new(CHALLENGE, 0..nonces, params.clone());
+                let prover = Prover64_0::new(CHALLENGE, 0..nonces, params.clone());
                 b.iter(|| {
                     let f = black_box(|_, _| None);
                     match threads {

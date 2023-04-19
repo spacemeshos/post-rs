@@ -38,7 +38,7 @@ impl AesCipher {
         }
     }
 
-    pub(crate) fn new_shadow(
+    pub(crate) fn new_lazy(
         challenge: &[u8; 32],
         nonce: u32,
         nonce_group: u32,
