@@ -15,7 +15,7 @@ use aes::cipher::BlockEncrypt;
 use eyre::Context;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 use scrypt_jane::scrypt::ScryptParams;
-use std::{cmp::Ordering, collections::HashMap, ops::Range, path::Path, sync::Mutex};
+use std::{collections::HashMap, ops::Range, path::Path, sync::Mutex};
 
 use crate::{
     cipher::AesCipher,
@@ -135,7 +135,7 @@ impl Prover for Prover64_0 {
                     .aes
                     .encrypt_padded_b2b::<NoPadding>(chunk, bytemuck::cast_slice_mut(&mut u64s));
 
-                for (offset, val) in u64s.iter().copied().enumerate() {
+                for (offset, val) in u64s.iter().enumerate() {
                     if val.to_le() < self.difficulty {
                         let nonce = calc_nonce(cipher.nonce_group, Self::NONCES_PER_AES, offset);
                         let index = index + (offset as u32 / Self::NONCES_PER_AES) as u64;
@@ -155,7 +155,6 @@ impl Prover for Prover64_0 {
 pub struct Prover8_56 {
     ciphers: Vec<AesCipher>,
     lazy_ciphers: Vec<AesCipher>,
-    #[allow(unused)]
     difficulty_msb: u8,
     difficulty_lsb: u64,
 }
@@ -189,10 +188,6 @@ impl Prover8_56 {
             })
             .collect();
 
-        // For optimization purposes, assume the MSB of difficulty to be 0.
-        // Won't be true in tests.
-        // TODO: have 2 different impls to cover both cases.
-        assert!(params.difficulty.leading_zeros() >= 8);
         Self {
             ciphers,
             lazy_ciphers,
@@ -253,18 +248,28 @@ impl Prover for Prover8_56 {
             for cipher in &self.ciphers {
                 _ = cipher.aes.encrypt_padded_b2b::<NoPadding>(chunk, &mut u8s);
 
-                for (offset, msb) in u8s.iter().copied().enumerate() {
-                    // As an optimization, assume that difficulty_msb is 0.
-                    if msb == 0 {
-                        let label_offset = offset / Self::NONCES_PER_AES as usize;
-                        if let Some(p) = self.check_lsb(
-                            &chunk[label_offset..label_offset + LABEL_SIZE],
-                            cipher.nonce_group,
-                            offset,
-                            index,
-                            &mut consume,
-                        ) {
-                            return Some(p);
+                for (offset, &msb) in u8s.iter().enumerate() {
+                    if msb <= self.difficulty_msb {
+                        if msb == self.difficulty_msb {
+                            // Check LSB
+                            let label_offset = offset / Self::NONCES_PER_AES as usize;
+                            if let Some(p) = self.check_lsb(
+                                &chunk[label_offset..label_offset + LABEL_SIZE],
+                                cipher.nonce_group,
+                                offset,
+                                index,
+                                &mut consume,
+                            ) {
+                                return Some(p);
+                            }
+                        } else {
+                            // valid label
+                            let index = index + (offset as u32 / Self::NONCES_PER_AES) as u64;
+                            let nonce =
+                                calc_nonce(cipher.nonce_group, Self::NONCES_PER_AES, offset);
+                            if let Some(indexes) = consume(nonce, index) {
+                                return Some((nonce, indexes));
+                            }
                         }
                     }
                 }
@@ -279,7 +284,6 @@ impl Prover for Prover8_56 {
 pub struct Prover16_48 {
     ciphers: Vec<AesCipher>,
     lazy_ciphers: Vec<AesCipher>,
-    #[allow(unused)]
     difficulty_msb: u16,
     difficulty_lsb: u64,
 }
@@ -313,10 +317,6 @@ impl Prover16_48 {
             })
             .collect();
 
-        // For optimization purposes, assume the 2 MSBs of difficulty to be 0.
-        // Won't be true in tests.
-        // TODO: have 2 different impls to cover both cases.
-        assert!(params.difficulty.leading_zeros() >= 16);
         Self {
             ciphers,
             lazy_ciphers,
@@ -379,17 +379,29 @@ impl Prover for Prover16_48 {
                     .aes
                     .encrypt_padded_b2b::<NoPadding>(chunk, bytemuck::cast_slice_mut(&mut u16s));
 
-                for (offset, msb) in u16s.iter().copied().enumerate() {
-                    if msb.to_le() == 0 {
-                        let label_offset = offset / Self::NONCES_PER_AES as usize;
-                        if let Some(p) = self.check_lsb(
-                            &chunk[label_offset..label_offset + LABEL_SIZE],
-                            cipher.nonce_group,
-                            offset,
-                            index,
-                            &mut consume,
-                        ) {
-                            return Some(p);
+                for (offset, msb) in u16s.iter().enumerate() {
+                    let msb = msb.to_le();
+                    if msb <= self.difficulty_msb {
+                        if msb == self.difficulty_msb {
+                            // Check LSB
+                            let label_offset = offset / Self::NONCES_PER_AES as usize;
+                            if let Some(p) = self.check_lsb(
+                                &chunk[label_offset..label_offset + LABEL_SIZE],
+                                cipher.nonce_group,
+                                offset,
+                                index,
+                                &mut consume,
+                            ) {
+                                return Some(p);
+                            }
+                        } else {
+                            // valid label
+                            let index = index + (offset as u32 / Self::NONCES_PER_AES) as u64;
+                            let nonce =
+                                calc_nonce(cipher.nonce_group, Self::NONCES_PER_AES, offset);
+                            if let Some(indexes) = consume(nonce, index) {
+                                return Some((nonce, indexes));
+                            }
                         }
                     }
                 }
@@ -494,20 +506,10 @@ impl Prover for Prover32_32 {
                     .unwrap();
 
                 for (offset, msb) in u32s.iter().enumerate() {
-                    match msb.to_le().cmp(&self.difficulty_msb) {
-                        Ordering::Greater => {
-                            // invalid label
-                        }
-                        Ordering::Less => {
-                            // valid label
-                            let index = index + (offset as u32 / Self::NONCES_PER_AES) as u64;
-                            let nonce =
-                                calc_nonce(cipher.nonce_group, Self::NONCES_PER_AES, offset);
-                            if let Some(indexes) = consume(nonce, index) {
-                                return Some((nonce, indexes));
-                            }
-                        }
-                        Ordering::Equal => {
+                    let msb = msb.to_le();
+                    if msb <= self.difficulty_msb {
+                        if msb == self.difficulty_msb {
+                            // Check LSB
                             let label_offset = offset / Self::NONCES_PER_AES as usize;
                             if let Some(p) = self.check_lsb(
                                 &chunk[label_offset..label_offset + LABEL_SIZE],
@@ -517,6 +519,14 @@ impl Prover for Prover32_32 {
                                 &mut consume,
                             ) {
                                 return Some(p);
+                            }
+                        } else {
+                            // valid label
+                            let index = index + (offset as u32 / Self::NONCES_PER_AES) as u64;
+                            let nonce =
+                                calc_nonce(cipher.nonce_group, Self::NONCES_PER_AES, offset);
+                            if let Some(indexes) = consume(nonce, index) {
+                                return Some((nonce, indexes));
                             }
                         }
                     }
