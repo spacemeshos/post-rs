@@ -1,8 +1,6 @@
-#![feature(vec_into_raw_parts)]
-
 use std::{
     ffi::{c_char, c_uchar, CStr},
-    mem,
+    mem::{self, ManuallyDrop},
     path::Path,
 };
 
@@ -78,7 +76,8 @@ fn _generate_proof(
 
     let proof = prove::generate_proof(datadir, challenge, cfg, nonces, threads)?;
 
-    let (ptr, len, cap) = proof.indices.into_raw_parts();
+    let mut indices = ManuallyDrop::new(proof.indices);
+    let (ptr, len, cap) = (indices.as_mut_ptr(), indices.len(), indices.capacity());
     let proof = Box::new(Proof {
         nonce: proof.nonce,
         indices: ArrayU8 { ptr, len, cap },
