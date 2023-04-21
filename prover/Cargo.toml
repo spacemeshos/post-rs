@@ -1,0 +1,9 @@
+[package]
+name = "prover"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+base64 = "0.21.0"
+clap = { version = "4.2.4", features = ["derive"] }
+post-rs = { path = "../" }

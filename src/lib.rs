@@ -1,5 +1,5 @@
 mod cipher;
-mod compression;
+pub mod compression;
 pub mod config;
 mod difficulty;
 pub mod initialize;

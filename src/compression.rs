@@ -9,14 +9,14 @@ pub(crate) fn compress_indices(indexes: &[u64], keep_bits: usize) -> Vec<u8> {
     bv.as_raw_slice().to_owned()
 }
 
-pub(crate) fn decompress_indexes(indexes: &[u8], bits: usize) -> impl Iterator<Item = u64> + '_ {
+pub fn decompress_indexes(indexes: &[u8], bits: usize) -> impl Iterator<Item = u64> + '_ {
     BitSlice::<_, Lsb0>::from_slice(indexes)
         .chunks_exact(bits)
         .map(|chunk| chunk.load_le::<u64>())
 }
 
 /// Calculate the number of bits required to store the value.
-pub(crate) fn required_bits(value: u64) -> usize {
+pub fn required_bits(value: u64) -> usize {
     if value == 0 {
         return 0;
     }
