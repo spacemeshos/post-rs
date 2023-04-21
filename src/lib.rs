@@ -1,7 +1,7 @@
 mod cipher;
 mod compression;
 pub mod config;
-pub mod difficulty;
+mod difficulty;
 pub mod initialize;
 pub mod metadata;
 pub mod pow;

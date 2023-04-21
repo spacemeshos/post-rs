@@ -36,6 +36,8 @@
 //!     - encrypt it with AES,
 //!     - convert AES output to u64,
 //!     - compare it with difficulty.
+use std::cmp::Ordering;
+
 use cipher::BlockEncrypt;
 use itertools::Itertools;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
@@ -49,9 +51,11 @@ use crate::{
     initialize::{calc_commitment, generate_label},
     metadata::ProofMetadata,
     pow::{hash_k2_pow, hash_k3_pow},
-    prove::Proof,
+    prove::{Proof, Prover8_56},
     random_values_gen::RandomValuesIterator,
 };
+
+const NONCES_PER_AES: u32 = Prover8_56::NONCES_PER_AES;
 
 #[derive(Debug, Clone, Copy)]
 pub struct VerifyingParams {
@@ -96,7 +100,7 @@ pub fn verify(
     let challenge = metadata.challenge;
 
     // Verify K2 PoW
-    let nonce_group = proof.nonce / 2;
+    let nonce_group = proof.nonce / NONCES_PER_AES;
     let k2_pow_value = hash_k2_pow(&challenge, nonce_group, params.pow_scrypt, proof.k2_pow);
     if k2_pow_value >= params.k2_pow_difficulty {
         return Err(format!(
@@ -134,9 +138,12 @@ pub fn verify(
 
     let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index).collect_vec();
     let commitment = calc_commitment(&metadata.node_id, &metadata.commitment_atx_id);
-    let nonce_group = proof.nonce / 2;
+    let nonce_group = proof.nonce / NONCES_PER_AES;
     let cipher = AesCipher::new_with_k2pow(&challenge, nonce_group, proof.k2_pow);
-    let output_index = (proof.nonce % 2) as usize;
+    let lazy_cipher = AesCipher::new_lazy(&challenge, proof.nonce, nonce_group, proof.k2_pow);
+    let (difficulty_msb, difficulty_lsb) = Prover8_56::split_difficulty(params.difficulty);
+
+    let output_index = (proof.nonce % NONCES_PER_AES) as usize;
 
     // Select K3 indices
     let seed = &[
@@ -156,19 +163,38 @@ pub fn verify(
 
     pool.install(|| {
         k3_indices.par_bridge().try_for_each(|index| {
-            let mut u64s = [0u64; 2];
+            let mut output = [0u8; 16];
             let label = generate_label(&commitment, params.scrypt, index);
             cipher.aes.encrypt_block_b2b(
                 &label.into(),
-                bytemuck::cast_slice_mut::<u64, u8>(&mut u64s).into(),
+                (&mut output).into(),
             );
 
-            let value = u64s[output_index].to_le();
-            if value > params.difficulty {
-                return Err(format!(
-                    "value for index: {index} doesn't satisfy difficulty: {value} > {} (label: {label:?})",
-                    params.difficulty
-                ));
+            let msb = output[output_index].to_le();
+            match msb.cmp(&difficulty_msb) {
+                Ordering::Less => {
+                    // valid
+                },
+                Ordering::Greater => {
+                    // invalid
+                    return Err(format!(
+                        "MSB value for index: {index} doesn't satisfy difficulty: {msb} > {difficulty_msb} (label: {label:?})",
+                    ));
+                },
+                Ordering::Equal => {
+                    // Need to check LSB
+                    let mut output = [0u64; 2];
+                    lazy_cipher.aes.encrypt_block_b2b(
+                        &label.into(),
+                        bytemuck::cast_slice_mut(&mut output).into(),
+                    );
+                    let lsb = output[0].to_le() & 0x00ff_ffff_ffff_ffff;
+                    if lsb >= difficulty_lsb {
+                        return Err(format!(
+                            "LSB value for index: {index} doesn't satisfy difficulty: {lsb} >= {difficulty_lsb} (label: {label:?})",
+                        ));
+                    }
+                }
             }
             Ok(())
         })

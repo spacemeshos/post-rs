@@ -79,77 +79,21 @@ pub trait Prover {
 }
 
 // Calculate nonce value given nonce group and its offset within the group.
-#[inline]
+#[inline(always)]
 fn calc_nonce(nonce_group: u32, per_aes: u32, offset: usize) -> u32 {
     nonce_group * per_aes + (offset as u32 % per_aes)
 }
 
-#[inline]
+#[inline(always)]
 fn calc_nonce_group(nonce: u32, per_aes: u32) -> usize {
     (nonce / per_aes) as usize
 }
 
+#[inline(always)]
 fn nonce_group_range(nonces: Range<u32>, per_aes: u32) -> Range<u32> {
     let start_group = nonces.start / per_aes;
     let end_group = std::cmp::max(start_group + 1, (nonces.end + per_aes - 1) / per_aes);
     start_group..end_group
-}
-
-pub struct Prover64_0 {
-    ciphers: Vec<AesCipher>,
-    difficulty: u64,
-}
-
-impl Prover64_0 {
-    const NONCES_PER_AES: u32 = 2;
-
-    pub fn new(challenge: &[u8; 32], nonces: Range<u32>, params: ProvingParams) -> Self {
-        Prover64_0 {
-            ciphers: nonce_group_range(nonces, Self::NONCES_PER_AES)
-                .map(|n| AesCipher::new(challenge, n, params.pow_scrypt, params.k2_pow_difficulty))
-                .collect(),
-            difficulty: params.difficulty,
-        }
-    }
-
-    fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
-        self.ciphers
-            .get(calc_nonce_group(nonce, Self::NONCES_PER_AES) % self.ciphers.len())
-    }
-}
-
-impl Prover for Prover64_0 {
-    fn get_k2_pow(&self, nonce: u32) -> Option<u64> {
-        self.cipher(nonce).map(|aes| aes.k2_pow)
-    }
-
-    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<(u32, Vec<u64>)>
-    where
-        F: FnMut(u32, u64) -> Option<Vec<u64>>,
-    {
-        let mut u64s = [0u64; CHUNK_SIZE / 8];
-
-        for chunk in batch.chunks_exact(CHUNK_SIZE) {
-            for cipher in &self.ciphers {
-                _ = cipher
-                    .aes
-                    .encrypt_padded_b2b::<NoPadding>(chunk, bytemuck::cast_slice_mut(&mut u64s));
-
-                for (offset, val) in u64s.iter().enumerate() {
-                    if val.to_le() < self.difficulty {
-                        let nonce = calc_nonce(cipher.nonce_group, Self::NONCES_PER_AES, offset);
-                        let index = index + (offset as u32 / Self::NONCES_PER_AES) as u64;
-                        if let Some(indexes) = consume(nonce, index) {
-                            return Some((nonce, indexes));
-                        }
-                    }
-                }
-            }
-            index += AES_BATCH as u64;
-        }
-
-        None
-    }
 }
 
 pub struct Prover8_56 {
@@ -160,10 +104,22 @@ pub struct Prover8_56 {
 }
 
 impl Prover8_56 {
-    const NONCES_PER_AES: u32 = 16;
-    const NONCES_PER_LAZY_AES: usize = 2;
+    pub(crate) const NONCES_PER_AES: u32 = 16;
 
-    pub fn new(challenge: &[u8; 32], nonces: Range<u32>, params: ProvingParams) -> Self {
+    pub fn new(
+        challenge: &[u8; 32],
+        nonces: Range<u32>,
+        params: ProvingParams,
+    ) -> eyre::Result<Self> {
+        // TODO consider to relax it to allow any range of nonces
+        eyre::ensure!(
+            nonces.start % Self::NONCES_PER_AES == 0,
+            "nonces must start at a multiple of 16"
+        );
+        eyre::ensure!(
+            nonces.len() % Self::NONCES_PER_AES as usize == 0,
+            "nonces must be a multiple of 16"
+        );
         let ciphers: Vec<AesCipher> = nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
             .map(|nonce_group| {
                 AesCipher::new(
@@ -176,7 +132,6 @@ impl Prover8_56 {
             .collect();
 
         let lazy_ciphers = nonces
-            .step_by(Self::NONCES_PER_LAZY_AES) // We can fit 2 nonces in a single AES cipher.
             .map(|nonce| {
                 let nonce_group = calc_nonce_group(nonce, Self::NONCES_PER_AES);
                 AesCipher::new_lazy(
@@ -188,23 +143,36 @@ impl Prover8_56 {
             })
             .collect();
 
-        Self {
+        let (difficulty_msb, difficulty_lsb) = Self::split_difficulty(params.difficulty);
+        Ok(Self {
             ciphers,
             lazy_ciphers,
-            difficulty_msb: (params.difficulty >> 56) as u8,
-            difficulty_lsb: params.difficulty & 0x00ff_ffff_ffff_ffff,
-        }
+            difficulty_msb,
+            difficulty_lsb,
+        })
     }
 
+    pub(crate) fn split_difficulty(difficulty: u64) -> (u8, u64) {
+        ((difficulty >> 56) as u8, difficulty & 0x00ff_ffff_ffff_ffff)
+    }
+
+    #[inline(always)]
     fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
         self.ciphers
             .get(calc_nonce_group(nonce, Self::NONCES_PER_AES) % self.ciphers.len())
     }
 
+    #[inline(always)]
+    fn lazy_cipher(&self, nonce: u32) -> Option<&AesCipher> {
+        self.lazy_ciphers
+            .get(nonce as usize % self.lazy_ciphers.len())
+    }
+
+    /// LSB part of the difficulty is checked with second sequence of AES ciphers.
     fn check_lsb<F>(
         &self,
         label: &[u8],
-        nonce_group: u32,
+        nonce: u32,
         nonce_offset: usize,
         base_index: u64,
         mut consume: F,
@@ -212,18 +180,15 @@ impl Prover8_56 {
     where
         F: FnMut(u32, u64) -> Option<Vec<u64>>,
     {
-        // Second half of the difficulty is checked with the shadow ciphers.
         let mut out = [0u64; 2];
-        let nonce = calc_nonce(nonce_group, Self::NONCES_PER_AES, nonce_offset);
-        let lazy_nonce_group = calc_nonce_group(nonce, Self::NONCES_PER_LAZY_AES as u32);
 
-        self.lazy_ciphers[lazy_nonce_group % self.lazy_ciphers.len()]
+        self.lazy_cipher(nonce)
+            .unwrap()
             .aes
             .encrypt_block_b2b(label.into(), bytemuck::cast_slice_mut(&mut out).into());
 
-        // to_le() is free on little-endian machines.
-        let out_idx = nonce as usize % Self::NONCES_PER_LAZY_AES;
-        if (out[out_idx].to_le() & 0x00ff_ffff_ffff_ffff) < self.difficulty_lsb {
+        let lsb = out[0].to_le() & 0x00ff_ffff_ffff_ffff;
+        if lsb < self.difficulty_lsb {
             let index = base_index + (nonce_offset / Self::NONCES_PER_AES as usize) as u64;
             if let Some(indexes) = consume(nonce, index) {
                 return Some((nonce, indexes));
@@ -252,10 +217,12 @@ impl Prover for Prover8_56 {
                     if msb <= self.difficulty_msb {
                         if msb == self.difficulty_msb {
                             // Check LSB
-                            let label_offset = offset / Self::NONCES_PER_AES as usize;
+                            let nonce =
+                                calc_nonce(cipher.nonce_group, Self::NONCES_PER_AES, offset);
+                            let label_offset = offset / Self::NONCES_PER_AES as usize * LABEL_SIZE;
                             if let Some(p) = self.check_lsb(
                                 &chunk[label_offset..label_offset + LABEL_SIZE],
-                                cipher.nonce_group,
+                                nonce,
                                 offset,
                                 index,
                                 &mut consume,
@@ -277,263 +244,6 @@ impl Prover for Prover8_56 {
             index += AES_BATCH as u64;
         }
 
-        None
-    }
-}
-
-pub struct Prover16_48 {
-    ciphers: Vec<AesCipher>,
-    lazy_ciphers: Vec<AesCipher>,
-    difficulty_msb: u16,
-    difficulty_lsb: u64,
-}
-
-impl Prover16_48 {
-    const NONCES_PER_AES: u32 = 8;
-    const NONCES_PER_LAZY_AES: usize = 2;
-
-    pub fn new(challenge: &[u8; 32], nonces: Range<u32>, params: ProvingParams) -> Self {
-        let ciphers: Vec<AesCipher> = nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
-            .map(|nonce_group| {
-                AesCipher::new(
-                    challenge,
-                    nonce_group,
-                    params.pow_scrypt,
-                    params.k2_pow_difficulty,
-                )
-            })
-            .collect();
-
-        let lazy_ciphers = nonces
-            .step_by(Self::NONCES_PER_LAZY_AES) // We can fit 2 nonces in a single AES cipher.
-            .map(|nonce| {
-                let nonce_group = calc_nonce_group(nonce, Self::NONCES_PER_AES);
-                AesCipher::new_lazy(
-                    challenge,
-                    nonce,
-                    nonce_group as u32,
-                    ciphers[nonce_group].k2_pow,
-                )
-            })
-            .collect();
-
-        Self {
-            ciphers,
-            lazy_ciphers,
-            difficulty_msb: (params.difficulty >> 48) as u16,
-            difficulty_lsb: params.difficulty & 0x0000_ffff_ffff_ffff,
-        }
-    }
-
-    fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
-        self.ciphers
-            .get(calc_nonce_group(nonce, Self::NONCES_PER_AES) % self.ciphers.len())
-    }
-
-    fn check_lsb<F>(
-        &self,
-        label: &[u8],
-        nonce_group: u32,
-        nonce_offset: usize,
-        base_index: u64,
-        mut consume: F,
-    ) -> Option<(u32, Vec<u64>)>
-    where
-        F: FnMut(u32, u64) -> Option<Vec<u64>>,
-    {
-        // Second half of the difficulty is checked with the shadow ciphers.
-        let mut out = [0u64; 2];
-        let nonce = calc_nonce(nonce_group, Self::NONCES_PER_AES, nonce_offset);
-        let lazy_nonce_group = calc_nonce_group(nonce, Self::NONCES_PER_LAZY_AES as u32);
-
-        self.lazy_ciphers[lazy_nonce_group % self.lazy_ciphers.len()]
-            .aes
-            .encrypt_block_b2b(label.into(), bytemuck::cast_slice_mut(&mut out).into());
-
-        // to_le() is free on little-endian machines.
-        let out_idx = nonce as usize % Self::NONCES_PER_LAZY_AES;
-        if (out[out_idx].to_le() & 0x0000_ffff_ffff_ffff) < self.difficulty_lsb {
-            let index = base_index + (nonce_offset / Self::NONCES_PER_AES as usize) as u64;
-            if let Some(indexes) = consume(nonce, index) {
-                return Some((nonce, indexes));
-            }
-        }
-        None
-    }
-}
-
-impl Prover for Prover16_48 {
-    fn get_k2_pow(&self, nonce: u32) -> Option<u64> {
-        self.cipher(nonce).map(|aes| aes.k2_pow)
-    }
-
-    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<(u32, Vec<u64>)>
-    where
-        F: FnMut(u32, u64) -> Option<Vec<u64>>,
-    {
-        let mut u16s = [0u16; CHUNK_SIZE / 2];
-
-        for chunk in batch.chunks_exact(CHUNK_SIZE) {
-            for cipher in &self.ciphers {
-                _ = cipher
-                    .aes
-                    .encrypt_padded_b2b::<NoPadding>(chunk, bytemuck::cast_slice_mut(&mut u16s));
-
-                for (offset, msb) in u16s.iter().enumerate() {
-                    let msb = msb.to_le();
-                    if msb <= self.difficulty_msb {
-                        if msb == self.difficulty_msb {
-                            // Check LSB
-                            let label_offset = offset / Self::NONCES_PER_AES as usize;
-                            if let Some(p) = self.check_lsb(
-                                &chunk[label_offset..label_offset + LABEL_SIZE],
-                                cipher.nonce_group,
-                                offset,
-                                index,
-                                &mut consume,
-                            ) {
-                                return Some(p);
-                            }
-                        } else {
-                            // valid label
-                            let index = index + (offset as u32 / Self::NONCES_PER_AES) as u64;
-                            let nonce =
-                                calc_nonce(cipher.nonce_group, Self::NONCES_PER_AES, offset);
-                            if let Some(indexes) = consume(nonce, index) {
-                                return Some((nonce, indexes));
-                            }
-                        }
-                    }
-                }
-            }
-            index += AES_BATCH as u64;
-        }
-
-        None
-    }
-}
-
-pub struct Prover32_32 {
-    ciphers: Vec<AesCipher>,
-    lazy_ciphers: Vec<AesCipher>,
-    difficulty_msb: u32,
-    difficulty_lsb: u32,
-}
-
-impl Prover32_32 {
-    const NONCES_PER_AES: u32 = 4;
-    const NONCES_PER_LAZY_AES: usize = 4;
-
-    pub fn new(challenge: &[u8; 32], nonces: Range<u32>, params: ProvingParams) -> Self {
-        let ciphers: Vec<AesCipher> = nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
-            .map(|n| AesCipher::new(challenge, n, params.pow_scrypt, params.k2_pow_difficulty))
-            .collect();
-
-        let lazy_ciphers = nonces
-            .step_by(Self::NONCES_PER_LAZY_AES) // We can fit 2 nonces in a single AES cipher.
-            .map(|nonce| {
-                let nonce_group = calc_nonce_group(nonce, Self::NONCES_PER_AES);
-                AesCipher::new_lazy(
-                    challenge,
-                    nonce,
-                    nonce_group as u32,
-                    ciphers[nonce_group].k2_pow,
-                )
-            })
-            .collect();
-
-        Self {
-            ciphers,
-            lazy_ciphers,
-            difficulty_msb: (params.difficulty >> 32) as u32,
-            difficulty_lsb: params.difficulty as u32,
-        }
-    }
-
-    fn cipher(&self, nonce: u32) -> Option<&AesCipher> {
-        self.ciphers
-            .get(calc_nonce_group(nonce, Self::NONCES_PER_AES) % self.ciphers.len())
-    }
-
-    fn check_lsb<F>(
-        &self,
-        label: &[u8],
-        nonce_group: u32,
-        nonce_offset: usize,
-        base_index: u64,
-        mut consume: F,
-    ) -> Option<(u32, Vec<u64>)>
-    where
-        F: FnMut(u32, u64) -> Option<Vec<u64>>,
-    {
-        // Second half of the difficulty is checked with the shadow ciphers.
-        let mut out = [0u32; Self::NONCES_PER_LAZY_AES];
-        let nonce = calc_nonce(nonce_group, Self::NONCES_PER_AES, nonce_offset);
-        let lazy_nonce_group = calc_nonce_group(nonce, Self::NONCES_PER_LAZY_AES as u32);
-
-        self.lazy_ciphers[lazy_nonce_group % self.lazy_ciphers.len()]
-            .aes
-            .encrypt_block_b2b(label.into(), bytemuck::cast_slice_mut(&mut out).into());
-
-        // to_le() is free on little-endian machines.
-        let out_idx = nonce as usize % Self::NONCES_PER_LAZY_AES;
-        if out[out_idx].to_le() < self.difficulty_lsb {
-            let index = base_index + (nonce_offset / Self::NONCES_PER_AES as usize) as u64;
-            if let Some(indexes) = consume(nonce, index) {
-                return Some((nonce, indexes));
-            }
-        }
-        None
-    }
-}
-
-impl Prover for Prover32_32 {
-    fn get_k2_pow(&self, nonce: u32) -> Option<u64> {
-        self.cipher(nonce).map(|aes| aes.k2_pow)
-    }
-
-    fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<(u32, Vec<u64>)>
-    where
-        F: FnMut(u32, u64) -> Option<Vec<u64>>,
-    {
-        let mut u32s = [0u32; CHUNK_SIZE / 4];
-
-        for chunk in batch.chunks_exact(CHUNK_SIZE) {
-            for cipher in &self.ciphers {
-                cipher
-                    .aes
-                    .encrypt_padded_b2b::<NoPadding>(chunk, bytemuck::cast_slice_mut(&mut u32s))
-                    .unwrap();
-
-                for (offset, msb) in u32s.iter().enumerate() {
-                    let msb = msb.to_le();
-                    if msb <= self.difficulty_msb {
-                        if msb == self.difficulty_msb {
-                            // Check LSB
-                            let label_offset = offset / Self::NONCES_PER_AES as usize;
-                            if let Some(p) = self.check_lsb(
-                                &chunk[label_offset..label_offset + LABEL_SIZE],
-                                cipher.nonce_group,
-                                offset,
-                                index,
-                                &mut consume,
-                            ) {
-                                return Some(p);
-                            }
-                        } else {
-                            // valid label
-                            let index = index + (offset as u32 / Self::NONCES_PER_AES) as u64;
-                            let nonce =
-                                calc_nonce(cipher.nonce_group, Self::NONCES_PER_AES, offset);
-                            if let Some(indexes) = consume(nonce, index) {
-                                return Some((nonce, indexes));
-                            }
-                        }
-                    }
-                }
-            }
-            index += AES_BATCH as u64;
-        }
         None
     }
 }
@@ -554,7 +264,8 @@ pub fn generate_proof(
 
     loop {
         let indexes = Mutex::new(HashMap::<u32, Vec<u64>>::new());
-        let prover = Prover64_0::new(challenge, start_nonce..end_nonce, params.clone());
+        let prover = Prover8_56::new(challenge, start_nonce..end_nonce, params.clone())
+            .wrap_err("creating prover")?;
 
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
@@ -655,8 +366,8 @@ mod tests {
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
         };
-        let prover = Prover64_0::new(challenge, 0..1, params);
-        let res = prover.prove(&[0u8; 8 * BLOCK_SIZE], 0, |nonce, index| {
+        let prover = Prover8_56::new(challenge, 0..Prover8_56::NONCES_PER_AES, params).unwrap();
+        let res = prover.prove(&[0u8; 8 * LABEL_SIZE], 0, |nonce, index| {
             let _ = tx.send((nonce, index));
             None
         });
@@ -664,25 +375,10 @@ mod tests {
         drop(tx);
         let rst: Vec<(u32, u64)> = rx.into_iter().collect();
         assert_eq!(
+            (0..8)
+                .flat_map(move |x| (0..Prover8_56::NONCES_PER_AES).zip(std::iter::repeat(x)))
+                .collect::<Vec<_>>(),
             rst,
-            vec![
-                (0, 0),
-                (1, 0),
-                (0, 1),
-                (1, 1),
-                (0, 2),
-                (1, 2),
-                (0, 3),
-                (1, 3),
-                (0, 4),
-                (1, 4),
-                (0, 5),
-                (1, 5),
-                (0, 6),
-                (1, 6),
-                (0, 7),
-                (1, 7)
-            ],
         );
     }
 
@@ -699,7 +395,7 @@ mod tests {
         thread_rng().fill_bytes(&mut data);
 
         let mut start_nonce = 0;
-        let mut end_nonce = start_nonce + 20;
+        let mut end_nonce = start_nonce + Prover8_56::NONCES_PER_AES;
         let params = ProvingParams {
             pow_scrypt: ScryptParams::new(1, 0, 0),
             difficulty: proving_difficulty(NUM_LABELS as u64, K1).unwrap(),
@@ -710,7 +406,8 @@ mod tests {
         let indexes = loop {
             let mut indicies = HashMap::<u32, Vec<u64>>::new();
 
-            let prover = Prover64_0::new(challenge, start_nonce..end_nonce, params.clone());
+            let prover =
+                Prover8_56::new(challenge, start_nonce..end_nonce, params.clone()).unwrap();
 
             let result = prover.prove(&data, 0, |nonce, index| {
                 let vec = indicies.entry(nonce).or_default();
@@ -751,55 +448,6 @@ mod tests {
     }
 
     #[test]
-    fn proving() {
-        let challenge = b"hello world, CHALLENGE me!!!!!!!";
-
-        let num_labels = 1e5 as usize;
-        let k1 = 1000;
-        let k2 = 1000;
-        let params = ProvingParams {
-            pow_scrypt: ScryptParams::new(1, 0, 0),
-            difficulty: proving_difficulty(num_labels as u64, k1).unwrap(),
-            k2_pow_difficulty: u64::MAX,
-            k3_pow_difficulty: u64::MAX,
-        };
-        let mut data = vec![0u8; num_labels * LABEL_SIZE];
-        thread_rng().fill_bytes(&mut data);
-
-        let prover = Prover64_0::new(challenge, 0..20, params.clone());
-
-        let mut indicies = HashMap::<u32, Vec<u64>>::new();
-
-        let (nonce, indexes) = prover
-            .prove(&data, 0, |nonce, index| {
-                let vec = indicies.entry(nonce).or_default();
-                vec.push(index);
-                if vec.len() >= k2 {
-                    return Some(std::mem::take(vec));
-                }
-                None
-            })
-            .unwrap();
-
-        assert_eq!(k2, indexes.len());
-        assert!(nonce < 20);
-
-        // Verify if all indicies really satisfy difficulty
-        let cipher = prover.cipher(nonce).unwrap();
-        let mut out = [0u64; 2];
-
-        for idx in indexes {
-            let idx = idx as usize;
-            cipher.aes.encrypt_block_b2b(
-                data[idx * BLOCK_SIZE..(idx + 1) * BLOCK_SIZE].into(),
-                bytemuck::cast_slice_mut(out.as_mut_slice()).into(),
-            );
-
-            assert!(out[(nonce % 2) as usize] <= params.difficulty);
-        }
-    }
-
-    #[test]
     fn proving_vector() {
         let challenge = b"hello world, CHALLENGE me!!!!!!!";
 
@@ -817,7 +465,7 @@ mod tests {
             .take(num_labels * LABEL_SIZE)
             .collect::<Vec<u8>>();
 
-        let prover = Prover64_0::new(challenge, 0..20, params);
+        let prover = Prover8_56::new(challenge, 0..Prover8_56::NONCES_PER_AES, params).unwrap();
 
         let mut indexes = HashMap::<u32, Vec<u64>>::new();
 
@@ -831,12 +479,12 @@ mod tests {
                 None
             })
             .unwrap();
-        assert_eq!(2, nonce);
+        assert_eq!(3, nonce);
 
         assert_eq!(
             &[
-                2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38, 41, 44, 47, 50, 53, 56, 59, 62,
-                65, 68, 71, 74, 77, 80, 83, 86, 89, 92, 95
+                0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 42, 45, 48, 51, 54, 57, 60, 63,
+                66, 69, 72, 75, 78, 81, 84, 87, 90, 93
             ],
             indexes.as_slice()
         );

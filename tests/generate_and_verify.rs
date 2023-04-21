@@ -11,7 +11,7 @@ use tempfile::tempdir;
 fn test_generate_and_verify() {
     // Initialize some data
     let challenge = b"hello world, challenge me!!!!!!!";
-    let labels_per_unit = 256;
+    let labels_per_unit = 1024;
     let datadir = tempdir().unwrap();
 
     let cfg = post::config::Config {
@@ -36,7 +36,7 @@ fn test_generate_and_verify() {
     .unwrap();
 
     // Generate a proof
-    let proof = generate_proof(datadir.path(), challenge, cfg, 10, 2).unwrap();
+    let proof = generate_proof(datadir.path(), challenge, cfg, 48, 1).unwrap();
 
     // Verify the proof
     let metadata = ProofMetadata {
