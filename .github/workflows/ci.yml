@@ -107,7 +107,7 @@ jobs:
             staticlib: post.lib
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ join( matrix.os, '-' ) }}
