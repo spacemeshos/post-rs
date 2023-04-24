@@ -1116,7 +1116,7 @@ dependencies = [
 
 [[package]]
 name = "post-cbindings"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "cbindgen",
  "eyre",
@@ -1125,7 +1125,7 @@ dependencies = [
 
 [[package]]
 name = "post-rs"
-version = "0.1.5"
+version = "0.1.6"
 dependencies = [
  "aes",
  "bitvec",
