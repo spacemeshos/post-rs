@@ -12,7 +12,7 @@ fn bench_k2_pow(c: &mut Criterion) {
                 b"hello world, CHALLENGE me!!!!!!!",
                 0,
                 ScryptParams::new(6, 0, 0),
-                black_box(0x0FFFFFFF_FFFFFFFF),
+                black_box(0x0FFF_FFFF_FFFF_FFFF),
             )
         })
     });

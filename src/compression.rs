@@ -24,6 +24,7 @@ pub(crate) fn required_bits(value: u64) -> usize {
 }
 
 #[cfg(test)]
+#[allow(clippy::unusual_byte_groupings)]
 mod tests {
     use super::*;
     use itertools::max;
