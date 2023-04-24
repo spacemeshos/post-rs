@@ -31,7 +31,7 @@ const BLOCK_SIZE: usize = 16; // size of the aes block
 const AES_BATCH: usize = 8; // will use encrypt8 asm method
 const CHUNK_SIZE: usize = BLOCK_SIZE * AES_BATCH;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Proof {
     pub nonce: u32,
     pub indices: Vec<u8>,

@@ -242,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn reject_empty_proof() {
+    fn reject_invalid_proof() {
         let challenge = [0u8; 32];
         let scrypt_params = ScryptParams::new(1, 0, 0);
         let params = VerifyingParams {
@@ -264,12 +264,6 @@ mod tests {
             params.k3_pow_difficulty,
             k2_pow,
         );
-        let fake_proof = Proof {
-            nonce: 0,
-            indices: vec![],
-            k2_pow,
-            k3_pow,
-        };
         let fake_metadata = ProofMetadata {
             node_id: [0u8; 32],
             commitment_atx_id: [0u8; 32],
@@ -277,7 +271,41 @@ mod tests {
             num_units: 10,
             labels_per_unit: 2048,
         };
-
-        assert!(verify(&fake_proof, &fake_metadata, params, 1).is_err());
+        {
+            let empty_proof = Proof {
+                nonce: 0,
+                indices: vec![],
+                k2_pow,
+                k3_pow,
+            };
+            assert!(verify(&empty_proof, &fake_metadata, params, 1).is_err());
+        }
+        {
+            let proof_with_not_enough_indices = Proof {
+                nonce: 0,
+                indices: vec![1, 2, 3],
+                k2_pow,
+                k3_pow,
+            };
+            assert!(verify(&proof_with_not_enough_indices, &fake_metadata, params, 1).is_err());
+        }
+        {
+            let proof_with_invalid_k2_pow = Proof {
+                nonce: 0,
+                indices: vec![1, 2, 3],
+                k2_pow: params.k2_pow_difficulty,
+                k3_pow,
+            };
+            assert!(verify(&proof_with_invalid_k2_pow, &fake_metadata, params, 1).is_err());
+        }
+        {
+            let proof_with_invalid_k3_pow = Proof {
+                nonce: 0,
+                indices: vec![1, 2, 3],
+                k2_pow,
+                k3_pow: params.k3_pow_difficulty,
+            };
+            assert!(verify(&proof_with_invalid_k3_pow, &fake_metadata, params, 1).is_err());
+        }
     }
 }

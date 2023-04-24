@@ -52,6 +52,16 @@ fn test_generate_and_verify() {
         VerifyingParams::new(&metadata, &cfg).unwrap(),
         0,
     );
-
     assert_eq!(Ok(()), valid, "proof is not valid");
+
+    // Check that the proof is invalid if we modify one index
+    let mut invalid_proof = proof;
+    invalid_proof.indices[0] += 1;
+    let valid = verify(
+        &invalid_proof,
+        &metadata,
+        VerifyingParams::new(&metadata, &cfg).unwrap(),
+        0,
+    );
+    assert!(valid.is_err(), "proof should be invalid");
 }
