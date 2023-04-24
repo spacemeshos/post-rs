@@ -170,7 +170,7 @@ pub fn verify(
                 (&mut output).into(),
             );
 
-            let msb = output[output_index].to_le();
+            let msb = output[output_index];
             match msb.cmp(&difficulty_msb) {
                 Ordering::Less => {
                     // valid
