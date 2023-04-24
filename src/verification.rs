@@ -72,7 +72,7 @@ impl VerifyingParams {
     pub fn new(metadata: &ProofMetadata, cfg: &Config) -> eyre::Result<Self> {
         let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
         Ok(Self {
-            difficulty: proving_difficulty(num_labels, cfg.k1)?,
+            difficulty: proving_difficulty(cfg.k1, num_labels)?,
             k2: cfg.k2,
             k3: cfg.k3,
             k2_pow_difficulty: cfg.k2_pow_difficulty / metadata.num_units as u64,

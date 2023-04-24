@@ -62,7 +62,7 @@ impl ProvingParams {
     pub fn new(metadata: &PostMetadata, cfg: &Config) -> eyre::Result<Self> {
         let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
         Ok(Self {
-            difficulty: proving_difficulty(num_labels, cfg.k1)?,
+            difficulty: proving_difficulty(cfg.k1, num_labels)?,
             k2_pow_difficulty: cfg.k2_pow_difficulty / metadata.num_units as u64,
             k3_pow_difficulty: cfg.k3_pow_difficulty / metadata.num_units as u64,
             pow_scrypt: cfg.pow_scrypt,
@@ -398,7 +398,7 @@ mod tests {
         let mut end_nonce = start_nonce + Prover8_56::NONCES_PER_AES;
         let params = ProvingParams {
             pow_scrypt: ScryptParams::new(1, 0, 0),
-            difficulty: proving_difficulty(NUM_LABELS as u64, K1).unwrap(),
+            difficulty: proving_difficulty(K1, NUM_LABELS as u64).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
         };
@@ -456,7 +456,7 @@ mod tests {
         let k2 = 32;
         let params = ProvingParams {
             pow_scrypt: ScryptParams::new(8, 0, 0),
-            difficulty: proving_difficulty(num_labels as u64, k1).unwrap(),
+            difficulty: proving_difficulty(k1, num_labels as u64).unwrap(),
             k2_pow_difficulty: u64::MAX,
             k3_pow_difficulty: u64::MAX,
         };
