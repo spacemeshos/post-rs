@@ -117,7 +117,7 @@ impl Prover8_56 {
             "nonces must start at a multiple of 16"
         );
         eyre::ensure!(
-            nonces.len() % Self::NONCES_PER_AES as usize == 0,
+            !nonces.is_empty() && nonces.len() % Self::NONCES_PER_AES as usize == 0,
             "nonces must be a multiple of 16"
         );
         let ciphers: Vec<AesCipher> = nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
@@ -138,7 +138,7 @@ impl Prover8_56 {
                     challenge,
                     nonce,
                     nonce_group as u32,
-                    ciphers[nonce_group].k2_pow,
+                    ciphers[nonce_group % ciphers.len()].k2_pow,
                 )
             })
             .collect();
@@ -323,6 +323,33 @@ mod tests {
     use rand::{thread_rng, RngCore};
     use std::{collections::HashMap, iter::repeat};
 
+    #[test]
+    fn creating_prover() {
+        let meta = PostMetadata {
+            labels_per_unit: 1000,
+            num_units: 1,
+            max_file_size: 1024,
+            ..Default::default()
+        };
+        let cfg = Config {
+            k1: 279,
+            k2: 300,
+            k3: 65,
+            k2_pow_difficulty: u64::MAX,
+            k3_pow_difficulty: u64::MAX,
+            pow_scrypt: ScryptParams::new(1, 0, 0),
+            scrypt: ScryptParams::new(1, 0, 0),
+        };
+        assert!(Prover8_56::new(&[0; 32], 0..16, ProvingParams::new(&meta, &cfg).unwrap()).is_ok());
+        assert!(
+            Prover8_56::new(&[0; 32], 16..32, ProvingParams::new(&meta, &cfg).unwrap()).is_ok()
+        );
+
+        assert!(Prover8_56::new(&[0; 32], 0..0, ProvingParams::new(&meta, &cfg).unwrap()).is_err());
+        assert!(
+            Prover8_56::new(&[0; 32], 1..16, ProvingParams::new(&meta, &cfg).unwrap()).is_err()
+        );
+    }
     /// Test that PoW thresholds are scaled with num_units.
     #[test]
     fn scaling_pows_thresholds() {

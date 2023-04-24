@@ -15,7 +15,7 @@ fn test_generate_and_verify() {
     let datadir = tempdir().unwrap();
 
     let cfg = post::config::Config {
-        k1: 32,
+        k1: 23,
         k2: 32,
         k3: 10,
         k2_pow_difficulty: u64::MAX / 8,
@@ -36,7 +36,7 @@ fn test_generate_and_verify() {
     .unwrap();
 
     // Generate a proof
-    let proof = generate_proof(datadir.path(), challenge, cfg, 48, 1).unwrap();
+    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1).unwrap();
 
     // Verify the proof
     let metadata = ProofMetadata {
