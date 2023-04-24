@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use post::{prove::ConstDProver, prove::Prover, prove::ProvingParams};
+use post::{prove::Prover, prove::Prover8_56, prove::ProvingParams};
 use pprof::criterion::{Output, PProfProfiler};
 use rand::{thread_rng, RngCore};
 use rayon::prelude::{ParallelBridge, ParallelIterator};
@@ -23,7 +23,7 @@ fn threads_to_str(threads: usize) -> String {
 fn prover_bench(c: &mut Criterion) {
     let mut group = c.benchmark_group("proving");
 
-    let mut data = vec![0; 32 * MIB];
+    let mut data = vec![0; 64 * MIB];
     thread_rng().fill_bytes(&mut data);
     group.throughput(criterion::Throughput::Bytes(data.len() as u64));
 
@@ -36,8 +36,8 @@ fn prover_bench(c: &mut Criterion) {
     };
 
     for (nonces, threads) in itertools::iproduct!(
-        [2, 20, 200],
-        [0, 1] // 0 == automatic
+        [16, 32, 64],
+        [1, 0] // 0 == automatic
     ) {
         group.bench_with_input(
             BenchmarkId::new(
@@ -46,7 +46,7 @@ fn prover_bench(c: &mut Criterion) {
             ),
             &(nonces, threads),
             |b, &(nonces, threads)| {
-                let prover = ConstDProver::new(CHALLENGE, 0..nonces, params.clone());
+                let prover = Prover8_56::new(CHALLENGE, 0..nonces, params.clone()).unwrap();
                 b.iter(|| {
                     let f = black_box(|_, _| None);
                     match threads {
