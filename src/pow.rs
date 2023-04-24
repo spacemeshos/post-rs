@@ -7,13 +7,13 @@
 //! without actually holding the whole POST data.
 //!
 //! TODO: explain the need for "K3 PoW".
-use rayon::prelude::{ParallelBridge, ParallelIterator};
+use rayon::prelude::*;
 use scrypt_jane::scrypt::{scrypt, ScryptParams};
 
 pub fn find_k2_pow(challenge: &[u8; 32], nonce: u32, params: ScryptParams, difficulty: u64) -> u64 {
-    (0u64..)
-        .par_bridge()
-        .find_any(|&k2_pow| hash_k2_pow(challenge, nonce, params, k2_pow) < difficulty)
+    (0u64..u64::MAX)
+        .into_par_iter()
+        .find_first(|&k2_pow| hash_k2_pow(challenge, nonce, params, k2_pow) < difficulty)
         .expect("looking for k2pow")
 }
 
@@ -40,9 +40,9 @@ pub fn find_k3_pow(
     difficulty: u64,
     k2_pow: u64,
 ) -> u64 {
-    (0u64..)
-        .par_bridge()
-        .find_any(|&k3_pow| {
+    (0u64..u64::MAX)
+        .into_par_iter()
+        .find_first(|&k3_pow| {
             hash_k3_pow(challenge, nonce, indexes, params, k2_pow, k3_pow) < difficulty
         })
         .expect("looking for k3pow")
