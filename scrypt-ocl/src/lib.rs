@@ -1,4 +1,4 @@
-use ocl::{Buffer, Kernel, MemFlags, Platform, ProQue, SpatialDims};
+use ocl::{Buffer, Kernel, MemFlags, Platform, ProQue, SpatialDims, enums::DeviceInfoResult};
 use std::ops::Range;
 use thiserror::Error;
 
@@ -63,10 +63,22 @@ impl Scrypter {
         let src = include_str!("scrypt-jane.cl");
         let mut pro_que = ProQue::builder().src(src).platform(platform).build()?;
 
-        let max_wg_size = pro_que.device().max_wg_size()?;
-        let global_work_size = max_wg_size * 2;
+        //TODO remove print
+        eprintln!("Device max wg size {:?}", pro_que.device().max_wg_size());
+        eprintln!("Device max cu is: {:?}", pro_que.device().info(ocl::enums::DeviceInfo::MaxComputeUnits));
 
-        pro_que.set_dims(SpatialDims::One(global_work_size));
+        let max_compute_units = match pro_que.device().info(ocl::enums::DeviceInfo::MaxComputeUnits) {
+            Ok(DeviceInfoResult::MaxComputeUnits(r)) => Ok(r),
+            Err(err) => Err(err),
+            _ => panic!("Device::local_work_size: Unexpected 'DeviceInfoResult' variant."),
+        }?;
+
+        let max_wg_size = pro_que.device().max_wg_size()?;
+        let global_work_size = max_wg_size;
+
+        let local_work_size = SpatialDims::One(max_wg_size / max_compute_units as usize);
+
+        pro_que.set_dims(SpatialDims::One(1));
 
         let commitment: Vec<u32> = commitment
             .chunks(4)
@@ -102,7 +114,7 @@ impl Scrypter {
             .arg(&output)
             .arg(&padcache)
             .global_work_size(SpatialDims::One(global_work_size))
-            .local_work_size(128)
+            .local_work_size(local_work_size)
             .build()?;
 
         Ok(Self {
