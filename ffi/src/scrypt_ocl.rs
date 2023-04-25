@@ -4,18 +4,19 @@ use scrypt_ocl::{ocl::Platform, Scrypter};
 
 pub enum Initializer {}
 
-#[repr(u32)]
+#[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum ScryptResult {
-    Ok = 0,
-    ErrorInvalidLabelsRange = 1,
-    OclError = 2,
-    InvalidArgument = 3,
+#[allow(clippy::enum_variant_names)]
+pub enum InitializeResult {
+    InitializeOk = 0,
+    InitializeInvalidLabelsRange = 1,
+    InitializeOclError = 2,
+    InitializeInvalidArgument = 3,
 }
 
-impl From<scrypt_ocl::ocl::Error> for ScryptResult {
+impl From<scrypt_ocl::ocl::Error> for InitializeResult {
     fn from(_: scrypt_ocl::ocl::Error) -> Self {
-        ScryptResult::OclError
+        InitializeResult::InitializeOclError
     }
 }
 
@@ -38,25 +39,25 @@ impl Debug for Provider {
 
 /// Returns the number of providers available.
 #[no_mangle]
-pub extern "C" fn get_providers_count(out: *mut usize) -> ScryptResult {
+pub extern "C" fn get_providers_count(out: *mut usize) -> InitializeResult {
     if out.is_null() {
-        return ScryptResult::InvalidArgument;
+        return InitializeResult::InitializeInvalidArgument;
     }
     unsafe { *out = scrypt_ocl::get_providers_count() };
-    ScryptResult::Ok
+    InitializeResult::InitializeOk
 }
 
 /// Returns all available providers.
 #[no_mangle]
-pub extern "C" fn get_providers(out: *mut Provider, out_len: usize) -> ScryptResult {
+pub extern "C" fn get_providers(out: *mut Provider, out_len: usize) -> InitializeResult {
     if out.is_null() {
-        return ScryptResult::InvalidArgument;
+        return InitializeResult::InitializeInvalidArgument;
     }
 
     let list_core = if let Ok(ids) = scrypt_ocl::ocl::core::get_platform_ids() {
         ids
     } else {
-        return ScryptResult::OclError;
+        return InitializeResult::InitializeOclError;
     };
     let platforms = Platform::list_from_core(list_core);
 
@@ -76,7 +77,7 @@ pub extern "C" fn get_providers(out: *mut Provider, out_len: usize) -> ScryptRes
         out.name[..name.len()].copy_from_slice(&name);
     }
 
-    ScryptResult::Ok
+    InitializeResult::InitializeOk
 }
 
 #[no_mangle]
@@ -86,14 +87,14 @@ pub extern "C" fn initialize(
     end: u64,
     out_buffer: *mut u8,
     out_nonce: *mut u64,
-) -> ScryptResult {
+) -> InitializeResult {
     let _ = unsafe { Box::from_raw(initializer) };
 
     let scrypter = unsafe { &mut *(initializer as *mut Scrypter) };
     let len = if let Ok(len) = usize::try_from(end - start) {
         len * 16
     } else {
-        return ScryptResult::ErrorInvalidLabelsRange;
+        return InitializeResult::InitializeInvalidLabelsRange;
     };
 
     let labels = unsafe { std::slice::from_raw_parts_mut(out_buffer, len) };
@@ -101,12 +102,12 @@ pub extern "C" fn initialize(
 
     if !out_nonce.is_null() {
         if let Some(nonce) = vrf_nonce {
-            unsafe { *out_nonce = nonce };
+            unsafe { *out_nonce = nonce.index };
         } else {
             unsafe { *out_nonce = u64::MAX };
         }
     }
-    ScryptResult::Ok
+    InitializeResult::InitializeOk
 }
 
 #[no_mangle]
@@ -162,7 +163,7 @@ mod tests {
 
     use post::ScryptParams;
 
-    use crate::scrypt_ocl::ScryptResult;
+    use crate::scrypt_ocl::InitializeResult;
 
     #[test]
     fn initialization() {
@@ -178,7 +179,7 @@ mod tests {
             labels.as_mut_ptr(),
             null_mut(),
         );
-        assert_eq!(ScryptResult::Ok, result);
+        assert_eq!(InitializeResult::InitializeOk, result);
 
         let mut expected =
             Vec::<u8>::with_capacity(usize::try_from(indices.end - indices.start).unwrap());
@@ -200,13 +201,13 @@ mod tests {
     #[test]
     fn get_providers_count() {
         assert_eq!(
-            ScryptResult::InvalidArgument,
+            InitializeResult::InitializeInvalidArgument,
             super::get_providers_count(null_mut())
         );
 
         let mut count = 0usize;
         let result = super::get_providers_count(&mut count as *mut usize);
-        assert_eq!(ScryptResult::Ok, result);
+        assert_eq!(InitializeResult::InitializeOk, result);
         assert!(dbg!(count) > 0);
     }
 
@@ -214,12 +215,12 @@ mod tests {
     fn get_providers() {
         let mut count = 0usize;
         let result = super::get_providers_count(&mut count as *mut usize);
-        assert_eq!(ScryptResult::Ok, result);
+        assert_eq!(InitializeResult::InitializeOk, result);
 
         let mut providers = vec![super::Provider::default(); count];
 
         assert_eq!(
-            ScryptResult::Ok,
+            InitializeResult::InitializeOk,
             super::get_providers(providers.as_mut_ptr(), count)
         );
         println!("{providers:?}");
