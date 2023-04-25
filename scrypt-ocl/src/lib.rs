@@ -1,8 +1,8 @@
-extern crate ocl;
+use ocl::{Buffer, Kernel, MemFlags, Platform, ProQue, SpatialDims};
+use std::ops::Range;
+use thiserror::Error;
 
-use std::{error::Error, ops::Range};
-
-use ocl::{Buffer, Kernel, MemFlags, ProQue, SpatialDims};
+pub use ocl;
 
 #[derive(Debug)]
 pub struct Scrypter {
@@ -16,16 +16,46 @@ pub struct Scrypter {
     search_for_vrf_nonce: bool,
 }
 
+#[derive(Error, Debug)]
+pub enum ScryptError {
+    #[error("Labels range too big to fit in usize")]
+    LabelsRangeTooBig,
+    #[error("Invalid buffer size: got {got}, expected {expected}")]
+    InvalidBufferSize { got: usize, expected: usize },
+    #[error("Fail in OpenCL: {0}")]
+    OclError(#[from] ocl::Error),
+    #[error("Fail in OpenCL core: {0}")]
+    OclCoreError(#[from] ocl::OclCoreError),
+}
+
 const LABEL_SIZE: usize = 16;
+
+pub fn get_providers_count() -> usize {
+    match ocl::core::get_platform_ids() {
+        Ok(ids) => ids.len(),
+        Err(_) => 0,
+    }
+}
 
 impl Scrypter {
     pub fn new(
+        provider_id: Option<usize>,
         n: usize,
         commitment: &[u8; 32],
         vrf_difficulty: Option<&[u8; 32]>,
-    ) -> ocl::Result<Self> {
+    ) -> Result<Self, ScryptError> {
+        let platform_id = if let Some(provider_id) = provider_id {
+            ocl::core::get_platform_ids()?[provider_id]
+        } else {
+            ocl::core::default_platform()?
+        };
+        let platform = Platform::new(platform_id);
+
+        //TODO remove print
+        eprintln!("Using platform: {:?}", platform.name().unwrap());
+
         let src = include_str!("scrypt-jane.cl");
-        let mut pro_que = ProQue::builder().src(src).build()?;
+        let mut pro_que = ProQue::builder().src(src).platform(platform).build()?;
 
         let max_wg_size = pro_que.device().max_wg_size()?;
         let global_work_size = max_wg_size * 2;
@@ -108,18 +138,26 @@ impl Scrypter {
         self.vrf_nonce
     }
 
-    pub fn buffer_len(labels: &Range<u64>) -> Result<usize, Box<dyn Error>> {
-        Ok(usize::try_from(labels.end - labels.start)? * LABEL_SIZE)
+    pub fn buffer_len(labels: &Range<u64>) -> Result<usize, ScryptError> {
+        match usize::try_from(labels.end - labels.start) {
+            Ok(len) => Ok(len * LABEL_SIZE),
+            Err(_) => Err(ScryptError::LabelsRangeTooBig),
+        }
     }
 
     pub fn scrypt(
         &mut self,
         labels: Range<u64>,
         out: &mut [u8],
-    ) -> Result<Option<u64>, Box<dyn Error>> {
-        if out.len() != Self::buffer_len(&labels)? {
-            return Err("invalid output buffer size".into());
+    ) -> Result<Option<u64>, ScryptError> {
+        let expected_len = Self::buffer_len(&labels)?;
+        if out.len() != expected_len {
+            return Err(ScryptError::InvalidBufferSize {
+                got: out.len(),
+                expected: expected_len,
+            });
         }
+
         for (id, chunk) in out
             .chunks_mut(self.global_work_size * LABEL_SIZE)
             .enumerate()
@@ -161,7 +199,7 @@ mod tests {
     fn scrypting_from_0() {
         let indices = 0..70;
 
-        let mut scrypter = Scrypter::new(8192, &[0u8; 32], None).unwrap();
+        let mut scrypter = Scrypter::new(None, 8192, &[0u8; 32], None).unwrap();
         let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
         let _ = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
 
@@ -183,7 +221,7 @@ mod tests {
     fn scrypting_over_4gb() {
         let indices = u32::MAX as u64 - 32..u32::MAX as u64 + 32;
 
-        let mut scrypter = Scrypter::new(8192, &[0u8; 32], None).unwrap();
+        let mut scrypter = Scrypter::new(None, 8192, &[0u8; 32], None).unwrap();
         let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
         let _ = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
 
@@ -206,7 +244,7 @@ mod tests {
         let indices = 0..70;
         let commitment = b"this is some commitment for init";
 
-        let mut scrypter = Scrypter::new(8192, commitment, None).unwrap();
+        let mut scrypter = Scrypter::new(None, 8192, commitment, None).unwrap();
         let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
         let _ = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
 
@@ -232,9 +270,9 @@ mod tests {
         difficulty[0] = 0;
         difficulty[1] = 0x1F;
 
-        let mut scrypter = Scrypter::new(8192, commitment, Some(&difficulty)).unwrap();
+        let mut scrypter = Scrypter::new(None, 8192, commitment, Some(&difficulty)).unwrap();
         let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
-        let nonce = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
+        let nonce = scrypter.scrypt(indices, &mut labels).unwrap();
 
         assert!(nonce.is_some());
 

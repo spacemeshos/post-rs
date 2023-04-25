@@ -1,6 +1,6 @@
 use std::{
     ffi::{c_char, c_uchar, CStr},
-    mem::ManuallyDrop,
+    mem::{self, ManuallyDrop},
     path::Path,
 };
 
@@ -130,6 +130,6 @@ pub unsafe extern "C" fn verify_proof(
         }
     };
     // avoid deallocating proof.indices as this memory is owned by the other side.
-    std::mem::forget(proof.indices);
+    mem::forget(proof.indices);
     result
 }

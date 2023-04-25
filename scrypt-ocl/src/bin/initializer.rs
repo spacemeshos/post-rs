@@ -14,7 +14,7 @@ fn main() {
 
     let label_count = 256 * 1024;
 
-    let mut scrypter = Scrypter::new(8192, &[0u8; 32], Some(&[0xFFu8; 32])).unwrap();
+    let mut scrypter = Scrypter::new(None, 8192, &[0u8; 32], Some(&[0xFFu8; 32])).unwrap();
     let mut labels = vec![0u8; label_count * 16];
 
     let now = time::Instant::now();

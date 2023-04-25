@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 bytemuck = "1.13.1"
 ocl = { version = "0.19.4", features = ["opencl_version_2_1"] }
+thiserror = "1.0.40"
 
 [dev-dependencies]
 post-rs = { path = "../" }
