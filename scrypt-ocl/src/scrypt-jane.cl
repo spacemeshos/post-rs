@@ -494,7 +494,7 @@ static void scrypt_pbkdf2_128B(const uint4 *password, uint4 *out4) {
 }
 
 static void scrypt_pbkdf2_32B(const uint4 *password, const uint4 *salt,
-                              uint4 *out4) {
+                              global uint4 *restrict out4) {
   scrypt_hmac_state hmac_pw;
   uint4 ti4[4];
 
@@ -731,10 +731,6 @@ kernel void scrypt(private const uint N, private const ulong starting_index,
 
   const uint gid = get_global_id(0);
 
-  static volatile atomic_uint vrf_found;
-  if (gid == 0) {
-    atomic_init(&vrf_found, 0);
-  }
   uint4 password[5];
   uint4 X[8];
 
