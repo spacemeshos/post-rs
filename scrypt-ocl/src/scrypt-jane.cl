@@ -727,10 +727,7 @@ static void scrypt_ROMix(uint4 *restrict X, global uint4 *restrict lookup,
 kernel void scrypt(private const uint N, private const ulong starting_index,
                    global const uint4 *const restrict input,
                    global uchar *const restrict output,
-                   global uint4 *const restrict padcache,
-                   private const uchar vrf_search,
-                   global const uchar *const vrf_difficulty,
-                   global ulong *const restrict vrf_nonce) {
+                   global uint4 *const restrict padcache) {
 
   const uint gid = get_global_id(0);
 
@@ -759,25 +756,5 @@ kernel void scrypt(private const uint N, private const ulong starting_index,
 
   /* 3: Out = PBKDF2(password, X) */
   global uint4 *restrict out4 = (global uint4 *)output;
-  if (vrf_search == 0) {
-    out4[gid] = scrypt_pbkdf2_16B(password, X);
-    return;
-  }
-
-  // Check VRF nonce for difficulty
-  uint4 label[2];
-  scrypt_pbkdf2_32B(password, X, label);
-  out4[gid] = label[0];
-  uchar *label_bytes = (uchar *)label;
-
-  for (uint i = 0; i < 32; i++) {
-    if (label_bytes[i] < vrf_difficulty[i]) {
-      if (atomic_exchange(&vrf_found, 1) == 0) {
-        *vrf_nonce = index;
-      }
-      return;
-    } else if (label_bytes[i] > vrf_difficulty[i]) {
-      return;
-    }
-  }
+  scrypt_pbkdf2_32B(password, X, &out4[gid * 2]);
 }

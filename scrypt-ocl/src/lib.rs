@@ -4,6 +4,12 @@ use thiserror::Error;
 
 pub use ocl;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct VrfNonce {
+    pub index: u64,
+    label: [u8; 32],
+}
+
 #[derive(Debug)]
 pub struct Scrypter {
     kernel: Kernel,
@@ -11,9 +17,8 @@ pub struct Scrypter {
     global_work_size: usize,
     pro_que: ProQue,
 
-    vrf_nonce_buf: Buffer<u64>,
-    vrf_nonce: Option<u64>,
-    search_for_vrf_nonce: bool,
+    vrf_nonce: Option<VrfNonce>,
+    vrf_difficulty: Option<[u8; 32]>,
 }
 
 #[derive(Error, Debug)]
@@ -29,6 +34,7 @@ pub enum ScryptError {
 }
 
 const LABEL_SIZE: usize = 16;
+const ENTIRE_LABEL_SIZE: usize = 32;
 
 pub fn get_providers_count() -> usize {
     match ocl::core::get_platform_ids() {
@@ -42,7 +48,7 @@ impl Scrypter {
         provider_id: Option<usize>,
         n: usize,
         commitment: &[u8; 32],
-        vrf_difficulty: Option<&[u8; 32]>,
+        vrf_difficulty: Option<[u8; 32]>,
     ) -> Result<Self, ScryptError> {
         let platform_id = if let Some(provider_id) = provider_id {
             ocl::core::get_platform_ids()?[provider_id]
@@ -74,27 +80,10 @@ impl Scrypter {
             .build()?;
 
         let output = Buffer::<u8>::builder()
-            .len(global_work_size * LABEL_SIZE)
+            .len(global_work_size * ENTIRE_LABEL_SIZE)
             .flags(MemFlags::new().write_only())
             .queue(pro_que.queue().clone())
             .build()?;
-
-        let vrf_nonce_buf = Buffer::<u64>::builder()
-            .len(1)
-            .fill_val(u64::MAX)
-            .flags(MemFlags::new().write_only())
-            .queue(pro_que.queue().clone())
-            .build()?;
-
-        let mut vrf_difficulty_builder = Buffer::<u8>::builder()
-            .len(32)
-            .flags(MemFlags::new().read_only())
-            .queue(pro_que.queue().clone());
-        if let Some(vrf_difficulty) = vrf_difficulty {
-            vrf_difficulty_builder = vrf_difficulty_builder.copy_host_slice(vrf_difficulty);
-        }
-
-        let vrf_difficulty_buf = vrf_difficulty_builder.build()?;
 
         let lookup_gap = 2;
         let pad_size = global_work_size * 4 * 8 * (n / lookup_gap);
@@ -112,9 +101,6 @@ impl Scrypter {
             .arg(&input)
             .arg(&output)
             .arg(&padcache)
-            .arg(if vrf_difficulty.is_some() { 1u8 } else { 0 })
-            .arg(&vrf_difficulty_buf)
-            .arg(&vrf_nonce_buf)
             .global_work_size(SpatialDims::One(global_work_size))
             .local_work_size(128)
             .build()?;
@@ -124,9 +110,8 @@ impl Scrypter {
             kernel,
             output,
             global_work_size,
-            vrf_nonce_buf,
+            vrf_difficulty,
             vrf_nonce: None,
-            search_for_vrf_nonce: vrf_difficulty.is_some(),
         })
     }
 
@@ -134,7 +119,7 @@ impl Scrypter {
         self.pro_que.device()
     }
 
-    pub fn vrf_nonce(&self) -> Option<u64> {
+    pub fn vrf_nonce(&self) -> Option<VrfNonce> {
         self.vrf_nonce
     }
 
@@ -145,11 +130,25 @@ impl Scrypter {
         }
     }
 
+    fn scan_for_vrf_nonce(labels: &[u8], mut difficulty: [u8; 32]) -> Option<VrfNonce> {
+        let mut nonce = None;
+        for (id, label) in labels.chunks(ENTIRE_LABEL_SIZE).enumerate() {
+            if label < &difficulty {
+                nonce = Some(VrfNonce {
+                    index: id as u64,
+                    label: label.try_into().unwrap(),
+                });
+                difficulty = label.try_into().unwrap();
+            }
+        }
+        nonce
+    }
+
     pub fn scrypt(
         &mut self,
         labels: Range<u64>,
         out: &mut [u8],
-    ) -> Result<Option<u64>, ScryptError> {
+    ) -> Result<Option<VrfNonce>, ScryptError> {
         let expected_len = Self::buffer_len(&labels)?;
         if out.len() != expected_len {
             return Err(ScryptError::InvalidBufferSize {
@@ -158,33 +157,50 @@ impl Scrypter {
             });
         }
 
-        for (id, chunk) in out
+        let mut labels_buffer = vec![0u8; self.global_work_size * LABEL_SIZE];
+
+        for (id, chunk) in &mut out
             .chunks_mut(self.global_work_size * LABEL_SIZE)
             .enumerate()
         {
             let start_index = labels.start + self.global_work_size as u64 * id as u64;
             self.kernel.set_arg(1, start_index)?;
 
-            if self.vrf_nonce.is_none() && self.search_for_vrf_nonce {
-                // enable vrf search
-                self.kernel.set_arg(5, 1u8)?;
-            }
-
             unsafe {
                 self.kernel.enq()?;
             }
 
-            self.output.read(chunk).enq()?;
+            self.output.read(labels_buffer.as_mut_slice()).enq()?;
 
-            if self.vrf_nonce.is_none() && self.search_for_vrf_nonce {
-                // Read vrf nonce
-                let mut nonce = [0u64; 1];
-                self.vrf_nonce_buf.read(nonce.as_mut_slice()).enq()?;
-                if nonce[0] != u64::MAX {
-                    self.vrf_nonce = Some(nonce[0]);
+            // Look for VRF nonce if enabled
+            // TODO: run in background / in parallel to GPU
+            if let Some(difficulty) = &self.vrf_difficulty {
+                let new_best_nonce = match self.vrf_nonce {
+                    Some(current_smallest) => {
+                        Self::scan_for_vrf_nonce(&labels_buffer, current_smallest.label)
+                    }
+                    None => Self::scan_for_vrf_nonce(&labels_buffer, *difficulty),
+                };
+                if let Some(nonce) = new_best_nonce {
+                    self.vrf_nonce = Some(VrfNonce {
+                        index: nonce.index + start_index,
+                        label: nonce.label,
+                    });
+                    //TODO: remove print
+                    eprintln!("Found new smallest nonce: {:?}", self.vrf_nonce);
                 }
             }
+
+            // Copy the first 16 bytes of each label
+            // TODO: run in background / in parallel to GPU
+            for (label, chunk) in labels_buffer
+                .chunks_exact(ENTIRE_LABEL_SIZE)
+                .zip(chunk.chunks_exact_mut(LABEL_SIZE))
+            {
+                chunk.copy_from_slice(&label[..LABEL_SIZE]);
+            }
         }
+
         Ok(self.vrf_nonce)
     }
 }
@@ -194,6 +210,20 @@ mod tests {
     use post::ScryptParams;
 
     use super::*;
+
+    #[test]
+    fn scanning_for_vrf_nonce() {
+        let labels = [[0xFF; 32], [0xEE; 32], [0xDD; 32], [0xEE; 32]];
+        let labels_bytes: Vec<u8> = labels.iter().copied().flatten().collect();
+        let nonce = Scrypter::scan_for_vrf_nonce(&labels_bytes, [0xFFu8; 32]);
+        assert_eq!(
+            nonce,
+            Some(VrfNonce {
+                index: 2,
+                label: [0xDD; 32]
+            })
+        );
+    }
 
     #[test]
     fn scrypting_from_0() {
@@ -270,21 +300,22 @@ mod tests {
         difficulty[0] = 0;
         difficulty[1] = 0x1F;
 
-        let mut scrypter = Scrypter::new(None, 8192, commitment, Some(&difficulty)).unwrap();
+        let mut scrypter = Scrypter::new(None, 8192, commitment, Some(difficulty)).unwrap();
         let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
         let nonce = scrypter.scrypt(indices, &mut labels).unwrap();
-
-        assert!(nonce.is_some());
+        let nonce = nonce.expect("vrf nonce not found");
 
         let mut label = Vec::<u8>::with_capacity(LABEL_SIZE);
         post::initialize::initialize_to(
             &mut label,
             commitment,
-            nonce.unwrap()..nonce.unwrap() + 1,
+            nonce.index..nonce.index + 1,
             ScryptParams::new(12, 0, 0),
         )
         .unwrap();
 
+        assert_eq!(&nonce.label[..16], label.as_slice());
+        assert!(nonce.label.as_slice() < &difficulty);
         assert!(label.as_slice() < &difficulty);
     }
 }
