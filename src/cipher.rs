@@ -37,6 +37,26 @@ impl AesCipher {
             k2_pow,
         }
     }
+
+    pub(crate) fn new_lazy(
+        challenge: &[u8; 32],
+        nonce: u32,
+        nonce_group: u32,
+        k2_pow: u64,
+    ) -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(challenge);
+        hasher.update(&nonce_group.to_le_bytes());
+        hasher.update(&k2_pow.to_le_bytes());
+        hasher.update(&nonce.to_le_bytes());
+        Self {
+            aes: Aes128::new(GenericArray::from_slice(
+                &hasher.finalize().as_bytes()[..16],
+            )),
+            nonce_group,
+            k2_pow,
+        }
+    }
 }
 
 #[cfg(test)]
