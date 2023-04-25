@@ -15,9 +15,10 @@ fn main() {
     let label_count = 256 * 1024;
 
     let mut scrypter = Scrypter::new(8192, &[0u8; 32], Some(&[0xFFu8; 32])).unwrap();
+    let mut labels = vec![0u8; label_count * 16];
 
     let now = time::Instant::now();
-    let (labels, vrf_nonce) = scrypter.scrypt(0..label_count).unwrap();
+    let vrf_nonce = scrypter.scrypt(0..label_count as u64, &mut labels).unwrap();
     let elapsed = now.elapsed();
     println!(
         "Scrypting {} labels took {} seconds. Speed: {:.0} labels/sec ({:.2} MB/sec, vrf_nonce: {vrf_nonce:?})",

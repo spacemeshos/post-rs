@@ -108,10 +108,19 @@ impl Scrypter {
         self.vrf_nonce
     }
 
-    pub fn scrypt(&mut self, labels: Range<u64>) -> Result<(Vec<u8>, Option<u64>), Box<dyn Error>> {
-        let num_labels = usize::try_from(labels.end - labels.start)?;
-        let mut vec = vec![0u8; num_labels * LABEL_SIZE];
-        for (id, chunk) in vec
+    pub fn buffer_len(labels: &Range<u64>) -> Result<usize, Box<dyn Error>> {
+        Ok(usize::try_from(labels.end - labels.start)? * LABEL_SIZE)
+    }
+
+    pub fn scrypt(
+        &mut self,
+        labels: Range<u64>,
+        out: &mut [u8],
+    ) -> Result<Option<u64>, Box<dyn Error>> {
+        if out.len() != Self::buffer_len(&labels)? {
+            return Err("invalid output buffer size".into());
+        }
+        for (id, chunk) in out
             .chunks_mut(self.global_work_size * LABEL_SIZE)
             .enumerate()
         {
@@ -138,7 +147,7 @@ impl Scrypter {
                 }
             }
         }
-        Ok((vec, self.vrf_nonce))
+        Ok(self.vrf_nonce)
     }
 }
 
@@ -153,7 +162,8 @@ mod tests {
         let indices = 0..70;
 
         let mut scrypter = Scrypter::new(8192, &[0u8; 32], None).unwrap();
-        let (labels, _) = scrypter.scrypt(indices.clone()).unwrap();
+        let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
+        let _ = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
 
         let mut expected =
             Vec::<u8>::with_capacity(usize::try_from(indices.end - indices.start).unwrap());
@@ -174,7 +184,8 @@ mod tests {
         let indices = u32::MAX as u64 - 32..u32::MAX as u64 + 32;
 
         let mut scrypter = Scrypter::new(8192, &[0u8; 32], None).unwrap();
-        let (labels, _) = scrypter.scrypt(indices.clone()).unwrap();
+        let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
+        let _ = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
 
         let mut expected =
             Vec::<u8>::with_capacity(usize::try_from(indices.end - indices.start).unwrap());
@@ -196,7 +207,8 @@ mod tests {
         let commitment = b"this is some commitment for init";
 
         let mut scrypter = Scrypter::new(8192, commitment, None).unwrap();
-        let (labels, _) = scrypter.scrypt(indices.clone()).unwrap();
+        let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
+        let _ = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
 
         let mut expected =
             Vec::<u8>::with_capacity(usize::try_from(indices.end - indices.start).unwrap());
@@ -219,8 +231,10 @@ mod tests {
         let mut difficulty = [0xFFu8; 32];
         difficulty[0] = 0;
         difficulty[1] = 0x1F;
+
         let mut scrypter = Scrypter::new(8192, commitment, Some(&difficulty)).unwrap();
-        let (_labels, nonce) = scrypter.scrypt(indices).unwrap();
+        let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
+        let nonce = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
 
         assert!(nonce.is_some());
 
