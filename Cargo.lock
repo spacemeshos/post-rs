@@ -115,6 +115,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
+name = "base64"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4a4ddaa51a5bc52a6948f74c06d20aaaddb71924eab79b8c97a8c556e942d6a"
+
+[[package]]
 name = "bindgen"
 version = "0.65.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -841,6 +847,15 @@ dependencies = [
  "quick-xml",
  "rgb",
  "str_stack",
+]
+
+[[package]]
+name = "initializer"
+version = "0.1.0"
+dependencies = [
+ "base64 0.21.0",
+ "post-rs",
+ "rayon",
 ]
 
 [[package]]
@@ -1580,6 +1595,7 @@ dependencies = [
 name = "scrypt-ocl"
 version = "0.1.0"
 dependencies = [
+ "base64 0.21.0",
  "bytemuck",
  "ocl",
  "post-rs",
@@ -1629,7 +1645,7 @@ version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "331bb8c3bf9b92457ab7abecf07078c13f7d270ba490103e84e8b014490cd0b0"
 dependencies = [
- "base64",
+ "base64 0.13.1",
  "chrono",
  "hex",
  "indexmap",

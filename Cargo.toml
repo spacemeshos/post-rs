@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "ffi", "scrypt-ocl"]
+members = [".", "ffi", "scrypt-ocl", "initializer"]
 
 [package]
 name = "post-rs"

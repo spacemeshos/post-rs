@@ -1,5 +1,6 @@
 use std::{io::Write, time};
 
+use base64::{engine::general_purpose, Engine};
 use ocl::{core::ClVersions, Platform};
 use scrypt_ocl::Scrypter;
 
@@ -12,9 +13,20 @@ fn main() {
         );
     }
 
-    let label_count = 256 * 1024;
+    let label_count = 50000;
 
-    let mut scrypter = Scrypter::new(None, 8192, &[0u8; 32], Some([0xFFu8; 32])).unwrap();
+    let node_id = general_purpose::STANDARD
+        .decode("hBGTHs44tav7YR87sRVafuzZwObCZnK1Z/exYpxwqSQ=")
+        .unwrap();
+    let commitment_atx_id = general_purpose::STANDARD
+        .decode("ZuxocVjIYWfv7A/K1Lmm8+mNsHzAZaWVpbl5+KINx+I=")
+        .unwrap();
+    let commitment = post::initialize::calc_commitment(
+        &node_id.try_into().unwrap(),
+        &commitment_atx_id.try_into().unwrap(),
+    );
+
+    let mut scrypter = Scrypter::new(None, 8192, &commitment, Some([0xFFu8; 32])).unwrap();
     let mut labels = vec![0u8; label_count * 16];
 
     let now = time::Instant::now();

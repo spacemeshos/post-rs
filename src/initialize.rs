@@ -6,7 +6,7 @@ use scrypt_jane::scrypt::{scrypt, ScryptParams};
 
 use crate::metadata::PostMetadata;
 
-pub(crate) fn calc_commitment(node_id: &[u8; 32], commitment_atx_id: &[u8; 32]) -> [u8; 32] {
+pub fn calc_commitment(node_id: &[u8; 32], commitment_atx_id: &[u8; 32]) -> [u8; 32] {
     let mut hasher = blake3::Hasher::new();
     hasher.update(node_id);
     hasher.update(commitment_atx_id);
