@@ -1,4 +1,8 @@
-use ocl::{Buffer, Kernel, MemFlags, Platform, ProQue, SpatialDims};
+use ocl::{
+    builders::ProgramBuilder,
+    enums::{DeviceInfo, DeviceInfoResult},
+    Buffer, Kernel, MemFlags, Platform, ProQue, SpatialDims,
+};
 use std::ops::Range;
 use thiserror::Error;
 
@@ -57,14 +61,35 @@ impl Scrypter {
         };
         let platform = Platform::new(platform_id);
 
-        //TODO remove print
-        eprintln!("Using platform: {:?}", platform.name().unwrap());
-
+        let lookup_gap = 2;
         let src = include_str!("scrypt-jane.cl");
-        let mut pro_que = ProQue::builder().src(src).platform(platform).build()?;
+        let program_builder = ProgramBuilder::new()
+            .source(src)
+            .cmplr_def("LOOKUP_GAP", lookup_gap as i32)
+            .clone();
+
+        let mut pro_que = ProQue::builder()
+            .platform(platform)
+            .prog_bldr(program_builder)
+            .build()?;
+
+        // TODO remove print
+        eprintln!(
+            "Using platform/device: {}/{}",
+            platform.name().unwrap(),
+            pro_que.device().name().unwrap()
+        );
 
         let max_wg_size = pro_que.device().max_wg_size()?;
+        let max_compute_units = match pro_que.device().info(DeviceInfo::MaxComputeUnits) {
+            Ok(DeviceInfoResult::MaxComputeUnits(r)) => Ok(r),
+            Err(err) => Err(err),
+            _ => panic!("Device::local_work_size: Unexpected 'DeviceInfoResult' variant."),
+        }? as usize;
+
         let global_work_size = max_wg_size * 2;
+        let local_work_size = 128;
+        eprintln!("max_compute_units: {max_compute_units}, max_wg_size: {max_wg_size}, global_work_size: {global_work_size}, local_work_size: {local_work_size}");
 
         pro_que.set_dims(SpatialDims::One(global_work_size));
 
@@ -85,7 +110,6 @@ impl Scrypter {
             .queue(pro_que.queue().clone())
             .build()?;
 
-        let lookup_gap = 2;
         let pad_size = global_work_size * 4 * 8 * (n / lookup_gap);
 
         let padcache = Buffer::<u32>::builder()
@@ -101,8 +125,8 @@ impl Scrypter {
             .arg(&input)
             .arg(&output)
             .arg(&padcache)
-            .global_work_size(SpatialDims::One(global_work_size))
-            .local_work_size(128)
+            .global_work_size(global_work_size)
+            .local_work_size(local_work_size)
             .build()?;
 
         Ok(Self {

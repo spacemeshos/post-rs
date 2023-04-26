@@ -18,7 +18,8 @@
 #define ROTL64(x, y) as_uint2(rotate(as_ulong(x), y))
 #define ROTL32(x, y) rotate(x, y)
 
-#define LOOKUP_GAP 2
+// Defined compile-time
+// #define LOOKUP_GAP
 
 typedef struct scrypt_hash_state_t {
   uint4 state4[(SCRYPT_KECCAK_F + 127) / 128];       // 8 bytes of extra
