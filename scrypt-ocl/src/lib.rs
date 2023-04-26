@@ -157,7 +157,7 @@ impl Scrypter {
             });
         }
 
-        let mut labels_buffer = vec![0u8; self.global_work_size * LABEL_SIZE];
+        let mut labels_buffer = vec![0u8; self.global_work_size * ENTIRE_LABEL_SIZE];
 
         for (id, chunk) in &mut out
             .chunks_mut(self.global_work_size * LABEL_SIZE)
@@ -193,11 +193,11 @@ impl Scrypter {
 
             // Copy the first 16 bytes of each label
             // TODO: run in background / in parallel to GPU
-            for (label, chunk) in labels_buffer
+            for (full_label, out_label) in labels_buffer
                 .chunks_exact(ENTIRE_LABEL_SIZE)
                 .zip(chunk.chunks_exact_mut(LABEL_SIZE))
             {
-                chunk.copy_from_slice(&label[..LABEL_SIZE]);
+                out_label.copy_from_slice(&full_label[..LABEL_SIZE]);
             }
         }
 
@@ -227,10 +227,10 @@ mod tests {
 
     #[test]
     fn scrypting_from_0() {
-        let indices = 0..70;
+        let indices = 0..4000;
 
         let mut scrypter = Scrypter::new(None, 8192, &[0u8; 32], None).unwrap();
-        let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
+        let mut labels = vec![0xDEu8; Scrypter::buffer_len(&indices).unwrap()];
         let _ = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
 
         let mut expected =
@@ -249,7 +249,7 @@ mod tests {
 
     #[test]
     fn scrypting_over_4gb() {
-        let indices = u32::MAX as u64 - 32..u32::MAX as u64 + 32;
+        let indices = u32::MAX as u64 - 1000..u32::MAX as u64 + 1000;
 
         let mut scrypter = Scrypter::new(None, 8192, &[0u8; 32], None).unwrap();
         let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
@@ -271,7 +271,7 @@ mod tests {
 
     #[test]
     fn scrypting_with_commitment() {
-        let indices = 0..70;
+        let indices = 0..1000;
         let commitment = b"this is some commitment for init";
 
         let mut scrypter = Scrypter::new(None, 8192, commitment, None).unwrap();
@@ -294,7 +294,7 @@ mod tests {
 
     #[test]
     fn searching_for_vrf_nonce() {
-        let indices = 0..1024 * 5;
+        let indices = 0..5000;
         let commitment = b"this is some commitment for init";
         let mut difficulty = [0xFFu8; 32];
         difficulty[0] = 0;
