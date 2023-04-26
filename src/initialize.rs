@@ -1,5 +1,7 @@
 use std::{error::Error, fs::File, io::Write, ops::Range, path::Path};
 
+use itertools::Itertools;
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use scrypt_jane::scrypt::{scrypt, ScryptParams};
 
 use crate::metadata::PostMetadata;
@@ -69,18 +71,19 @@ pub fn initialize_to<W: Write + ?Sized>(
     labels: Range<u64>,
     scrypt_params: ScryptParams,
 ) -> Result<(), Box<dyn Error>> {
-    let mut scrypt_data = [0u8; 72];
-    scrypt_data[0..32].copy_from_slice(commitment);
+    let data = labels
+        .into_par_iter()
+        .map(|index| {
+            let mut label = [0u8; 16];
+            let mut scrypt_data = [0u8; 72];
+            scrypt_data[0..32].copy_from_slice(commitment);
+            scrypt_data[32..40].copy_from_slice(&index.to_le_bytes());
+            scrypt(&scrypt_data, &[], scrypt_params, &mut label);
+            label
+        })
+        .collect::<Vec<_>>();
 
-    let num_labels = usize::try_from(labels.end - labels.start)?;
-    let mut data = vec![0u8; num_labels * 16];
-    for (index, label) in data.chunks_exact_mut(16).enumerate() {
-        let index = index as u64 + labels.start;
-        scrypt_data[32..40].copy_from_slice(&index.to_le_bytes());
-        scrypt(&scrypt_data, &[], scrypt_params, label);
-    }
-
-    writer.write_all(&data)?;
+    writer.write_all(data.into_iter().flatten().collect_vec().as_slice())?;
 
     Ok(())
 }
