@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 base64 = "0.21.0"
+clap = { version = "4.2.4", features = ["derive"] }
 post-rs = { path = "../" }
 rayon = "1.7.0"
