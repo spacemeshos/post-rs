@@ -69,16 +69,19 @@ impl<T: Read> Iterator for BatchingReader<T> {
 }
 
 fn pos_files(datadir: &Path) -> impl Iterator<Item = DirEntry> {
-    let file_re = Regex::new(r"postdata_\d+\.bin").unwrap();
+    let file_re = Regex::new(r"postdata_(\d+)\.bin").unwrap();
     datadir
         .read_dir()
         .expect("read_dir call failed")
-        .filter_map(|entry| match entry {
-            Ok(entry) => Some(entry),
-            Err(_) => None,
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            file_re
+                .captures(entry.file_name().to_string_lossy().as_ref())
+                .and_then(|c| c.get(1).unwrap().as_str().parse::<u64>().ok())
+                .map(|id| (id, entry))
         })
-        .filter(|entry| file_re.is_match(entry.path().to_str().unwrap()))
-        .sorted_by_key(|entry| entry.path())
+        .sorted_by_key(|(id, _)| *id)
+        .map(|(_, entry)| entry)
 }
 
 pub(crate) fn read_data(
@@ -87,14 +90,17 @@ pub(crate) fn read_data(
     file_size: u64,
 ) -> impl Iterator<Item = Batch> {
     let mut readers = Vec::<BatchingReader<File>>::new();
-    for (id, entry) in pos_files(datadir).enumerate() {
+    let mut files = pos_files(datadir).enumerate().peekable();
+
+    while let Some((id, entry)) = files.next() {
         let pos = id as u64 * file_size;
         let file = File::open(entry.path()).unwrap();
         let pos_file_size = file.metadata().unwrap().len();
-        if pos_file_size != file_size {
+
+        // If there are more files, check if the size of the file is correct
+        if files.peek().is_some() && pos_file_size != file_size {
             eprintln!(
-                "corrupted POS file, expected size: {}, actual size: {}",
-                file_size, pos_file_size
+                "invalid POS file, expected size: {file_size} vs actual size: {pos_file_size}"
             );
         }
         readers.push(BatchingReader::new(file, pos, batch_size, file_size));
@@ -118,9 +124,7 @@ mod tests {
 
     use tempfile::tempdir;
 
-    use crate::reader::{Batch, BatchingReader};
-
-    use super::read_data;
+    use super::{pos_files, read_data, Batch, BatchingReader};
 
     #[test]
     fn batching_reader() {
@@ -181,5 +185,23 @@ mod tests {
         write!(tmp_file, "some data").unwrap();
 
         assert!(read_data(tmp_dir.path(), 4, 4).next().is_none());
+    }
+
+    #[test]
+    fn pos_files_are_sorted() {
+        let tmp_dir = tempdir().unwrap();
+        let total_files = 100;
+        for i in 0..total_files {
+            File::create(tmp_dir.path().join(format!("postdata_{i}.bin"))).unwrap();
+        }
+
+        assert_eq!(total_files, pos_files(tmp_dir.path()).count());
+
+        for (i, file) in pos_files(tmp_dir.path()).enumerate() {
+            assert_eq!(
+                format!("postdata_{i}.bin"),
+                file.file_name().to_string_lossy()
+            );
+        }
     }
 }

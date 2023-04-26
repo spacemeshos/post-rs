@@ -7,7 +7,7 @@ use serde_with::serde_as;
 const METADATA_FILE_NAME: &str = "postdata_metadata.json";
 
 #[serde_as]
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct PostMetadata {
     #[serde_as(as = "Base64")]

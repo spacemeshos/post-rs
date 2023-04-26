@@ -1,11 +1,12 @@
 use std::{
+    error::Error,
     path::{Path, PathBuf},
     time,
 };
 
 use clap::Parser;
 use post::{
-    prove::{ConstDProver, Prover, ProvingParams},
+    prove::{Prover, Prover8_56, ProvingParams},
     ScryptParams,
 };
 use rayon::prelude::{ParallelBridge, ParallelIterator};
@@ -34,7 +35,7 @@ struct Args {
     ///
     /// Higher value gives a better chance to find a proof within less passes over the POS data,
     /// but also slows down the process.
-    #[arg(short, long, default_value_t = 20)]
+    #[arg(short, long, default_value_t = 16)]
     nonces: u32,
 
     // Difficulty factor of k2_pow.
@@ -62,13 +63,13 @@ fn file_data(path: &Path, size: u64) -> Result<std::fs::File, std::io::Error> {
     Ok(file)
 }
 
-fn main() -> Result<(), std::io::Error> {
+fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
     let challenge = b"hello world, challenge me!!!!!!!";
     let batch_size = 1024 * 1024;
     let params = ProvingParams {
-        scrypt: ScryptParams::new(6, 0, 0),
+        pow_scrypt: ScryptParams::new(6, 0, 0),
         difficulty: 0, // impossible to find a proof
         k2_pow_difficulty: args.k2_pow_difficulty,
         k3_pow_difficulty: args.k3_pow_difficulty,
@@ -78,7 +79,7 @@ fn main() -> Result<(), std::io::Error> {
     let file = file_data(&args.data_file, total_size)?;
     let reader = post::reader::read_from(file, batch_size, total_size);
 
-    let prover = ConstDProver::new(challenge, 0..args.nonces, params);
+    let prover = Prover8_56::new(challenge, 0..args.nonces, params)?;
 
     let consume = |_, _| None;
 

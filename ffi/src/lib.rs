@@ -1,8 +1,6 @@
-#![feature(vec_into_raw_parts)]
-
 use std::{
     ffi::{c_char, c_uchar, CStr},
-    mem,
+    mem::{self, ManuallyDrop},
     path::Path,
 };
 
@@ -30,8 +28,9 @@ pub struct Proof {
     k3_pow: u64,
 }
 
+/// Deallocate a proof obtained with generate_proof().
 /// # Safety
-/// proof must not be a null pointer.
+/// `proof` must be a pointer to a Proof struct obtained with generate_proof().
 #[no_mangle]
 pub unsafe extern "C" fn free_proof(proof: *mut Proof) {
     let proof = Box::from_raw(proof);
@@ -39,16 +38,20 @@ pub unsafe extern "C" fn free_proof(proof: *mut Proof) {
     // proof and vec will be deallocated on return
 }
 
-/// Generate a proof
+/// Generates a proof of space for the given challenge using the provided parameters.
+/// Returns a pointer to a Proof struct which should be freed with free_proof() after use.
+/// If an error occurs, prints it on stderr and returns null.
+/// # Safety
+/// `challenge` must be a 32-byte array.
 #[no_mangle]
 pub extern "C" fn generate_proof(
     datadir: *const c_char,
     challenge: *const c_uchar,
-    challenge_len: usize,
     cfg: Config,
     nonces: usize,
+    threads: usize,
 ) -> *mut Proof {
-    match _generate_proof(datadir, challenge, challenge_len, cfg, nonces) {
+    match _generate_proof(datadir, challenge, cfg, nonces, threads) {
         Ok(proof) => proof,
         Err(e) => {
             //TODO(poszu) communicate errors better
@@ -61,19 +64,20 @@ pub extern "C" fn generate_proof(
 fn _generate_proof(
     datadir: *const c_char,
     challenge: *const c_uchar,
-    challenge_len: usize,
     cfg: Config,
     nonces: usize,
+    threads: usize,
 ) -> eyre::Result<*mut Proof> {
     let datadir = unsafe { CStr::from_ptr(datadir) };
     let datadir = Path::new(datadir.to_str().context("parsing datadir as UTF-8")?);
 
-    let challenge = unsafe { std::slice::from_raw_parts(challenge, challenge_len) };
+    let challenge = unsafe { std::slice::from_raw_parts(challenge, 32) };
     let challenge = challenge.try_into()?;
 
-    let proof = prove::generate_proof(datadir, challenge, cfg, nonces)?;
+    let proof = prove::generate_proof(datadir, challenge, cfg, nonces, threads)?;
 
-    let (ptr, len, cap) = proof.indices.into_raw_parts();
+    let mut indices = ManuallyDrop::new(proof.indices);
+    let (ptr, len, cap) = (indices.as_mut_ptr(), indices.len(), indices.capacity());
     let proof = Box::new(Proof {
         nonce: proof.nonce,
         indices: ArrayU8 { ptr, len, cap },
@@ -118,8 +122,7 @@ pub unsafe extern "C" fn verify_proof(
         None => return VerifyResult::InvalidArgument,
     };
 
-    let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
-    let params = match VerifyingParams::new(num_labels, cfg) {
+    let params = match VerifyingParams::new(metadata, &cfg) {
         Ok(params) => params,
         Err(_) => return VerifyResult::InvalidArgument,
     };
