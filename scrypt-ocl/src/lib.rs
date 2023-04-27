@@ -3,7 +3,7 @@ use ocl::{
     enums::{DeviceInfo, DeviceInfoResult, KernelWorkGroupInfo, KernelWorkGroupInfoResult},
     Buffer, Device, Kernel, MemFlags, Platform, ProQue, SpatialDims,
 };
-use std::{cmp::min, ops::Range};
+use std::{cmp::min, fmt::Display, ops::Range};
 use thiserror::Error;
 
 pub use ocl;
@@ -35,16 +35,48 @@ pub enum ScryptError {
     OclError(#[from] ocl::Error),
     #[error("Fail in OpenCL core: {0}")]
     OclCoreError(#[from] ocl::OclCoreError),
+    #[error("Invalid provider id: {0}")]
+    InvalidProviderId(usize),
+    #[error("No providers available")]
+    NoProvidersAvailable,
 }
 
 const LABEL_SIZE: usize = 16;
 const ENTIRE_LABEL_SIZE: usize = 32;
 
-pub fn get_providers_count() -> usize {
-    match ocl::core::get_platform_ids() {
-        Ok(ids) => ids.len(),
-        Err(_) => 0,
+pub struct Provider {
+    pub platform: Platform,
+    pub device: Device,
+}
+
+impl Display for Provider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}/{}",
+            self.platform.name().unwrap_or("unknown".to_owned()),
+            self.device.name().unwrap_or("unknown".to_owned())
+        )
     }
+}
+
+pub fn get_providers_count() -> usize {
+    get_providers().map_or(0, |p| p.len())
+}
+
+pub fn get_providers() -> Result<Vec<Provider>, ScryptError> {
+    let list_core = ocl::core::get_platform_ids()?;
+    let platforms = Platform::list_from_core(list_core);
+
+    let mut providers = Vec::new();
+    for platform in platforms {
+        let devices = Device::list_all(platform)?;
+        for device in devices {
+            providers.push(Provider { platform, device });
+        }
+    }
+
+    Ok(providers)
 }
 
 macro_rules! cast {
@@ -65,19 +97,18 @@ impl Scrypter {
         commitment: &[u8; 32],
         vrf_difficulty: Option<[u8; 32]>,
     ) -> Result<Self, ScryptError> {
-        let platform_id = if let Some(provider_id) = provider_id {
-            ocl::core::get_platform_ids()?[provider_id]
+        let providers = get_providers()?;
+        let provider = if let Some(id) = provider_id {
+            providers
+                .get(id)
+                .ok_or(ScryptError::InvalidProviderId(id))?
         } else {
-            ocl::core::default_platform()?
+            providers.first().ok_or(ScryptError::NoProvidersAvailable)?
         };
-        let platform = Platform::new(platform_id);
-        let device = Device::first(platform)?;
+        let platform = provider.platform;
+        let device = provider.device;
         // TODO remove print
-        println!(
-            "Using platform/device: {}/{}",
-            platform.name().unwrap(),
-            device.name().unwrap()
-        );
+        println!("Using provider: {provider}");
 
         // Calculate kernel memory requirements
         const LOOKUP_GAP: usize = 2;
@@ -246,7 +277,6 @@ impl Scrypter {
         for chunk in &mut out.chunks_mut(self.global_work_size * LABEL_SIZE) {
             self.kernel.set_arg(1, index)?;
             let labels_to_init = chunk.len() / LABEL_SIZE;
-            index += labels_to_init as u64;
 
             if labels_to_init < self.global_work_size {
                 self.kernel
@@ -288,6 +318,7 @@ impl Scrypter {
             {
                 out_label.copy_from_slice(&full_label[..LABEL_SIZE]);
             }
+            index += labels_to_init as u64;
         }
 
         Ok(self.vrf_nonce)

@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use scrypt_ocl::{ocl::Platform, Scrypter};
+use scrypt_ocl::Scrypter;
 
 pub enum Initializer {}
 
@@ -12,6 +12,7 @@ pub enum InitializeResult {
     InitializeInvalidLabelsRange = 1,
     InitializeOclError = 2,
     InitializeInvalidArgument = 3,
+    InitializeFailedToGetProviders = 4,
 }
 
 impl From<scrypt_ocl::ocl::Error> for InitializeResult {
@@ -21,9 +22,15 @@ impl From<scrypt_ocl::ocl::Error> for InitializeResult {
 }
 
 #[repr(C)]
-#[derive(Clone, PartialEq, Eq, Default)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Provider {
-    name: [u8; 32],
+    name: [u8; 64],
+}
+
+impl Default for Provider {
+    fn default() -> Self {
+        Self { name: [0; 64] }
+    }
 }
 
 impl Debug for Provider {
@@ -54,22 +61,17 @@ pub extern "C" fn get_providers(out: *mut Provider, out_len: usize) -> Initializ
         return InitializeResult::InitializeInvalidArgument;
     }
 
-    let list_core = if let Ok(ids) = scrypt_ocl::ocl::core::get_platform_ids() {
-        ids
+    let providers = if let Ok(p) = scrypt_ocl::get_providers() {
+        p
     } else {
-        return InitializeResult::InitializeOclError;
+        return InitializeResult::InitializeFailedToGetProviders;
     };
-    let platforms = Platform::list_from_core(list_core);
 
     let out = unsafe { std::slice::from_raw_parts_mut(out, out_len) };
 
-    for (out, platform) in out.iter_mut().zip(platforms.iter()) {
-        let name = match platform.name() {
-            Ok(name) => name,
-            Err(e) => e.into(),
-        };
+    for (out, provider) in out.iter_mut().zip(providers.iter()) {
         // Copy over the first out.name.len() - 1 bytes, and then add a null terminator.
-        let name = name
+        let name = format!("{provider}")
             .bytes()
             .take(out.name.len() - 1)
             .chain(std::iter::once(0))
