@@ -46,12 +46,8 @@ impl Debug for Provider {
 
 /// Returns the number of providers available.
 #[no_mangle]
-pub extern "C" fn get_providers_count(out: *mut usize) -> InitializeResult {
-    if out.is_null() {
-        return InitializeResult::InitializeInvalidArgument;
-    }
-    unsafe { *out = scrypt_ocl::get_providers_count() };
-    InitializeResult::InitializeOk
+pub extern "C" fn get_providers_count() -> usize {
+    scrypt_ocl::get_providers_count()
 }
 
 /// Returns all available providers.
@@ -202,23 +198,13 @@ mod tests {
 
     #[test]
     fn get_providers_count() {
-        assert_eq!(
-            InitializeResult::InitializeInvalidArgument,
-            super::get_providers_count(null_mut())
-        );
-
-        let mut count = 0usize;
-        let result = super::get_providers_count(&mut count as *mut usize);
-        assert_eq!(InitializeResult::InitializeOk, result);
+        let count = super::get_providers_count();
         assert!(dbg!(count) > 0);
     }
 
     #[test]
     fn get_providers() {
-        let mut count = 0usize;
-        let result = super::get_providers_count(&mut count as *mut usize);
-        assert_eq!(InitializeResult::InitializeOk, result);
-
+        let count = super::get_providers_count();
         let mut providers = vec![super::Provider::default(); count];
 
         assert_eq!(
