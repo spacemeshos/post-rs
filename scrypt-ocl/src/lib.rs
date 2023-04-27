@@ -279,8 +279,18 @@ impl Scrypter {
             let labels_to_init = chunk.len() / LABEL_SIZE;
 
             if labels_to_init < self.global_work_size {
+                let preferred_wg_size = cast!(
+                    self.kernel.wg_info(
+                        self.device(),
+                        KernelWorkGroupInfo::PreferredWorkGroupSizeMultiple,
+                    )?,
+                    KernelWorkGroupInfoResult::PreferredWorkGroupSizeMultiple
+                );
+                // Round up labels_to_init to be multiple of preferred_wg_size
+                let global_work_size = (labels_to_init + preferred_wg_size - 1) / preferred_wg_size
+                    * preferred_wg_size;
                 self.kernel
-                    .set_default_global_work_size(SpatialDims::One(labels_to_init));
+                    .set_default_global_work_size(SpatialDims::One(global_work_size));
             }
 
             unsafe {
@@ -343,6 +353,24 @@ mod tests {
                 label: [0xDD; 32]
             })
         );
+    }
+
+    #[test]
+    fn scrypting_1_label() {
+        let mut scrypter = Scrypter::new(None, 8192, &[0u8; 32], None).unwrap();
+        let mut labels = vec![0xDEu8; 16];
+        let _ = scrypter.scrypt(0..1, &mut labels).unwrap();
+
+        let mut expected = Vec::with_capacity(1);
+        post::initialize::initialize_to(
+            &mut expected,
+            &[0u8; 32],
+            0..1,
+            ScryptParams::new(12, 0, 0),
+        )
+        .unwrap();
+
+        assert_eq!(expected, labels);
     }
 
     #[test]
