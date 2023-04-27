@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     path::{Path, PathBuf},
-    time,
+    time::{self, Duration},
 };
 
 use clap::Parser;
@@ -17,14 +17,21 @@ use serde::Serialize;
 #[derive(Parser, Debug)]
 #[command(version)]
 struct Args {
-    /// File to read data from. It doesn't need to contain properly initialized POS data.
+    /// File to read data from.
+    /// It doesn't need to contain properly initialized POS data.
     /// Will create a new file if it doesn't exist.
-    #[arg(long, default_value = "./data.bin")]
+    #[arg(long, default_value = "/tmp/data.bin")]
     data_file: PathBuf,
 
-    /// Amount of data to read from the file in GiB.
-    #[arg(long, default_value_t = 8)]
-    data_size_gib: u64,
+    /// The size of POST data to bench over in GiB
+    #[arg(long, default_value_t = 1)]
+    data_size: u64,
+
+    /// How long to run the benchmark in seconds.
+    /// It will run for at least this long,
+    /// going through the same data multiple times if necessary.
+    #[arg(long, default_value_t = 10)]
+    duration: u64,
 
     /// Number of threads to use.
     /// '0' means use all available threads
@@ -75,39 +82,46 @@ fn main() -> Result<(), Box<dyn Error>> {
         k3_pow_difficulty: args.k3_pow_difficulty,
     };
 
-    let total_size = args.data_size_gib * 1024 * 1024 * 1024;
-    let file = file_data(&args.data_file, total_size)?;
-    let reader = post::reader::read_from(file, batch_size, total_size);
+    let total_size = args.data_size * 1024 * 1024 * 1024;
 
     let prover = Prover8_56::new(challenge, 0..args.nonces, params)?;
 
     let consume = |_, _| None;
 
     let start = time::Instant::now();
-    match args.threads {
-        1 => reader.for_each(|batch| {
-            prover.prove(&batch.data, batch.pos, consume);
-        }),
-        0 => reader.par_bridge().for_each(|batch| {
-            prover.prove(&batch.data, batch.pos, consume);
-        }),
-        n => {
-            let pool = rayon::ThreadPoolBuilder::new()
-                .num_threads(n)
-                .build()
-                .unwrap();
-            pool.install(|| {
-                reader.par_bridge().for_each(|batch| {
-                    prover.prove(&batch.data, batch.pos, consume);
-                })
-            });
+    let mut iterations = 0;
+    loop {
+        if start.elapsed() >= Duration::from_secs(args.duration) {
+            break;
         }
+        let file = file_data(&args.data_file, total_size)?;
+        let reader = post::reader::read_from(file, batch_size, total_size);
+        match args.threads {
+            1 => reader.for_each(|batch| {
+                prover.prove(&batch.data, batch.pos, consume);
+            }),
+            0 => reader.par_bridge().for_each(|batch| {
+                prover.prove(&batch.data, batch.pos, consume);
+            }),
+            n => {
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(n)
+                    .build()
+                    .unwrap();
+                pool.install(|| {
+                    reader.par_bridge().for_each(|batch| {
+                        prover.prove(&batch.data, batch.pos, consume);
+                    })
+                });
+            }
+        }
+        iterations += 1;
     }
     let elapsed = start.elapsed();
 
     let result = PerfResult {
         time_s: elapsed.as_secs_f64(),
-        speed_gib_s: args.data_size_gib as f64 / elapsed.as_secs_f64(),
+        speed_gib_s: iterations as f64 * args.data_size as f64 / elapsed.as_secs_f64(),
     };
     println!("{}", serde_json::to_string_pretty(&result).unwrap());
 
