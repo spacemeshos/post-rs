@@ -1,7 +1,7 @@
 use ocl::{
     builders::ProgramBuilder,
     enums::{DeviceInfo, DeviceInfoResult, KernelWorkGroupInfo, KernelWorkGroupInfoResult},
-    Buffer, Device, Kernel, MemFlags, Platform, ProQue, SpatialDims,
+    Buffer, Device, DeviceType, Kernel, MemFlags, Platform, ProQue, SpatialDims,
 };
 use std::{cmp::min, fmt::Display, ops::Range};
 use thiserror::Error;
@@ -35,8 +35,8 @@ pub enum ScryptError {
     OclError(#[from] ocl::Error),
     #[error("Fail in OpenCL core: {0}")]
     OclCoreError(#[from] ocl::OclCoreError),
-    #[error("Invalid provider id: {0}")]
-    InvalidProviderId(usize),
+    #[error("Invalid provider id: {0:?}")]
+    InvalidProviderId(ProviderId),
     #[error("No providers available")]
     NoProvidersAvailable,
 }
@@ -44,16 +44,32 @@ pub enum ScryptError {
 const LABEL_SIZE: usize = 16;
 const ENTIRE_LABEL_SIZE: usize = 32;
 
+macro_rules! cast {
+    ($target: expr, $pat: path) => {{
+        if let $pat(a) = $target {
+            // #1
+            a
+        } else {
+            panic!("mismatch variant when cast to {}", stringify!($pat)); // #2
+        }
+    }};
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ProviderId(pub u32);
+
 pub struct Provider {
     pub platform: Platform,
     pub device: Device,
+    pub class: DeviceType,
 }
 
 impl Display for Provider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}/{}",
+            "[{:?}] {}/{}",
+            self.class,
             self.platform.name().unwrap_or("unknown".to_owned()),
             self.device.name().unwrap_or("unknown".to_owned())
         )
@@ -70,29 +86,22 @@ pub fn get_providers() -> Result<Vec<Provider>, ScryptError> {
 
     let mut providers = Vec::new();
     for platform in platforms {
-        let devices = Device::list_all(platform)?;
+        let devices = Device::list(platform, Some(DeviceType::new().cpu().gpu()))?;
         for device in devices {
-            providers.push(Provider { platform, device });
+            providers.push(Provider {
+                platform,
+                device,
+                class: cast!(device.info(DeviceInfo::Type)?, DeviceInfoResult::Type),
+            });
         }
     }
 
     Ok(providers)
 }
 
-macro_rules! cast {
-    ($target: expr, $pat: path) => {{
-        if let $pat(a) = $target {
-            // #1
-            a
-        } else {
-            panic!("mismatch variant when cast to {}", stringify!($pat)); // #2
-        }
-    }};
-}
-
 impl Scrypter {
     pub fn new(
-        provider_id: Option<usize>,
+        provider_id: Option<ProviderId>,
         n: usize,
         commitment: &[u8; 32],
         vrf_difficulty: Option<[u8; 32]>,
@@ -100,7 +109,7 @@ impl Scrypter {
         let providers = get_providers()?;
         let provider = if let Some(id) = provider_id {
             providers
-                .get(id)
+                .get(id.0 as usize)
                 .ok_or(ScryptError::InvalidProviderId(id))?
         } else {
             providers.first().ok_or(ScryptError::NoProvidersAvailable)?

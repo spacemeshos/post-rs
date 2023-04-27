@@ -84,8 +84,8 @@ fn initialize(
 fn list_providers() -> Result<(), Box<dyn Error>> {
     let providers = scrypt_ocl::get_providers()?;
     println!("Found {} providers", providers.len());
-    for provider in providers {
-        println!("Provider: {}", provider);
+    for (id, provider) in providers.iter().enumerate() {
+        println!("{id}: {provider}");
     }
     Ok(())
 }
