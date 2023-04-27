@@ -22,6 +22,8 @@ jobs:
       - check
     runs-on: ubuntu-latest
     steps:
+      - name: Install dependencies for testing openCL
+        run: sudo apt-get install -y libpocl2 mesa-opencl-icd
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
