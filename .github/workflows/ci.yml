@@ -115,6 +115,8 @@ jobs:
     steps:
       - if: matrix.os == 'ubuntu-20.04'
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
+      - if: matrix.os == 'windows-latest'
+        run: choco install -y opencl-intel-cpu-runtime
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
