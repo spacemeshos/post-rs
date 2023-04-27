@@ -669,10 +669,9 @@ static void scrypt_ChunkMix_inplace_local(uint4 *restrict B /*[chunkWords]*/) {
 
 static void scrypt_ROMix(uint4 *restrict X, global uint4 *restrict lookup,
                          const uint N) {
-
   const uint zSIZE = 8;
   const uint ySIZE = (N / LOOKUP_GAP + (N % LOOKUP_GAP > 0));
-  const uint xSIZE = CONCURRENT_THREADS;
+  const uint xSIZE = get_global_size(0);
   const uint x = get_global_id(0) % xSIZE;
   uint i, j, y, z;
   uint4 W[8];
