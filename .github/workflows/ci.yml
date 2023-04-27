@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Install dependencies for testing openCL
-        run: sudo apt-get install -y libpocl2 mesa-opencl-icd
+        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -114,7 +114,7 @@ jobs:
             staticlib: post.lib
     steps:
       - if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y libpocl2 mesa-opencl-icd
+        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
