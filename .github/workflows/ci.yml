@@ -113,7 +113,7 @@ jobs:
             dylib: post.dll
             staticlib: post.lib
     steps:
-      - if: matrix.os == 'ubuntu-latest'
+      - if: matrix.os == 'ubuntu-20.04'
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
