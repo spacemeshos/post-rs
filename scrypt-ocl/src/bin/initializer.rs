@@ -1,7 +1,14 @@
-use std::{error::Error, io::Write, path::PathBuf, time};
+use std::{
+    io::{Read, Seek, Write},
+    path::PathBuf,
+    time,
+};
 
 use base64::{engine::general_purpose, Engine};
 use eyre::Context;
+use post::ScryptParams;
+use rand::seq::IteratorRandom;
+use rayon::prelude::{ParallelBridge, ParallelIterator};
 use scrypt_ocl::{ProviderId, Scrypter};
 
 use clap::{Args, Parser, Subcommand};
@@ -22,6 +29,7 @@ enum Commands {
     /// does testing things
     Initialize(Initialize),
     ListProviders,
+    VerifyData(VerifyData),
 }
 
 #[derive(Args)]
@@ -53,6 +61,90 @@ struct Initialize {
     provider: Option<u32>,
 }
 
+#[derive(Args)]
+struct VerifyData {
+    /// Scrypt N parameter
+    #[arg(short, long, default_value_t = 8192)]
+    n: usize,
+    /// Path to file with POST data to verify
+    #[arg(short, long)]
+    input: PathBuf,
+    /// Fraction of data (in %) to initialize
+    #[arg(short, long, default_value_t = 5.0)]
+    fraction: f64,
+    /// Index of first label in file
+    #[arg(long, default_value_t = 0)]
+    first_label_index: u64,
+    /// Base64-encoded node ID
+    #[arg(long, default_value = "hBGTHs44tav7YR87sRVafuzZwObCZnK1Z/exYpxwqSQ=")]
+    node_id: String,
+    /// Base64-encoded commitment ATX ID
+    #[arg(long, default_value = "ZuxocVjIYWfv7A/K1Lmm8+mNsHzAZaWVpbl5+KINx+I=")]
+    commitment_atx_id: String,
+}
+
+fn calc_commitment(node_id: &str, commitment_atx_id: &str) -> eyre::Result<[u8; 32]> {
+    let node_id = general_purpose::STANDARD.decode(node_id)?;
+    let commitment_atx_id = general_purpose::STANDARD.decode(commitment_atx_id)?;
+
+    Ok(post::initialize::calc_commitment(
+        node_id
+            .as_slice()
+            .try_into()
+            .wrap_err("nodeID should be 32B")?,
+        commitment_atx_id
+            .as_slice()
+            .try_into()
+            .wrap_err("commitment ATX ID should be 32B")?,
+    ))
+}
+
+fn verify_data(args: VerifyData) -> eyre::Result<()> {
+    let commitment = calc_commitment(&args.node_id, &args.commitment_atx_id)?;
+
+    // open intput file for reading
+    let mut input_file = std::fs::File::open(args.input)?;
+    // read input file size
+    let input_file_size = input_file.metadata()?.len();
+    let labels_in_file = input_file_size / 16;
+    let labels_to_verify = (labels_in_file as f64 * (args.fraction / 100.0)) as usize;
+
+    let mut rng = rand::thread_rng();
+    (0..labels_in_file)
+        .choose_multiple(&mut rng, labels_to_verify)
+        .into_iter()
+        .map(|index| {
+            let mut label = [0u8; 16];
+            input_file
+                .seek(std::io::SeekFrom::Start(index * 16))
+                .unwrap();
+            input_file.read_exact(&mut label).unwrap();
+            (index, label)
+        })
+        .par_bridge()
+        .map(|(index, label)| -> eyre::Result<()> {
+            let mut expected_label = [0u8; 16];
+            let label_index = index + args.first_label_index;
+            post::initialize::initialize_to(
+                &mut expected_label.as_mut_slice(),
+                &commitment,
+                label_index..label_index + 1,
+                ScryptParams::new(args.n.ilog2() as u8 - 1, 0, 0),
+            )
+            .expect("initializing label");
+
+            eyre::ensure!(
+                label == expected_label,
+                "label at index {index} mismatch: {label:?} != {expected_label:?}"
+            );
+            Ok(())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    println!("Data verified successfully");
+    Ok(())
+}
+
 fn initialize(
     n: usize,
     labels: usize,
@@ -63,19 +155,7 @@ fn initialize(
 ) -> eyre::Result<()> {
     println!("Initializing {labels} labels intos {:?}", output.as_path());
 
-    let node_id = general_purpose::STANDARD.decode(node_id)?;
-    let commitment_atx_id = general_purpose::STANDARD.decode(commitment_atx_id)?;
-
-    let commitment = post::initialize::calc_commitment(
-        node_id
-            .as_slice()
-            .try_into()
-            .wrap_err("nodeID should be 32B")?,
-        commitment_atx_id
-            .as_slice()
-            .try_into()
-            .wrap_err("commitment ATX ID should be 32B")?,
-    );
+    let commitment = calc_commitment(&node_id, &commitment_atx_id)?;
 
     let mut scrypter = Scrypter::new(provider_id, n, &commitment, Some([0xFFu8; 32]))?;
     let mut out_labels = vec![0u8; labels * 16];
@@ -128,6 +208,7 @@ fn main() -> eyre::Result<()> {
             provider.map(ProviderId),
         )?,
         Commands::ListProviders => list_providers()?,
+        Commands::VerifyData(v) => verify_data(v)?,
     }
 
     Ok(())
