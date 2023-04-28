@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+eyre = "0.6.8"
 bytemuck = "1.13.1"
 ocl = { version = "0.19.4", features = ["opencl_version_2_1"] }
 thiserror = "1.0.40"

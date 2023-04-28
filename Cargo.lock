@@ -1708,6 +1708,7 @@ dependencies = [
  "base64 0.21.0",
  "bytemuck",
  "clap 4.2.4",
+ "eyre",
  "ocl",
  "post-rs",
  "thiserror",
