@@ -347,6 +347,7 @@ impl Scrypter {
 #[cfg(test)]
 mod tests {
     use post::ScryptParams;
+    use rstest::rstest;
 
     use super::*;
 
@@ -382,11 +383,16 @@ mod tests {
         assert_eq!(expected, labels);
     }
 
-    #[test]
-    fn scrypting_from_0() {
+    #[rstest]
+    #[case(512)]
+    #[case(1024)]
+    #[case(2048)]
+    #[case(4096)]
+    #[case(8192)]
+    fn scrypting_from_0(#[case] n: usize) {
         let indices = 0..4000;
 
-        let mut scrypter = Scrypter::new(None, 8192, &[0u8; 32], None).unwrap();
+        let mut scrypter = Scrypter::new(None, n, &[0u8; 32], None).unwrap();
         let mut labels = vec![0xDEu8; Scrypter::buffer_len(&indices).unwrap()];
         let _ = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
 
@@ -397,18 +403,23 @@ mod tests {
             &mut expected,
             &[0u8; 32],
             indices,
-            ScryptParams::new(12, 0, 0),
+            ScryptParams::new(n.ilog2() as u8 - 1, 0, 0),
         )
         .unwrap();
 
         assert_eq!(expected, labels);
     }
 
-    #[test]
-    fn scrypting_over_4gb() {
+    #[rstest]
+    #[case(512)]
+    #[case(1024)]
+    #[case(2048)]
+    #[case(4096)]
+    #[case(8192)]
+    fn scrypting_over_4gb(#[case] n: usize) {
         let indices = u32::MAX as u64 - 1000..u32::MAX as u64 + 1000;
 
-        let mut scrypter = Scrypter::new(None, 8192, &[0u8; 32], None).unwrap();
+        let mut scrypter = Scrypter::new(None, n, &[0u8; 32], None).unwrap();
         let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
         let _ = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
 
@@ -419,7 +430,7 @@ mod tests {
             &mut expected,
             &[0u8; 32],
             indices,
-            ScryptParams::new(12, 0, 0),
+            ScryptParams::new(n.ilog2() as u8 - 1, 0, 0),
         )
         .unwrap();
 
@@ -449,15 +460,20 @@ mod tests {
         assert_eq!(expected, labels);
     }
 
-    #[test]
-    fn searching_for_vrf_nonce() {
-        let indices = 0..5000;
+    #[rstest]
+    #[case(512)]
+    #[case(1024)]
+    #[case(2048)]
+    #[case(4096)]
+    #[case(8192)]
+    fn searching_for_vrf_nonce(#[case] n: usize) {
+        let indices = 0..6000;
         let commitment = b"this is some commitment for init";
         let mut difficulty = [0xFFu8; 32];
         difficulty[0] = 0;
-        difficulty[1] = 0x1F;
+        difficulty[1] = 0x2F;
 
-        let mut scrypter = Scrypter::new(None, 8192, commitment, Some(difficulty)).unwrap();
+        let mut scrypter = Scrypter::new(None, n, commitment, Some(difficulty)).unwrap();
         let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
         let nonce = scrypter.scrypt(indices, &mut labels).unwrap();
         let nonce = nonce.expect("vrf nonce not found");
@@ -467,7 +483,7 @@ mod tests {
             &mut label,
             commitment,
             nonce.index..nonce.index + 1,
-            ScryptParams::new(12, 0, 0),
+            ScryptParams::new(n.ilog2() as u8 - 1, 0, 0),
         )
         .unwrap();
 
