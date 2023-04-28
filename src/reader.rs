@@ -8,7 +8,7 @@ use itertools::Itertools;
 use regex::Regex;
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Batch {
+pub struct Batch {
     pub data: Vec<u8>,
     pub pos: u64,
 }
@@ -107,6 +107,14 @@ pub(crate) fn read_data(
     }
 
     readers.into_iter().flatten()
+}
+
+pub fn read_from<R: Read>(
+    reader: R,
+    batch_size: usize,
+    max_size: u64,
+) -> impl Iterator<Item = Batch> {
+    BatchingReader::new(reader, 0, batch_size, max_size)
 }
 
 #[cfg(test)]
