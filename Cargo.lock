@@ -1420,6 +1420,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "profiler"
+version = "0.1.0"
+dependencies = [
+ "clap 4.2.4",
+ "eyre",
+ "post-rs",
+ "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "proptest"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
