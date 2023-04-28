@@ -112,7 +112,7 @@ jobs:
           - os: windows-latest
             dylib: post.dll
             staticlib: post.lib
-            rustflags: -L$GITHUB_WORKSPACE
+            rustflags: -LD:\\a\\post-rs\\post-rs
     steps:
       - if: matrix.os == 'ubuntu-20.04'
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
