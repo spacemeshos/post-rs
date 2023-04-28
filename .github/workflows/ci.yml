@@ -112,15 +112,13 @@ jobs:
           - os: windows-latest
             dylib: post.dll
             staticlib: post.lib
-            rustflags: -LD:\a\post-rs\post-rs
     steps:
       - if: matrix.os == 'ubuntu-20.04'
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
+        name: Install opencl
       - if: matrix.os == 'windows-latest'
-        run: |
-          choco install -y wget unzip
-          wget https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v2023.04.17/OpenCL-SDK-v2023.04.17-Win-x64.zip
-          unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
+        run: vcpkg install opencl
+        name: Install opencl
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
