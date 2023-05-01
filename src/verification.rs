@@ -40,7 +40,6 @@ use std::cmp::Ordering;
 
 use cipher::BlockEncrypt;
 use itertools::Itertools;
-use rayon::prelude::{ParallelBridge, ParallelIterator};
 use scrypt_jane::scrypt::ScryptParams;
 
 use crate::{
@@ -156,7 +155,7 @@ pub fn verify(
 
     let k3_indices = RandomValuesIterator::new(indices_unpacked, seed).take(params.k3 as usize);
 
-    k3_indices.par_bridge().try_for_each(|index| {
+    k3_indices.into_iter().try_for_each(|index| {
         let mut output = [0u8; 16];
         let label = generate_label(&commitment, params.scrypt, index);
         cipher.aes.encrypt_block_b2b(
