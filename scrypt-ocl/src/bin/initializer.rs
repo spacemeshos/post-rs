@@ -1,15 +1,19 @@
 use std::{
-    io::{Read, Seek, Write},
+    io::{Read, Seek},
     path::PathBuf,
     time,
 };
 
 use base64::{engine::general_purpose, Engine};
 use eyre::Context;
-use post::ScryptParams;
+use ocl::DeviceType;
+use post::{
+    initialize::{CpuInitializer, Initialize},
+    ScryptParams,
+};
 use rand::seq::IteratorRandom;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
-use scrypt_ocl::{ProviderId, Scrypter};
+use scrypt_ocl::{OpenClInitializer, ProviderId};
 
 use clap::{Args, Parser, Subcommand};
 
@@ -21,19 +25,19 @@ struct Cli {
     command: Option<Commands>,
 
     #[clap(flatten)]
-    initialize: Initialize,
+    initialize: InitializeArgs,
 }
 
 #[derive(Subcommand)]
 enum Commands {
     /// does testing things
-    Initialize(Initialize),
+    Initialize(InitializeArgs),
     ListProviders,
     VerifyData(VerifyData),
 }
 
 #[derive(Args)]
-struct Initialize {
+struct InitializeArgs {
     /// Scrypt N parameter
     #[arg(short, long, default_value_t = 8192)]
     n: usize,
@@ -108,6 +112,7 @@ fn verify_data(args: VerifyData) -> eyre::Result<()> {
     let input_file_size = input_file.metadata()?.len();
     let labels_in_file = input_file_size / 16;
     let labels_to_verify = (labels_in_file as f64 * (args.fraction / 100.0)) as usize;
+    let scrypt_params = ScryptParams::new(args.n.ilog2() as u8 - 1, 0, 0);
 
     let mut rng = rand::thread_rng();
     (0..labels_in_file)
@@ -125,13 +130,14 @@ fn verify_data(args: VerifyData) -> eyre::Result<()> {
         .map(|(index, label)| -> eyre::Result<()> {
             let mut expected_label = [0u8; 16];
             let label_index = index + args.first_label_index;
-            post::initialize::initialize_to(
-                &mut expected_label.as_mut_slice(),
-                &commitment,
-                label_index..label_index + 1,
-                ScryptParams::new(args.n.ilog2() as u8 - 1, 0, 0),
-            )
-            .expect("initializing label");
+            CpuInitializer::new(scrypt_params)
+                .initialize_to(
+                    &mut expected_label.as_mut_slice(),
+                    &commitment,
+                    label_index..label_index + 1,
+                    None,
+                )
+                .expect("initializing label");
 
             eyre::ensure!(
                 label == expected_label,
@@ -153,15 +159,23 @@ fn initialize(
     output: PathBuf,
     provider_id: Option<ProviderId>,
 ) -> eyre::Result<()> {
-    println!("Initializing {labels} labels intos {:?}", output.as_path());
+    println!("Initializing {labels} labels into {:?}", output.as_path());
 
-    let commitment = calc_commitment(&node_id, &commitment_atx_id)?;
-
-    let mut scrypter = Scrypter::new(provider_id, n, &commitment, Some([0xFFu8; 32]))?;
-    let mut out_labels = vec![0u8; labels * 16];
+    let mut scrypter = OpenClInitializer::new(provider_id, n, Some(DeviceType::GPU))?;
 
     let now = time::Instant::now();
-    let vrf_nonce = scrypter.scrypt(0..labels as u64, &mut out_labels)?;
+    let vrf_nonce = scrypter
+        .initialize(
+            &output,
+            node_id.as_bytes().try_into().unwrap(),
+            commitment_atx_id.as_bytes().try_into().unwrap(),
+            labels as u64,
+            1,
+            labels as u64,
+            Some([0xFFu8; 32]),
+        )
+        .map_err(|e| eyre::eyre!("initializing: {}", e))?;
+
     let elapsed = now.elapsed();
     println!(
             "Initializing {} labels took {} seconds. Speed: {:.0} labels/sec ({:.2} MB/sec, vrf_nonce: {vrf_nonce:?})",
@@ -171,13 +185,11 @@ fn initialize(
             labels as f64 * 16.0 / elapsed.as_secs_f64() / 1024.0 / 1024.0
         );
 
-    let mut file = std::fs::File::create(output)?;
-    file.write_all(&out_labels)?;
     Ok(())
 }
 
 fn list_providers() -> eyre::Result<()> {
-    let providers = scrypt_ocl::get_providers()?;
+    let providers = scrypt_ocl::get_providers(None)?;
     println!("Found {} providers", providers.len());
     for (id, provider) in providers.iter().enumerate() {
         println!("{id}: {provider}");
@@ -192,7 +204,7 @@ fn main() -> eyre::Result<()> {
         .command
         .unwrap_or(Commands::Initialize(args.initialize))
     {
-        Commands::Initialize(Initialize {
+        Commands::Initialize(InitializeArgs {
             n,
             labels,
             node_id,

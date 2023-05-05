@@ -1,8 +1,18 @@
 use std::fmt::Debug;
 
-use scrypt_ocl::{ocl::DeviceType, ProviderId, Scrypter};
+use post::{
+    initialize::{CpuInitializer, Initialize},
+    ScryptParams,
+};
+use scrypt_ocl::{ocl::DeviceType, OpenClInitializer, ProviderId};
 
 pub enum Initializer {}
+
+struct InitializerWrapper {
+    inner: Box<dyn Initialize>,
+    commitment: [u8; 32],
+    vrf_difficulty: Option<[u8; 32]>,
+}
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -29,12 +39,14 @@ pub struct Provider {
     class: DeviceClass,
 }
 
+const CPU_PROVIDER_ID: u32 = u32::MAX;
+
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum DeviceClass {
     CPU,
     GPU,
-    UNKNOWN,
 }
 
 impl Debug for Provider {
@@ -51,7 +63,8 @@ impl Debug for Provider {
 /// Returns the number of providers available.
 #[no_mangle]
 pub extern "C" fn get_providers_count() -> usize {
-    scrypt_ocl::get_providers_count()
+    // Add one for the CPU provider.
+    scrypt_ocl::get_providers_count(Some(DeviceType::GPU)) + 1
 }
 
 /// Returns all available providers.
@@ -61,7 +74,7 @@ pub extern "C" fn get_providers(out: *mut Provider, out_len: usize) -> Initializ
         return InitializeResult::InitializeInvalidArgument;
     }
 
-    let providers = if let Ok(p) = scrypt_ocl::get_providers() {
+    let providers = if let Ok(p) = scrypt_ocl::get_providers(Some(DeviceType::GPU)) {
         p
     } else {
         return InitializeResult::InitializeFailedToGetProviders;
@@ -69,7 +82,8 @@ pub extern "C" fn get_providers(out: *mut Provider, out_len: usize) -> Initializ
 
     let out = unsafe { std::slice::from_raw_parts_mut(out, out_len) };
 
-    for (id, (out, provider)) in out.iter_mut().zip(providers.iter()).enumerate() {
+    let mut id = 0;
+    for (out, provider) in out.iter_mut().zip(providers.iter()) {
         // Copy over the first out.name.len() - 1 bytes, and then add a null terminator.
         let name = format!("{provider}")
             .bytes()
@@ -78,11 +92,17 @@ pub extern "C" fn get_providers(out: *mut Provider, out_len: usize) -> Initializ
             .collect::<Vec<_>>();
         out.name[..name.len()].copy_from_slice(&name);
         out.id = id as u32;
-        out.class = match provider.class {
-            class if class.intersects(DeviceType::GPU) => DeviceClass::GPU,
-            class if class.intersects(DeviceType::CPU) => DeviceClass::CPU,
-            _ => DeviceClass::UNKNOWN,
-        }
+        out.class = DeviceClass::GPU;
+        id += 1;
+    }
+    if id < out.len() {
+        out[id] = Provider {
+            name: [0u8; 64],
+            id: CPU_PROVIDER_ID,
+            class: DeviceClass::CPU,
+        };
+        let name = b"[CPU] scrypt-jane\0";
+        out[id].name[..name.len()].copy_from_slice(name);
     }
 
     InitializeResult::InitializeOk
@@ -104,17 +124,24 @@ pub extern "C" fn initialize(
         return InitializeResult::InitializeInvalidLabelsRange;
     }
     let end = end + 1;
-    let _ = unsafe { Box::from_raw(initializer) };
 
-    let scrypter = unsafe { &mut *(initializer as *mut Scrypter) };
+    let initializer = unsafe { &mut *(initializer as *mut InitializerWrapper) };
     let len = if let Ok(len) = usize::try_from(end - start) {
         len * 16
     } else {
         return InitializeResult::InitializeInvalidLabelsRange;
     };
 
-    let labels = unsafe { std::slice::from_raw_parts_mut(out_buffer, len) };
-    let vrf_nonce = scrypter.scrypt(start..end, labels).unwrap();
+    let mut labels = unsafe { std::slice::from_raw_parts_mut(out_buffer, len) };
+    let vrf_nonce = initializer
+        .inner
+        .initialize_to(
+            &mut labels,
+            &initializer.commitment,
+            start..end,
+            initializer.vrf_difficulty,
+        )
+        .unwrap();
 
     if !out_nonce.is_null() {
         if let Some(nonce) = vrf_nonce {
@@ -148,6 +175,7 @@ fn _new_initializer(
     commitment: *const u8,
     vrf_difficulty: *const u8,
 ) -> eyre::Result<*mut Initializer> {
+    eyre::ensure!(n.is_power_of_two(), "scrypt N must be a power of two");
     let commitment = unsafe { std::slice::from_raw_parts(commitment, 32) };
     let commitment = commitment.try_into()?;
 
@@ -158,14 +186,25 @@ fn _new_initializer(
         Some(vrf_difficulty.try_into()?)
     };
 
-    let scrypter = Box::new(scrypt_ocl::Scrypter::new(
-        Some(ProviderId(provider_id)),
-        n,
+    let instance: Box<dyn Initialize> = match provider_id {
+        CPU_PROVIDER_ID => Box::new(CpuInitializer::new(ScryptParams::new(
+            n.ilog2() as u8 - 1,
+            0,
+            0,
+        ))),
+        id => Box::new(OpenClInitializer::new(
+            Some(ProviderId(id)),
+            n,
+            Some(DeviceType::GPU),
+        )?),
+    };
+    let initializer = Box::new(InitializerWrapper {
+        inner: instance,
         commitment,
         vrf_difficulty,
-    )?);
+    });
 
-    Ok(Box::into_raw(scrypter) as *mut Initializer)
+    Ok(Box::into_raw(initializer) as *mut Initializer)
 }
 
 #[no_mangle]
@@ -175,15 +214,19 @@ pub extern "C" fn free_initializer(initializer: *mut Initializer) {
 
 #[cfg(test)]
 mod tests {
-    use std::{mem::forget, ptr::null_mut};
+    use std::ptr::null_mut;
 
-    use post::ScryptParams;
+    use post::{
+        initialize::{CpuInitializer, Initialize},
+        ScryptParams,
+    };
 
-    use super::InitializeResult;
+    use super::{InitializeResult, CPU_PROVIDER_ID};
 
     #[test]
     fn cant_initialize_more_than_2_64_labels() {
-        let initializer = super::new_initializer(0, 32, [0u8; 32].as_ptr(), std::ptr::null());
+        let initializer =
+            super::new_initializer(CPU_PROVIDER_ID, 32, [0u8; 32].as_ptr(), std::ptr::null());
 
         let mut labels = Vec::new();
         let result = super::initialize(initializer, 0, u64::MAX, labels.as_mut_ptr(), null_mut());
@@ -194,7 +237,8 @@ mod tests {
     fn initialization() {
         let indices = 0..=70;
 
-        let initializer = super::new_initializer(0, 32, [0u8; 32].as_ptr(), std::ptr::null());
+        let initializer =
+            super::new_initializer(CPU_PROVIDER_ID, 32, [0u8; 32].as_ptr(), std::ptr::null());
 
         let mut labels = vec![0u8; 71 * 16];
         let result = super::initialize(
@@ -208,17 +252,17 @@ mod tests {
 
         let mut expected = Vec::<u8>::with_capacity(indices.clone().count());
 
-        post::initialize::initialize_to(
-            &mut expected,
-            &[0u8; 32],
-            *indices.start()..*indices.end() + 1,
-            ScryptParams::new(4, 0, 0),
-        )
-        .unwrap();
+        CpuInitializer::new(ScryptParams::new(4, 0, 0))
+            .initialize_to(
+                &mut expected,
+                &[0u8; 32],
+                *indices.start()..*indices.end() + 1,
+                None,
+            )
+            .unwrap();
 
         assert_eq!(expected, labels);
 
-        forget(labels); // Will be deallocated in free_initialization_result()
         super::free_initializer(initializer);
     }
 

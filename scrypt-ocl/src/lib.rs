@@ -3,16 +3,11 @@ use ocl::{
     enums::{DeviceInfo, DeviceInfoResult, KernelWorkGroupInfo, KernelWorkGroupInfoResult},
     Buffer, Device, DeviceType, Kernel, MemFlags, Platform, ProQue, SpatialDims,
 };
-use std::{cmp::min, fmt::Display, ops::Range};
+use post::initialize::{Initialize, VrfNonce, ENTIRE_LABEL_SIZE, LABEL_SIZE};
+use std::{cmp::min, fmt::Display, io::Write, ops::Range};
 use thiserror::Error;
 
 pub use ocl;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct VrfNonce {
-    pub index: u64,
-    label: [u8; 32],
-}
 
 #[derive(Debug)]
 pub struct Scrypter {
@@ -20,9 +15,6 @@ pub struct Scrypter {
     output: Buffer<u8>,
     global_work_size: usize,
     pro_que: ProQue,
-
-    vrf_nonce: Option<VrfNonce>,
-    vrf_difficulty: Option<[u8; 32]>,
 }
 
 #[derive(Error, Debug)]
@@ -39,10 +31,9 @@ pub enum ScryptError {
     InvalidProviderId(ProviderId),
     #[error("No providers available")]
     NoProvidersAvailable,
+    #[error("Failed to write labels: {0}")]
+    WriteError(#[from] std::io::Error),
 }
-
-const LABEL_SIZE: usize = 16;
-const ENTIRE_LABEL_SIZE: usize = 32;
 
 macro_rules! cast {
     ($target: expr, $pat: path) => {{
@@ -76,17 +67,17 @@ impl Display for Provider {
     }
 }
 
-pub fn get_providers_count() -> usize {
-    get_providers().map_or(0, |p| p.len())
+pub fn get_providers_count(device_types: Option<DeviceType>) -> usize {
+    get_providers(device_types).map_or(0, |p| p.len())
 }
 
-pub fn get_providers() -> Result<Vec<Provider>, ScryptError> {
+pub fn get_providers(device_types: Option<DeviceType>) -> Result<Vec<Provider>, ScryptError> {
     let list_core = ocl::core::get_platform_ids()?;
     let platforms = Platform::list_from_core(list_core);
 
     let mut providers = Vec::new();
     for platform in platforms {
-        let devices = Device::list(platform, Some(DeviceType::new().cpu().gpu()))?;
+        let devices = Device::list(platform, device_types)?;
         for device in devices {
             providers.push(Provider {
                 platform,
@@ -99,26 +90,27 @@ pub fn get_providers() -> Result<Vec<Provider>, ScryptError> {
     Ok(providers)
 }
 
+fn scan_for_vrf_nonce(labels: &[u8], mut difficulty: [u8; 32]) -> Option<VrfNonce> {
+    let mut nonce = None;
+    for (id, label) in labels.chunks(ENTIRE_LABEL_SIZE).enumerate() {
+        if label < &difficulty {
+            nonce = Some(VrfNonce {
+                index: id as u64,
+                label: label.try_into().unwrap(),
+            });
+            difficulty = label.try_into().unwrap();
+        }
+    }
+    nonce
+}
+
 impl Scrypter {
     pub fn new(
-        provider_id: Option<ProviderId>,
+        platform: Platform,
+        device: Device,
         n: usize,
         commitment: &[u8; 32],
-        vrf_difficulty: Option<[u8; 32]>,
     ) -> Result<Self, ScryptError> {
-        let providers = get_providers()?;
-        let provider = if let Some(id) = provider_id {
-            providers
-                .get(id.0 as usize)
-                .ok_or(ScryptError::InvalidProviderId(id))?
-        } else {
-            providers.first().ok_or(ScryptError::NoProvidersAvailable)?
-        };
-        let platform = provider.platform;
-        let device = provider.device;
-        // TODO remove print
-        println!("Using provider: {provider}");
-
         // Calculate kernel memory requirements
         const LOOKUP_GAP: usize = 2;
         const SCRYPT_MEM: usize = 128;
@@ -233,17 +225,11 @@ impl Scrypter {
             kernel,
             output,
             global_work_size,
-            vrf_difficulty,
-            vrf_nonce: None,
         })
     }
 
     pub fn device(&self) -> ocl::Device {
         self.pro_que.device()
-    }
-
-    pub fn vrf_nonce(&self) -> Option<VrfNonce> {
-        self.vrf_nonce
     }
 
     pub fn buffer_len(labels: &Range<u64>) -> Result<usize, ScryptError> {
@@ -253,39 +239,19 @@ impl Scrypter {
         }
     }
 
-    fn scan_for_vrf_nonce(labels: &[u8], mut difficulty: [u8; 32]) -> Option<VrfNonce> {
-        let mut nonce = None;
-        for (id, label) in labels.chunks(ENTIRE_LABEL_SIZE).enumerate() {
-            if label < &difficulty {
-                nonce = Some(VrfNonce {
-                    index: id as u64,
-                    label: label.try_into().unwrap(),
-                });
-                difficulty = label.try_into().unwrap();
-            }
-        }
-        nonce
-    }
-
-    pub fn scrypt(
+    pub fn scrypt<W: std::io::Write + ?Sized>(
         &mut self,
+        writer: &mut W,
         labels: Range<u64>,
-        out: &mut [u8],
+        mut vrf_difficulty: Option<[u8; 32]>,
     ) -> Result<Option<VrfNonce>, ScryptError> {
-        let expected_len = Self::buffer_len(&labels)?;
-        if out.len() != expected_len {
-            return Err(ScryptError::InvalidBufferSize {
-                got: out.len(),
-                expected: expected_len,
-            });
-        }
-
         let mut labels_buffer = vec![0u8; self.global_work_size * ENTIRE_LABEL_SIZE];
+        let mut best_nonce = None;
+        let labels_end = labels.end;
 
-        let mut index = labels.start;
-        for chunk in &mut out.chunks_mut(self.global_work_size * LABEL_SIZE) {
+        for index in labels.step_by(self.global_work_size) {
             self.kernel.set_arg(1, index)?;
-            let labels_to_init = chunk.len() / LABEL_SIZE;
+            let labels_to_init = (labels_end - index) as usize;
 
             if labels_to_init < self.global_work_size {
                 let preferred_wg_size = cast!(
@@ -312,41 +278,82 @@ impl Scrypter {
 
             // Look for VRF nonce if enabled
             // TODO: run in background / in parallel to GPU
-            if let Some(difficulty) = &self.vrf_difficulty {
-                let new_best_nonce = match self.vrf_nonce {
-                    Some(current_smallest) => {
-                        Self::scan_for_vrf_nonce(labels_buffer, current_smallest.label)
-                    }
-                    None => Self::scan_for_vrf_nonce(labels_buffer, *difficulty),
-                };
-                if let Some(nonce) = new_best_nonce {
-                    self.vrf_nonce = Some(VrfNonce {
+            if let Some(difficulty) = vrf_difficulty {
+                if let Some(nonce) = scan_for_vrf_nonce(labels_buffer, difficulty) {
+                    best_nonce = Some(VrfNonce {
                         index: nonce.index + index,
                         label: nonce.label,
                     });
+                    vrf_difficulty = Some(nonce.label);
                     //TODO: remove print
-                    eprintln!("Found new smallest nonce: {:?}", self.vrf_nonce);
+                    eprintln!("Found new smallest nonce: {best_nonce:?}");
                 }
             }
 
             // Copy the first 16 bytes of each label
             // TODO: run in background / in parallel to GPU
-            for (full_label, out_label) in labels_buffer
-                .chunks_exact(ENTIRE_LABEL_SIZE)
-                .zip(chunk.chunks_exact_mut(LABEL_SIZE))
-            {
-                out_label.copy_from_slice(&full_label[..LABEL_SIZE]);
+            for full_label in labels_buffer.chunks_exact(ENTIRE_LABEL_SIZE) {
+                writer.write_all(&full_label[..LABEL_SIZE])?;
             }
-            index += labels_to_init as u64;
         }
+        Ok(best_nonce)
+    }
+}
 
-        Ok(self.vrf_nonce)
+pub struct OpenClInitializer {
+    platform: Platform,
+    device: Device,
+    n: usize,
+}
+
+impl OpenClInitializer {
+    pub fn new(
+        provider_id: Option<ProviderId>,
+        n: usize,
+        device_types: Option<DeviceType>,
+    ) -> Result<Self, ScryptError> {
+        let providers = get_providers(device_types)?;
+        let provider = if let Some(id) = provider_id {
+            providers
+                .get(id.0 as usize)
+                .ok_or(ScryptError::InvalidProviderId(id))?
+        } else {
+            providers.first().ok_or(ScryptError::NoProvidersAvailable)?
+        };
+        let platform = provider.platform;
+        let device = provider.device;
+        // TODO remove print
+        println!("Using provider: {provider}");
+
+        Ok(Self {
+            platform,
+            device,
+            n,
+        })
+    }
+}
+
+impl Initialize for OpenClInitializer {
+    fn initialize_to(
+        &mut self,
+        writer: &mut dyn Write,
+        commitment: &[u8; 32],
+        labels: Range<u64>,
+        vrf_difficulty: Option<[u8; 32]>,
+    ) -> Result<Option<VrfNonce>, Box<dyn std::error::Error>> {
+        let mut scrypter = Scrypter::new(self.platform, self.device, self.n, commitment)?;
+        scrypter
+            .scrypt(writer, labels, vrf_difficulty)
+            .map_err(Into::into)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use post::ScryptParams;
+    use post::{
+        initialize::{CpuInitializer, Initialize},
+        ScryptParams,
+    };
     use rstest::rstest;
 
     use super::*;
@@ -355,7 +362,7 @@ mod tests {
     fn scanning_for_vrf_nonce() {
         let labels = [[0xFF; 32], [0xEE; 32], [0xDD; 32], [0xEE; 32]];
         let labels_bytes: Vec<u8> = labels.iter().copied().flatten().collect();
-        let nonce = Scrypter::scan_for_vrf_nonce(&labels_bytes, [0xFFu8; 32]);
+        let nonce = scan_for_vrf_nonce(&labels_bytes, [0xFFu8; 32]);
         assert_eq!(
             nonce,
             Some(VrfNonce {
@@ -367,18 +374,16 @@ mod tests {
 
     #[test]
     fn scrypting_1_label() {
-        let mut scrypter = Scrypter::new(None, 8192, &[0u8; 32], None).unwrap();
-        let mut labels = vec![0xDEu8; 16];
-        let _ = scrypter.scrypt(0..1, &mut labels).unwrap();
+        let mut scrypter = OpenClInitializer::new(None, 8192, None).unwrap();
+        let mut labels = Vec::new();
+        scrypter
+            .initialize_to(&mut labels, &[0u8; 32], 0..1, None)
+            .unwrap();
 
         let mut expected = Vec::with_capacity(1);
-        post::initialize::initialize_to(
-            &mut expected,
-            &[0u8; 32],
-            0..1,
-            ScryptParams::new(12, 0, 0),
-        )
-        .unwrap();
+        CpuInitializer::new(ScryptParams::new(12, 0, 0))
+            .initialize_to(&mut expected, &[0u8; 32], 0..1, None)
+            .unwrap();
 
         assert_eq!(expected, labels);
     }
@@ -392,20 +397,18 @@ mod tests {
     fn scrypting_from_0(#[case] n: usize) {
         let indices = 0..4000;
 
-        let mut scrypter = Scrypter::new(None, n, &[0u8; 32], None).unwrap();
-        let mut labels = vec![0xDEu8; Scrypter::buffer_len(&indices).unwrap()];
-        let _ = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
+        let mut scrypter = OpenClInitializer::new(None, n, None).unwrap();
+        let mut labels = Vec::new();
+        scrypter
+            .initialize_to(&mut labels, &[0u8; 32], indices.clone(), None)
+            .unwrap();
 
         let mut expected =
             Vec::<u8>::with_capacity(usize::try_from(indices.end - indices.start).unwrap());
 
-        post::initialize::initialize_to(
-            &mut expected,
-            &[0u8; 32],
-            indices,
-            ScryptParams::new(n.ilog2() as u8 - 1, 0, 0),
-        )
-        .unwrap();
+        CpuInitializer::new(ScryptParams::new(n.ilog2() as u8 - 1, 0, 0))
+            .initialize_to(&mut expected, &[0u8; 32], indices, None)
+            .unwrap();
 
         assert_eq!(expected, labels);
     }
@@ -419,20 +422,18 @@ mod tests {
     fn scrypting_over_4gb(#[case] n: usize) {
         let indices = u32::MAX as u64 - 1000..u32::MAX as u64 + 1000;
 
-        let mut scrypter = Scrypter::new(None, n, &[0u8; 32], None).unwrap();
-        let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
-        let _ = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
+        let mut scrypter = OpenClInitializer::new(None, n, None).unwrap();
+        let mut labels = Vec::new();
+        scrypter
+            .initialize_to(&mut labels, &[0u8; 32], indices.clone(), None)
+            .unwrap();
 
         let mut expected =
             Vec::<u8>::with_capacity(usize::try_from(indices.end - indices.start).unwrap());
 
-        post::initialize::initialize_to(
-            &mut expected,
-            &[0u8; 32],
-            indices,
-            ScryptParams::new(n.ilog2() as u8 - 1, 0, 0),
-        )
-        .unwrap();
+        CpuInitializer::new(ScryptParams::new(n.ilog2() as u8 - 1, 0, 0))
+            .initialize_to(&mut expected, &[0u8; 32], indices, None)
+            .unwrap();
 
         assert_eq!(expected, labels);
     }
@@ -442,20 +443,18 @@ mod tests {
         let indices = 0..1000;
         let commitment = b"this is some commitment for init";
 
-        let mut scrypter = Scrypter::new(None, 8192, commitment, None).unwrap();
-        let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
-        let _ = scrypter.scrypt(indices.clone(), &mut labels).unwrap();
+        let mut scrypter = OpenClInitializer::new(None, 8192, None).unwrap();
+        let mut labels = Vec::new();
+        scrypter
+            .initialize_to(&mut labels, commitment, indices.clone(), None)
+            .unwrap();
 
         let mut expected =
             Vec::<u8>::with_capacity(usize::try_from(indices.end - indices.start).unwrap());
 
-        post::initialize::initialize_to(
-            &mut expected,
-            commitment,
-            indices,
-            ScryptParams::new(12, 0, 0),
-        )
-        .unwrap();
+        CpuInitializer::new(ScryptParams::new(12, 0, 0))
+            .initialize_to(&mut expected, commitment, indices, None)
+            .unwrap();
 
         assert_eq!(expected, labels);
     }
@@ -473,22 +472,28 @@ mod tests {
         difficulty[0] = 0;
         difficulty[1] = 0x2F;
 
-        let mut scrypter = Scrypter::new(None, n, commitment, Some(difficulty)).unwrap();
-        let mut labels = vec![0u8; Scrypter::buffer_len(&indices).unwrap()];
-        let nonce = scrypter.scrypt(indices, &mut labels).unwrap();
-        let nonce = nonce.expect("vrf nonce not found");
+        let mut scrypter = OpenClInitializer::new(None, n, None).unwrap();
+        let mut labels = Vec::new();
+        let opencl_nonce = scrypter
+            .initialize_to(&mut labels, commitment, indices.clone(), Some(difficulty))
+            .unwrap();
+        let nonce = opencl_nonce.expect("vrf nonce not found");
 
         let mut label = Vec::<u8>::with_capacity(LABEL_SIZE);
-        post::initialize::initialize_to(
-            &mut label,
-            commitment,
-            nonce.index..nonce.index + 1,
-            ScryptParams::new(n.ilog2() as u8 - 1, 0, 0),
-        )
-        .unwrap();
+        let mut cpu_initializer = CpuInitializer::new(ScryptParams::new(n.ilog2() as u8 - 1, 0, 0));
+        cpu_initializer
+            .initialize_to(&mut label, commitment, nonce.index..nonce.index + 1, None)
+            .unwrap();
 
         assert_eq!(&nonce.label[..16], label.as_slice());
         assert!(nonce.label.as_slice() < &difficulty);
         assert!(label.as_slice() < &difficulty);
+
+        let mut sink = std::io::sink();
+        let cpu_nonce = cpu_initializer
+            .initialize_to(&mut sink, commitment, indices, Some(difficulty))
+            .unwrap();
+
+        assert_eq!(cpu_nonce, opencl_nonce);
     }
 }

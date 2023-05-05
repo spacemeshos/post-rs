@@ -2,7 +2,10 @@ use std::{error::Error, path::Path};
 
 use base64::{engine::general_purpose, Engine};
 use clap::Parser;
-use post::ScryptParams;
+use post::{
+    initialize::{CpuInitializer, Initialize},
+    ScryptParams,
+};
 
 /// Initialize labels on CPU
 #[derive(Parser, Debug)]
@@ -33,17 +36,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let commitment_atx_id = general_purpose::STANDARD
         .decode(args.commitment_atx_id)
         .unwrap();
+    let scrypt_params = ScryptParams::new(args.n.ilog2() as u8 - 1, 0, 0);
 
     let now = std::time::Instant::now();
-
-    post::initialize::initialize(
+    CpuInitializer::new(scrypt_params).initialize(
         Path::new("./"),
         &node_id.try_into().unwrap(),
         &commitment_atx_id.try_into().unwrap(),
         label_count as u64,
         1,
         label_count as u64,
-        ScryptParams::new(args.n.ilog2() as u8 - 1, 0, 0),
+        None,
     )?;
 
     let elapsed = now.elapsed();

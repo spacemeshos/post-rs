@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 eyre = "0.6.8"
 bytemuck = "1.13.1"
-ocl = { version = "0.19.4", features = ["opencl_version_2_1"] }
+ocl = "0.19.4"
 thiserror = "1.0.40"
 post-rs = { path = "../" }
 base64 = "0.21.0"
