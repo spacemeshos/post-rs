@@ -251,8 +251,9 @@ impl Scrypter {
 
         for index in labels.step_by(self.global_work_size) {
             self.kernel.set_arg(1, index)?;
-            let labels_to_init = (labels_end - index) as usize;
 
+            let index_end = min(index + self.global_work_size as u64, labels_end);
+            let labels_to_init = (index_end - index) as usize;
             if labels_to_init < self.global_work_size {
                 let preferred_wg_size = cast!(
                     self.kernel.wg_info(
