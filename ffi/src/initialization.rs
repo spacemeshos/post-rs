@@ -39,7 +39,7 @@ pub struct Provider {
     class: DeviceClass,
 }
 
-const CPU_PROVIDER_ID: u32 = u32::MAX;
+pub const CPU_PROVIDER_ID: u32 = u32::MAX;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
