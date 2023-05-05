@@ -4,15 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-eyre = "0.6.8"
-bytemuck = "1.13.1"
 ocl = "0.19.4"
 thiserror = "1.0.40"
 post-rs = { path = "../" }
-base64 = "0.21.0"
-clap = { version = "4.2.4", features = ["derive"] }
-rand = "0.8.5"
-rayon = "1.7.0"
 
 [dev-dependencies]
 post-rs = { path = "../" }

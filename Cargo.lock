@@ -1047,8 +1047,11 @@ version = "0.1.0"
 dependencies = [
  "base64 0.21.0",
  "clap 4.2.4",
+ "eyre",
  "post-rs",
+ "rand",
  "rayon",
+ "scrypt-ocl",
 ]
 
 [[package]]
@@ -1838,14 +1841,8 @@ dependencies = [
 name = "scrypt-ocl"
 version = "0.1.0"
 dependencies = [
- "base64 0.21.0",
- "bytemuck",
- "clap 4.2.4",
- "eyre",
  "ocl",
  "post-rs",
- "rand",
- "rayon",
  "rstest",
  "thiserror",
 ]
