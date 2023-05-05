@@ -1,5 +1,5 @@
+mod initialization;
 mod post_impl;
-mod scrypt_ocl;
 
 #[repr(C)]
 pub struct ArrayU8 {

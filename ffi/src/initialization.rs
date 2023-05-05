@@ -179,7 +179,7 @@ mod tests {
 
     use post::ScryptParams;
 
-    use crate::scrypt_ocl::InitializeResult;
+    use super::InitializeResult;
 
     #[test]
     fn cant_initialize_more_than_2_64_labels() {
