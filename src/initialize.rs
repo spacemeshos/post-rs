@@ -105,7 +105,7 @@ impl Initialize for CpuInitializer {
         labels: Range<u64>,
         mut vrf_difficulty: Option<[u8; 32]>,
     ) -> Result<Option<VrfNonce>, Box<dyn Error>> {
-        println!("Initializing labels {:?}...", labels);
+        log::trace!("Initializing labels {:?}...", labels);
         let data = labels
             .clone()
             .into_par_iter()
@@ -128,8 +128,7 @@ impl Initialize for CpuInitializer {
                         label,
                     });
                     vrf_difficulty = Some(label);
-                    //TODO: remove print
-                    eprintln!("Found new smallest nonce: {best_nonce:?}");
+                    log::trace!("Found new smallest nonce: {best_nonce:?}");
                 }
             }
             writer.write_all(&label[..16])?;
