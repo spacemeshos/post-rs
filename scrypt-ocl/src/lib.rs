@@ -134,7 +134,7 @@ impl Scrypter {
             DeviceInfoResult::MaxComputeUnits
         );
         let max_wg_size = device.max_wg_size()?;
-        println!(
+        log::debug!(
             "device memory: {} MB, max_mem_alloc_size: {} MB, max_compute_units: {max_compute_units}, max_wg_size: {max_wg_size}",
             device_memory / 1024 / 1024,
             max_mem_alloc_size / 1024 / 1024,
@@ -168,7 +168,7 @@ impl Scrypter {
         );
         let kernel_wg_size = kernel.wg_info(device, KernelWorkGroupInfo::WorkGroupSize)?;
 
-        println!("preferred_wg_size_multiple: {preferred_wg_size_multiple}, kernel_wg_size: {kernel_wg_size}");
+        log::debug!("preferred_wg_size_multiple: {preferred_wg_size_multiple}, kernel_wg_size: {kernel_wg_size}");
 
         let max_global_work_size_based_on_total_mem =
             ((device_memory - INPUT_SIZE as u64) / kernel_memory as u64) as usize;
@@ -181,7 +181,7 @@ impl Scrypter {
         let local_work_size = preferred_wg_size_multiple;
         // Round down to nearest multiple of local_work_size
         let global_work_size = (max_global_work_size / local_work_size) * local_work_size;
-        eprintln!(
+        log::debug!(
             "Using: global_work_size: {global_work_size}, local_work_size: {local_work_size}"
         );
 
@@ -190,7 +190,7 @@ impl Scrypter {
             .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
             .collect();
 
-        println!("Allocating buffer for input: {INPUT_SIZE} bytes");
+        log::trace!("Allocating buffer for input: {INPUT_SIZE} bytes");
         let input = Buffer::<u32>::builder()
             .len(INPUT_SIZE / 4)
             .copy_host_slice(commitment.as_slice())
@@ -199,7 +199,7 @@ impl Scrypter {
             .build()?;
 
         let output_size = global_work_size * ENTIRE_LABEL_SIZE;
-        println!("Allocating buffer for output: {output_size} bytes");
+        log::trace!("Allocating buffer for output: {output_size} bytes");
         let output = Buffer::<u8>::builder()
             .len(output_size)
             .flags(MemFlags::new().write_only())
@@ -207,7 +207,7 @@ impl Scrypter {
             .build()?;
 
         let lookup_size = global_work_size * kernel_lookup_mem_size;
-        println!("Allocating buffer for lookup: {lookup_size} bytes");
+        log::trace!("Allocating buffer for lookup: {lookup_size} bytes");
         let lookup_memory = Buffer::<u32>::builder()
             .len(lookup_size / 4)
             .flags(MemFlags::new().host_no_access())
@@ -286,8 +286,7 @@ impl Scrypter {
                         label: nonce.label,
                     });
                     vrf_difficulty = Some(nonce.label);
-                    //TODO: remove print
-                    eprintln!("Found new smallest nonce: {best_nonce:?}");
+                    log::trace!("Found new smallest nonce: {best_nonce:?}");
                 }
             }
 
@@ -327,8 +326,7 @@ impl OpenClInitializer {
         };
         let platform = provider.platform;
         let device = provider.device;
-        // TODO remove print
-        println!("Using provider: {provider}");
+        log::trace!("Using provider: {provider}");
 
         Ok(Self {
             platform,

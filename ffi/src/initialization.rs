@@ -164,7 +164,7 @@ pub extern "C" fn new_initializer(
     match _new_initializer(provider_id, n, commitment, vrf_difficulty) {
         Ok(initializer) => initializer,
         Err(e) => {
-            eprintln!("Error creating initializer: {e:?}");
+            log::error!("Error creating initializer: {e:?}");
             std::ptr::null_mut()
         }
     }
@@ -329,6 +329,5 @@ mod tests {
             InitializeResult::InitializeOk,
             super::get_providers(providers.as_mut_ptr(), count)
         );
-        println!("{providers:?}");
     }
 }

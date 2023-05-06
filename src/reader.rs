@@ -99,7 +99,7 @@ pub(crate) fn read_data(
 
         // If there are more files, check if the size of the file is correct
         if files.peek().is_some() && pos_file_size != file_size {
-            eprintln!(
+            log::warn!(
                 "invalid POS file, expected size: {file_size} vs actual size: {pos_file_size}"
             );
         }
