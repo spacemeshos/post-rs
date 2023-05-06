@@ -1,4 +1,10 @@
-use std::{error::Error, fs::File, io::Write, ops::Range, path::Path};
+use std::{
+    error::Error,
+    fs::{create_dir_all, File},
+    io::Write,
+    ops::Range,
+    path::Path,
+};
 
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use scrypt_jane::scrypt::{scrypt, ScryptParams};
@@ -31,8 +37,11 @@ pub trait Initialize {
         labels_per_unit: u64,
         num_units: u32,
         labels_per_file: u64,
-        vrf_difficulty: Option<[u8; 32]>,
+        mut vrf_difficulty: Option<[u8; 32]>,
     ) -> Result<PostMetadata, Box<dyn Error>> {
+        // Ensure that datadir exists
+        create_dir_all(datadir)?;
+
         let commitment = calc_commitment(node_id, commitment_atx_id);
 
         let total_labels = labels_per_unit * num_units as u64;
@@ -46,7 +55,12 @@ pub trait Initialize {
             let mut post_data = File::create(datadir.join(format!("postdata_{}.bin", file_id)))?;
             let index = file_id * labels_per_file;
             let labels = index..total_labels.min(index + labels_per_file);
-            nonce = self.initialize_to(&mut post_data, &commitment, labels, vrf_difficulty)?;
+            let new_nonce =
+                self.initialize_to(&mut post_data, &commitment, labels, vrf_difficulty)?;
+            if let Some(n) = new_nonce {
+                vrf_difficulty = Some(n.label);
+                nonce = Some(n);
+            }
         }
 
         let metadata = PostMetadata {
@@ -141,6 +155,10 @@ pub(crate) fn generate_label(commitment: &[u8; 32], params: ScryptParams, index:
 
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
+
+    use crate::{metadata, reader};
+
     use super::*;
 
     #[test]
@@ -240,5 +258,55 @@ mod tests {
             }
         }
         assert_eq!(16000, total_size);
+    }
+
+    #[test]
+    fn initialization_to_many_files_gives_same_result_as_single_file() {
+        let scrypt_params = ScryptParams::new(1, 0, 0);
+        let data_dir = tempfile::tempdir().unwrap();
+        let data_path = data_dir.path();
+
+        CpuInitializer::new(scrypt_params)
+            .initialize(
+                &data_path.join("many"),
+                &[0u8; 32],
+                &[0u8; 32],
+                1000,
+                10,
+                100,
+                Some([0xFFu8; 32]),
+            )
+            .unwrap();
+
+        CpuInitializer::new(scrypt_params)
+            .initialize(
+                &data_path.join("single"),
+                &[0u8; 32],
+                &[0u8; 32],
+                1000,
+                10,
+                10000,
+                Some([0xFFu8; 32]),
+            )
+            .unwrap();
+
+        let read_files = |path: &Path| -> Vec<u8> {
+            let mut data = Vec::new();
+            for entry in reader::pos_files(path) {
+                let mut file = std::fs::File::open(entry.path()).unwrap();
+                file.read_to_end(&mut data).unwrap();
+            }
+            data
+        };
+        // Read all files into memory from the many files version
+        let many_files_data = read_files(&data_path.join("many"));
+        // Read all files into memory from the single file version
+        let single_files_data = read_files(&data_path.join("single"));
+        assert_eq!(many_files_data, single_files_data);
+
+        // Verify if nonces in metadata files are the same
+        let metadata_many = metadata::load(&data_path.join("many")).unwrap();
+        let metadata_single = metadata::load(&data_path.join("single")).unwrap();
+        assert_eq!(metadata_many.nonce, metadata_single.nonce);
     }
 }

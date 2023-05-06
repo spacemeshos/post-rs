@@ -8,7 +8,7 @@ use base64::{engine::general_purpose, Engine};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use eyre::Context;
 use post::{
-    initialize::{CpuInitializer, Initialize},
+    initialize::{CpuInitializer, Initialize, LABEL_SIZE},
     ScryptParams,
 };
 use rand::seq::IteratorRandom;
@@ -40,9 +40,17 @@ struct InitializeArgs {
     #[arg(short, long, default_value_t = 8192)]
     n: usize,
 
-    /// Number of labels to initialize
-    #[arg(short, long, default_value_t = 20480 * 30)]
-    labels: usize,
+    /// Labels per unit
+    #[arg(short, long, default_value_t = 1024*1024/16)]
+    labels_per_unit: usize,
+
+    /// Max size of single file
+    #[arg(short, long, default_value_t = 1024 * 1024)]
+    max_file_size: usize,
+
+    /// Number of units to initialize
+    #[arg(short, long, default_value_t = 1)]
+    units: usize,
 
     /// Base64-encoded node ID
     #[arg(long, default_value = "hBGTHs44tav7YR87sRVafuzZwObCZnK1Z/exYpxwqSQ=")]
@@ -53,7 +61,7 @@ struct InitializeArgs {
     commitment_atx_id: String,
 
     /// Path to output file
-    #[arg(long, default_value = "./")]
+    #[arg(long, default_value = "./post-data")]
     output: PathBuf,
 
     /// Provider ID to use for GPU initialization.
@@ -161,8 +169,6 @@ fn verify_data(args: VerifyData) -> eyre::Result<()> {
 fn initialize(args: InitializeArgs) -> eyre::Result<()> {
     eyre::ensure!(args.n.is_power_of_two(), "scrypt N must be a power of two");
 
-    std::fs::create_dir_all(&args.output)?;
-
     let mut initializer: Box<dyn Initialize> = match args.method {
         InitializationMethod::Cpu => Box::new(CpuInitializer::new(ScryptParams::new(
             args.n.ilog2() as u8 - 1,
@@ -185,20 +191,20 @@ fn initialize(args: InitializeArgs) -> eyre::Result<()> {
             &args.output,
             node_id.as_slice().try_into()?,
             commitment_atx_id.as_slice().try_into()?,
-            args.labels as u64,
-            1,
-            args.labels as u64,
+            args.labels_per_unit as u64,
+            args.units as u32,
+            (args.max_file_size / LABEL_SIZE) as u64,
             Some([0xFFu8; 32]),
         )
         .map_err(|e| eyre::eyre!("initializing: {}", e))?;
 
     let elapsed = now.elapsed();
+    let labels_initialized = args.labels_per_unit * args.units;
     println!(
-            "Initializing {} labels took {} seconds. Speed: {:.0} labels/sec ({:.2} MB/sec, vrf_nonce: {:?})",
-            args.labels,
+            "Initializing {labels_initialized} labels took {} seconds. Speed: {:.0} labels/sec ({:.2} MB/sec, vrf_nonce: {:?})",
             elapsed.as_secs(),
-            args.labels as f64 / elapsed.as_secs_f64(),
-            args.labels as f64 * 16.0 / elapsed.as_secs_f64() / 1024.0 / 1024.0,
+            labels_initialized as f64 / elapsed.as_secs_f64(),
+            labels_initialized as f64 * 16.0 / elapsed.as_secs_f64() / 1024.0 / 1024.0,
             metadata.nonce,
         );
     Ok(())

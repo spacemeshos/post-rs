@@ -68,7 +68,7 @@ impl<T: Read> Iterator for BatchingReader<T> {
     }
 }
 
-fn pos_files(datadir: &Path) -> impl Iterator<Item = DirEntry> {
+pub(crate) fn pos_files(datadir: &Path) -> impl Iterator<Item = DirEntry> {
     let file_re = Regex::new(r"postdata_(\d+)\.bin").unwrap();
     datadir
         .read_dir()
