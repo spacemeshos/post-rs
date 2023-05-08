@@ -40,7 +40,6 @@ use std::cmp::Ordering;
 
 use cipher::BlockEncrypt;
 use itertools::Itertools;
-use rayon::prelude::{ParallelBridge, ParallelIterator};
 use scrypt_jane::scrypt::ScryptParams;
 
 use crate::{
@@ -94,8 +93,7 @@ impl VerifyingParams {
 pub fn verify(
     proof: &Proof,
     metadata: &ProofMetadata,
-    params: VerifyingParams,
-    threads: usize,
+    params: VerifyingParams
 ) -> Result<(), String> {
     let challenge = metadata.challenge;
 
@@ -156,48 +154,41 @@ pub fn verify(
 
     let k3_indices = RandomValuesIterator::new(indices_unpacked, seed).take(params.k3 as usize);
 
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
-        .build()
-        .unwrap();
+    k3_indices.into_iter().try_for_each(|index| {
+        let mut output = [0u8; 16];
+        let label = generate_label(&commitment, params.scrypt, index);
+        cipher.aes.encrypt_block_b2b(
+            &label.into(),
+            (&mut output).into(),
+        );
 
-    pool.install(|| {
-        k3_indices.par_bridge().try_for_each(|index| {
-            let mut output = [0u8; 16];
-            let label = generate_label(&commitment, params.scrypt, index);
-            cipher.aes.encrypt_block_b2b(
-                &label.into(),
-                (&mut output).into(),
-            );
-
-            let msb = output[output_index];
-            match msb.cmp(&difficulty_msb) {
-                Ordering::Less => {
-                    // valid
-                },
-                Ordering::Greater => {
-                    // invalid
+        let msb = output[output_index];
+        match msb.cmp(&difficulty_msb) {
+            Ordering::Less => {
+                // valid
+            },
+            Ordering::Greater => {
+                // invalid
+                return Err(format!(
+                    "MSB value for index: {index} doesn't satisfy difficulty: {msb} > {difficulty_msb} (label: {label:?})",
+                ));
+            },
+            Ordering::Equal => {
+                // Need to check LSB
+                let mut output = [0u64; 2];
+                lazy_cipher.aes.encrypt_block_b2b(
+                    &label.into(),
+                    bytemuck::cast_slice_mut(&mut output).into(),
+                );
+                let lsb = output[0].to_le() & 0x00ff_ffff_ffff_ffff;
+                if lsb >= difficulty_lsb {
                     return Err(format!(
-                        "MSB value for index: {index} doesn't satisfy difficulty: {msb} > {difficulty_msb} (label: {label:?})",
+                        "LSB value for index: {index} doesn't satisfy difficulty: {lsb} >= {difficulty_lsb} (label: {label:?})",
                     ));
-                },
-                Ordering::Equal => {
-                    // Need to check LSB
-                    let mut output = [0u64; 2];
-                    lazy_cipher.aes.encrypt_block_b2b(
-                        &label.into(),
-                        bytemuck::cast_slice_mut(&mut output).into(),
-                    );
-                    let lsb = output[0].to_le() & 0x00ff_ffff_ffff_ffff;
-                    if lsb >= difficulty_lsb {
-                        return Err(format!(
-                            "LSB value for index: {index} doesn't satisfy difficulty: {lsb} >= {difficulty_lsb} (label: {label:?})",
-                        ));
-                    }
                 }
             }
-            Ok(())
-        })
+        }
+        Ok(())
     })
 }
 
@@ -278,7 +269,7 @@ mod tests {
                 k2_pow,
                 k3_pow,
             };
-            assert!(verify(&empty_proof, &fake_metadata, params, 1).is_err());
+            assert!(verify(&empty_proof, &fake_metadata, params).is_err());
         }
         {
             let proof_with_not_enough_indices = Proof {
@@ -287,7 +278,7 @@ mod tests {
                 k2_pow,
                 k3_pow,
             };
-            assert!(verify(&proof_with_not_enough_indices, &fake_metadata, params, 1).is_err());
+            assert!(verify(&proof_with_not_enough_indices, &fake_metadata, params).is_err());
         }
         {
             let proof_with_invalid_k2_pow = Proof {
@@ -296,7 +287,7 @@ mod tests {
                 k2_pow: params.k2_pow_difficulty,
                 k3_pow,
             };
-            assert!(verify(&proof_with_invalid_k2_pow, &fake_metadata, params, 1).is_err());
+            assert!(verify(&proof_with_invalid_k2_pow, &fake_metadata, params).is_err());
         }
         {
             let proof_with_invalid_k3_pow = Proof {
@@ -305,7 +296,7 @@ mod tests {
                 k2_pow,
                 k3_pow: params.k3_pow_difficulty,
             };
-            assert!(verify(&proof_with_invalid_k3_pow, &fake_metadata, params, 1).is_err());
+            assert!(verify(&proof_with_invalid_k3_pow, &fake_metadata, params).is_err());
         }
     }
 }
