@@ -93,7 +93,7 @@ impl VerifyingParams {
 pub fn verify(
     proof: &Proof,
     metadata: &ProofMetadata,
-    params: VerifyingParams
+    params: VerifyingParams,
 ) -> Result<(), String> {
     let challenge = metadata.challenge;
 
