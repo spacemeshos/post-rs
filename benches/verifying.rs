@@ -19,15 +19,9 @@ fn verifying(c: &mut Criterion) {
     };
     let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
 
-    for (k2, k3) in itertools::iproduct!(
-        [200, 300],
-        [50, 100]
-    ) {
+    for (k2, k3) in itertools::iproduct!([200, 300], [50, 100]) {
         c.bench_with_input(
-            BenchmarkId::new(
-                "verify",
-                format!("k2={k2}/k3={k3}"),
-            ),
+            BenchmarkId::new("verify", format!("k2={k2}/k3={k3}")),
             &(k2, k3),
             |b, &(k2, k3)| {
                 let proof = Proof::new(
