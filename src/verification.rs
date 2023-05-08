@@ -93,8 +93,7 @@ impl VerifyingParams {
 pub fn verify(
     proof: &Proof,
     metadata: &ProofMetadata,
-    params: VerifyingParams,
-    _threads: usize,
+    params: VerifyingParams
 ) -> Result<(), String> {
     let challenge = metadata.challenge;
 
@@ -270,7 +269,7 @@ mod tests {
                 k2_pow,
                 k3_pow,
             };
-            assert!(verify(&empty_proof, &fake_metadata, params, 1).is_err());
+            assert!(verify(&empty_proof, &fake_metadata, params).is_err());
         }
         {
             let proof_with_not_enough_indices = Proof {
@@ -279,7 +278,7 @@ mod tests {
                 k2_pow,
                 k3_pow,
             };
-            assert!(verify(&proof_with_not_enough_indices, &fake_metadata, params, 1).is_err());
+            assert!(verify(&proof_with_not_enough_indices, &fake_metadata, params).is_err());
         }
         {
             let proof_with_invalid_k2_pow = Proof {
@@ -288,7 +287,7 @@ mod tests {
                 k2_pow: params.k2_pow_difficulty,
                 k3_pow,
             };
-            assert!(verify(&proof_with_invalid_k2_pow, &fake_metadata, params, 1).is_err());
+            assert!(verify(&proof_with_invalid_k2_pow, &fake_metadata, params).is_err());
         }
         {
             let proof_with_invalid_k3_pow = Proof {
@@ -297,7 +296,7 @@ mod tests {
                 k2_pow,
                 k3_pow: params.k3_pow_difficulty,
             };
-            assert!(verify(&proof_with_invalid_k3_pow, &fake_metadata, params, 1).is_err());
+            assert!(verify(&proof_with_invalid_k3_pow, &fake_metadata, params).is_err());
         }
     }
 }
