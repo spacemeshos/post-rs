@@ -11,6 +11,7 @@ crate_type = ["staticlib", "cdylib"]
 [dependencies]
 eyre = "0.6.8"
 post-rs = { path = "../" }
+scrypt-ocl = { path = "../scrypt-ocl" }
 
 [build-dependencies]
 cbindgen = "*"

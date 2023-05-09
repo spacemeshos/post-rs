@@ -1,0 +1,13 @@
+[package]
+name = "scrypt-ocl"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ocl = "0.19.4"
+thiserror = "1.0.40"
+post-rs = { path = "../" }
+
+[dev-dependencies]
+post-rs = { path = "../" }
+rstest = "0.17.0"
