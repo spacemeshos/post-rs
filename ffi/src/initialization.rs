@@ -19,10 +19,11 @@ struct InitializerWrapper {
 #[allow(clippy::enum_variant_names)]
 pub enum InitializeResult {
     InitializeOk = 0,
-    InitializeInvalidLabelsRange = 1,
-    InitializeOclError = 2,
-    InitializeInvalidArgument = 3,
-    InitializeFailedToGetProviders = 4,
+    InitializeOkNonceNotFound = 1,
+    InitializeInvalidLabelsRange = 2,
+    InitializeOclError = 3,
+    InitializeInvalidArgument = 4,
+    InitializeFailedToGetProviders = 5,
 }
 
 impl From<scrypt_ocl::ocl::Error> for InitializeResult {
@@ -147,7 +148,7 @@ pub extern "C" fn initialize(
         if let Some(nonce) = vrf_nonce {
             unsafe { *out_nonce = nonce.index };
         } else {
-            unsafe { *out_nonce = u64::MAX };
+            return InitializeResult::InitializeOkNonceNotFound;
         }
     }
     InitializeResult::InitializeOk
@@ -264,6 +265,46 @@ mod tests {
         assert_eq!(expected, labels);
 
         super::free_initializer(initializer);
+    }
+
+    #[test]
+    fn initialization_nonce_not_found() {
+        let indices = 0..=0;
+
+        let initializer =
+            super::new_initializer(CPU_PROVIDER_ID, 32, [0; 32].as_ptr(), [0; 32].as_ptr());
+
+        let mut labels = vec![0u8; 16];
+        let mut nonce = 0xCAFEDEAD;
+        let result = super::initialize(
+            initializer,
+            *indices.start(),
+            *indices.end(),
+            labels.as_mut_ptr(),
+            &mut nonce,
+        );
+        assert_eq!(InitializeResult::InitializeOkNonceNotFound, result);
+        assert_eq!(0xCAFEDEAD, nonce);
+    }
+
+    #[test]
+    fn initialization_nonce_found() {
+        let indices = 0..=0;
+
+        let initializer =
+            super::new_initializer(CPU_PROVIDER_ID, 32, [0; 32].as_ptr(), [0xFF; 32].as_ptr());
+
+        let mut labels = vec![0u8; 16];
+        let mut nonce = 0xCAFEDEAD;
+        let result = super::initialize(
+            initializer,
+            *indices.start(),
+            *indices.end(),
+            labels.as_mut_ptr(),
+            &mut nonce,
+        );
+        assert_eq!(InitializeResult::InitializeOk, result);
+        assert_ne!(0xCAFEDEAD, nonce);
     }
 
     #[test]
