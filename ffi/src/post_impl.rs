@@ -99,7 +99,6 @@ pub unsafe extern "C" fn verify_proof(
     proof: Proof,
     metadata: *const ProofMetadata,
     cfg: Config,
-    threads: usize,
 ) -> VerifyResult {
     let proof = {
         let indices =
@@ -122,7 +121,7 @@ pub unsafe extern "C" fn verify_proof(
         Err(_) => return VerifyResult::InvalidArgument,
     };
 
-    let result = match verify(&proof, metadata, params, threads) {
+    let result = match verify(&proof, metadata, params) {
         Ok(_) => VerifyResult::Ok,
         Err(err) => {
             eprintln!("Proof is invalid: {err}");

@@ -51,7 +51,6 @@ fn test_generate_and_verify() {
         &proof,
         &metadata,
         VerifyingParams::new(&metadata, &cfg).unwrap(),
-        0,
     );
     assert_eq!(Ok(()), valid, "proof is not valid");
 
@@ -62,7 +61,6 @@ fn test_generate_and_verify() {
         &invalid_proof,
         &metadata,
         VerifyingParams::new(&metadata, &cfg).unwrap(),
-        0,
     );
     assert!(valid.is_err(), "proof should be invalid");
 }
@@ -113,7 +111,6 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         &proof,
         &metadata,
         VerifyingParams::new(&metadata, &cfg).unwrap(),
-        0,
     );
     assert_eq!(Ok(()), valid, "proof is not valid");
 
@@ -124,7 +121,6 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         &invalid_proof,
         &metadata,
         VerifyingParams::new(&metadata, &cfg).unwrap(),
-        0,
     );
     assert!(valid.is_err(), "proof should be invalid");
 }

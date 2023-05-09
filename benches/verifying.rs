@@ -8,14 +8,6 @@ use pprof::criterion::{Output, PProfProfiler};
 
 use scrypt_jane::scrypt::ScryptParams;
 
-fn threads_to_str(threads: usize) -> String {
-    if threads == 0 {
-        "auto".into()
-    } else {
-        threads.to_string()
-    }
-}
-
 fn verifying(c: &mut Criterion) {
     let challenge = b"hello world, challenge me!!!!!!!";
     let metadata = ProofMetadata {
@@ -27,18 +19,11 @@ fn verifying(c: &mut Criterion) {
     };
     let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
 
-    for (k2, k3, threads) in itertools::iproduct!(
-        [200, 300],
-        [50, 100],
-        [0, 1] // 0 == automatic
-    ) {
+    for (k2, k3) in itertools::iproduct!([200, 300], [50, 100]) {
         c.bench_with_input(
-            BenchmarkId::new(
-                "verify",
-                format!("k2={k2}/k3={k3}/threads={}", threads_to_str(threads)),
-            ),
-            &(k2, k3, threads),
-            |b, &(k2, k3, threads)| {
+            BenchmarkId::new("verify", format!("k2={k2}/k3={k3}")),
+            &(k2, k3),
+            |b, &(k2, k3)| {
                 let proof = Proof::new(
                     0,
                     (0..k2 as u64).collect::<Vec<u64>>().as_slice(),
@@ -57,7 +42,7 @@ fn verifying(c: &mut Criterion) {
                 };
 
                 b.iter(|| {
-                    let result = verify(&proof, &metadata, params, threads);
+                    let result = verify(&proof, &metadata, params);
                     assert_eq!(Ok(()), result, "proof is not valid");
                 });
             },
