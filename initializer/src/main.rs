@@ -45,7 +45,7 @@ struct InitializeArgs {
     labels_per_unit: usize,
 
     /// Max size of single file
-    #[arg(short, long, default_value_t = 1024 * 1024)]
+    #[arg(short, long, default_value_t = 4 * 1024 * 1024 * 1024)]
     max_file_size: usize,
 
     /// Number of units to initialize
