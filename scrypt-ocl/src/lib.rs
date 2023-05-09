@@ -291,11 +291,15 @@ impl Scrypter {
                 }
             }
 
-            // Copy the first 16 bytes of each label
+            // Move labels in labels_buffer, taking only 16B of each label in-place, creating a continuous buffer of 16B labels.
             // TODO: run in background / in parallel to GPU
-            for full_label in labels_buffer.chunks_exact(ENTIRE_LABEL_SIZE) {
-                writer.write_all(&full_label[..LABEL_SIZE])?;
+            let mut dst = 0;
+            for label_id in 0..labels_to_init {
+                let src = label_id * ENTIRE_LABEL_SIZE;
+                labels_buffer.copy_within(src..src + LABEL_SIZE, dst);
+                dst += LABEL_SIZE;
             }
+            writer.write_all(&labels_buffer[..dst])?;
         }
         Ok(best_nonce)
     }
