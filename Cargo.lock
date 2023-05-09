@@ -1043,7 +1043,7 @@ dependencies = [
 
 [[package]]
 name = "initializer"
-version = "0.1.7"
+version = "0.1.0"
 dependencies = [
  "base64 0.21.0",
  "clap 4.2.4",
@@ -1450,7 +1450,7 @@ dependencies = [
 
 [[package]]
 name = "post-cbindings"
-version = "0.1.7"
+version = "0.1.6"
 dependencies = [
  "cbindgen",
  "eyre",
@@ -1460,7 +1460,7 @@ dependencies = [
 
 [[package]]
 name = "post-rs"
-version = "0.1.7"
+version = "0.1.6"
 dependencies = [
  "aes",
  "bitvec",
@@ -1839,7 +1839,7 @@ dependencies = [
 
 [[package]]
 name = "scrypt-ocl"
-version = "0.1.7"
+version = "0.1.0"
 dependencies = [
  "ocl",
  "post-rs",

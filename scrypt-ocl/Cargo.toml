@@ -1,6 +1,6 @@
 [package]
 name = "scrypt-ocl"
-version = "0.1.7"
+version = "0.1.0"
 edition = "2021"
 
 [dependencies]
