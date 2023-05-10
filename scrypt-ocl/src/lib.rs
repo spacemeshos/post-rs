@@ -15,6 +15,7 @@ pub struct Scrypter {
     output: Buffer<u8>,
     global_work_size: usize,
     pro_que: ProQue,
+    labels_buffer: Vec<u8>,
 }
 
 #[derive(Error, Debug)]
@@ -225,6 +226,7 @@ impl Scrypter {
             kernel,
             output,
             global_work_size,
+            labels_buffer: vec![0u8; global_work_size * ENTIRE_LABEL_SIZE],
         })
     }
 
@@ -245,7 +247,6 @@ impl Scrypter {
         labels: Range<u64>,
         mut vrf_difficulty: Option<[u8; 32]>,
     ) -> Result<Option<VrfNonce>, ScryptError> {
-        let mut labels_buffer = vec![0u8; self.global_work_size * ENTIRE_LABEL_SIZE];
         let mut best_nonce = None;
         let labels_end = labels.end;
 
@@ -274,7 +275,7 @@ impl Scrypter {
             }
 
             let labels_buffer =
-                &mut labels_buffer.as_mut_slice()[..labels_to_init * ENTIRE_LABEL_SIZE];
+                &mut self.labels_buffer.as_mut_slice()[..labels_to_init * ENTIRE_LABEL_SIZE];
             self.output.read(labels_buffer.as_mut()).enq()?;
 
             // Look for VRF nonce if enabled
