@@ -1,24 +1,10 @@
 use std::{
     fmt::{Debug, Formatter},
     mem::ManuallyDrop,
-    sync::Once,
 };
 
 pub use log::LevelFilter;
 use log::{Level, Log, Metadata, Record};
-use simple_logger::SimpleLogger;
-
-/// Configure logging for the library.
-#[no_mangle]
-pub extern "C" fn set_log_level(level: LevelFilter) -> i32 {
-    match SimpleLogger::new().with_level(level).init() {
-        Ok(_) => 0,
-        Err(e) => {
-            eprintln!("Failed to initialize logging: {e:?}");
-            -1
-        }
-    }
-}
 
 /// FFI-safe borrowed Rust &str. Can represent `Option<&str>` by setting ptr to null.
 #[repr(C)]
@@ -124,22 +110,20 @@ impl<'a> From<&Record<'a>> for ExternCRecord {
     }
 }
 
-static mut LOGGER: Option<ExternCLog> = None;
-static SET_LOGGER: Once = Once::new();
-
 struct ExternCLog {
     callback: extern "C" fn(&ExternCRecord),
+    level: LevelFilter,
 }
 
 impl ExternCLog {
-    fn new(callback: extern "C" fn(&ExternCRecord)) -> Self {
-        Self { callback }
+    fn new(level: LevelFilter, callback: extern "C" fn(&ExternCRecord)) -> Self {
+        Self { level, callback }
     }
 }
 
 impl Log for ExternCLog {
-    fn enabled(&self, _metadata: &Metadata) -> bool {
-        true
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        metadata.level() <= self.level
     }
 
     fn log(&self, record: &Record) {
@@ -149,30 +133,26 @@ impl Log for ExternCLog {
     fn flush(&self) {}
 }
 
-/// Set the logging callback function that accepts a *const c_char.
-/// The function is idempotent, calling it more then once will have no effect.
+/// Set a logging callback function
 #[no_mangle]
-pub extern "C" fn set_logging_callback(callback: extern "C" fn(&ExternCRecord)) {
-    SET_LOGGER.call_once(|| {
-        unsafe {
-            LOGGER = Some(ExternCLog::new(callback));
-            _ = log::set_logger(LOGGER.as_ref().unwrap());
+pub extern "C" fn set_logging_callback(
+    level: LevelFilter,
+    callback: extern "C" fn(&ExternCRecord),
+) -> i32 {
+    match log::set_boxed_logger(Box::new(ExternCLog::new(level, callback)))
+        .map(|()| log::set_max_level(level))
+    {
+        Ok(_) => 0,
+        Err(e) => {
+            eprintln!("Failed to set logger ({e})");
+            1
         }
-        log::set_max_level(log::LevelFilter::Trace);
-    });
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::log::ExternCRecord;
-
-    #[test]
-    fn configuring_logging() {
-        let result = super::set_log_level(log::LevelFilter::Info);
-        assert_eq!(0, result);
-
-        log::info!("Hello, world!");
-    }
 
     #[test]
     fn logging_callback() {
@@ -181,7 +161,13 @@ mod tests {
             assert_eq!(log::Level::Info, record.level);
         }
 
-        super::set_logging_callback(log_cb);
+        super::set_logging_callback(log::LevelFilter::Info, log_cb);
         log::info!("Hello, logger");
+        log::trace!("Trace log level is disabled");
+
+        assert_eq!(
+            1,
+            super::set_logging_callback(log::LevelFilter::Warn, log_cb)
+        );
     }
 }

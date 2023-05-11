@@ -10,10 +10,9 @@ crate_type = ["staticlib", "cdylib"]
 
 [dependencies]
 eyre = "0.6.8"
-log = "0.4.17"
+log = { version = "0.4.17", features = ["std"] }
 post-rs = { path = "../" }
 scrypt-ocl = { path = "../scrypt-ocl" }
-simple_logger = "4.1.0"
 
 [build-dependencies]
 cbindgen = "*"
