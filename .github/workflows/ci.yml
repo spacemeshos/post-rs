@@ -133,7 +133,8 @@ jobs:
           wget https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v2023.04.17/OpenCL-SDK-v2023.04.17-Win-x64.zip
           unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
 
-      - run: cd ffi && cargo build --profile release-clib
+      - name: Build clib
+        run: cd ffi && cargo build --profile release-clib
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
       - name: Archive production artifacts
@@ -144,3 +145,14 @@ jobs:
             ffi/prover.h
             target/release-clib/${{ matrix.dylib }}
             target/release-clib/${{ matrix.staticlib }}
+          if-no-files-found: error
+
+      - name: Build profiler tool
+        run: cd profiler && cargo build --release
+      - name: Archive profiler artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: profiler-${{ matrix.artifact-name || matrix.os }}
+          path: |
+            target/release/profiler${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          if-no-files-found: error
