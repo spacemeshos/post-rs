@@ -3,6 +3,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
 
 name: CI
 
@@ -92,6 +94,7 @@ jobs:
           - os: ubuntu-20.04
             dylib: libpost.so
             staticlib: libpost.a
+            artifact-name: linux
 
           - os: [self-hosted, linux, arm64]
             dylib: libpost.so
@@ -108,10 +111,12 @@ jobs:
           - os: macos-latest
             dylib: libpost.dylib
             staticlib: libpost.a
+            artifact-name: macos
 
           - os: windows-latest
             dylib: post.dll
             staticlib: post.lib
+            artifact-name: windows
     steps:
       - if: matrix.os == 'ubuntu-20.04'
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
@@ -133,6 +138,9 @@ jobs:
           wget https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v2023.04.17/OpenCL-SDK-v2023.04.17-Win-x64.zip
           unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
 
+      - name: Version suffix (for release only)
+        id: version
+        run: echo "::set-output name=suffix::${{ github.ref_type == 'tag' && '-' || ''}}${{ github.ref_type == 'tag' && github.ref || ''}}"
       - name: Build clib
         run: cd ffi && cargo build --profile release-clib
         env:
@@ -140,7 +148,7 @@ jobs:
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: libpost-${{ matrix.artifact-name || matrix.os }}
+          name: libpost-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
           path: |
             ffi/prover.h
             target/release-clib/${{ matrix.dylib }}
@@ -152,7 +160,44 @@ jobs:
       - name: Archive profiler artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: profiler-${{ matrix.artifact-name || matrix.os }}
+          name: profiler-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
           path: |
             target/release/profiler${{ matrix.os == 'windows-latest' && '.exe' || '' }}
           if-no-files-found: error
+
+  release:
+    name: Publish release
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: ./artifacts
+      - name: List artifacts
+        run: ls -R ./artifacts
+      - name: Create a draft release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+          draft: true
+          prerelease: false
+      - name: Pack artifacts
+        run: >
+          mkdir ./assets;
+          for dir in ./artifacts/*/; do
+            zip -o -j -r "./assets/$(basename "$dir")-$TAG.zip" "$dir";
+          done
+        env:
+          TAG: ${{ github.ref_name }}
+      - name: Upload Release Assets
+        run: gh release upload $TAG ./assets/*.zip
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
