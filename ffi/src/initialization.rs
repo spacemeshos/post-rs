@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::{ffi::c_char, fmt::Debug};
 
 use post::{
     initialize::{CpuInitializer, Initialize},
@@ -35,7 +35,7 @@ impl From<scrypt_ocl::ocl::Error> for InitializeResult {
 #[repr(C)]
 #[derive(Clone, PartialEq, Eq)]
 pub struct Provider {
-    name: [u8; 64],
+    name: [c_char; 64],
     id: u32,
     class: DeviceClass,
 }
@@ -53,10 +53,10 @@ pub enum DeviceClass {
 impl Debug for Provider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Provider")
-            .field(
-                "name",
-                &std::ffi::CStr::from_bytes_until_nul(&self.name).unwrap(),
-            )
+            .field("name", unsafe {
+                // SAFETY: The name is always null terminated.
+                &std::ffi::CStr::from_ptr(self.name.as_ptr())
+            })
             .finish()
     }
 }
@@ -88,6 +88,7 @@ pub extern "C" fn get_providers(out: *mut Provider, out_len: usize) -> Initializ
         // Copy over the first out.name.len() - 1 bytes, and then add a null terminator.
         let name = format!("{provider}")
             .bytes()
+            .map(|b| b as c_char)
             .take(out.name.len() - 1)
             .chain(std::iter::once(0))
             .collect::<Vec<_>>();
@@ -98,12 +99,12 @@ pub extern "C" fn get_providers(out: *mut Provider, out_len: usize) -> Initializ
     }
     if id < out.len() {
         out[id] = Provider {
-            name: [0u8; 64],
+            name: [0; 64],
             id: CPU_PROVIDER_ID,
             class: DeviceClass::CPU,
         };
         let name = b"[CPU] scrypt-jane\0";
-        out[id].name[..name.len()].copy_from_slice(name);
+        out[id].name[..name.len()].copy_from_slice(&name.map(|b| b as c_char));
     }
 
     InitializeResult::InitializeOk
@@ -318,7 +319,7 @@ mod tests {
         let count = super::get_providers_count();
         let mut providers = vec![
             super::Provider {
-                name: [0u8; 64],
+                name: [0; 64],
                 id: 0,
                 class: super::DeviceClass::CPU
             };
