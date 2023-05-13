@@ -201,8 +201,8 @@ fn initialize(args: InitializeArgs) -> eyre::Result<()> {
     let elapsed = now.elapsed();
     let labels_initialized = args.labels_per_unit * args.units;
     println!(
-            "Initializing {labels_initialized} labels took {} seconds. Speed: {:.0} labels/sec ({:.2} MB/sec, vrf_nonce: {:?})",
-            elapsed.as_secs(),
+            "Initializing {labels_initialized} labels took {:.2} seconds. Speed: {:.0} labels/sec ({:.2} MB/sec), vrf_nonce: {:?}",
+            elapsed.as_secs_f64(),
             labels_initialized as f64 / elapsed.as_secs_f64(),
             labels_initialized as f64 * 16.0 / elapsed.as_secs_f64() / 1024.0 / 1024.0,
             metadata.nonce,
