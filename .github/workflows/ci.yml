@@ -140,7 +140,7 @@ jobs:
 
       - name: Version suffix (for release only)
         id: version
-        run: echo "::set-output name=suffix::${{ github.ref_type == 'tag' && '-' || ''}}${{ github.ref_type == 'tag' && github.ref || ''}}"
+        run: echo "suffix=${{ github.ref_type == 'tag' && '-' || ''}}${{ github.ref_type == 'tag' && github.ref || ''}}" >> $GITHUB_OUTPUT
       - name: Build clib
         run: cd ffi && cargo build --profile release-clib
         env:
