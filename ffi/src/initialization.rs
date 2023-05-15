@@ -46,8 +46,8 @@ pub const CPU_PROVIDER_ID: u32 = u32::MAX;
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum DeviceClass {
-    CPU,
-    GPU,
+    CPU = 1,
+    GPU = 2,
 }
 
 impl Debug for Provider {
