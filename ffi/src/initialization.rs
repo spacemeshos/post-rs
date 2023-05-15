@@ -211,7 +211,7 @@ fn _new_initializer(
 
 #[no_mangle]
 pub extern "C" fn free_initializer(initializer: *mut Initializer) {
-    unsafe { Box::from_raw(initializer) };
+    unsafe { Box::from_raw(initializer as *mut InitializerWrapper) };
 }
 
 #[cfg(test)]
@@ -265,6 +265,12 @@ mod tests {
 
         assert_eq!(expected, labels);
 
+        super::free_initializer(initializer);
+    }
+
+    #[test]
+    fn free_initializer() {
+        let initializer = super::new_initializer(0, 32, [0u8; 32].as_ptr(), std::ptr::null());
         super::free_initializer(initializer);
     }
 
