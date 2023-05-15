@@ -237,35 +237,107 @@ mod tests {
 
     #[test]
     fn initialization() {
-        let indices = 0..=70;
+        let count = super::get_providers_count();
+        let mut providers = vec![
+            super::Provider {
+                name: [0; 64],
+                id: 0,
+                class: super::DeviceClass::CPU
+            };
+            count
+        ];
 
-        let initializer =
-            super::new_initializer(CPU_PROVIDER_ID, 32, [0u8; 32].as_ptr(), std::ptr::null());
-
-        let mut labels = vec![0u8; 71 * 16];
-        let result = super::initialize(
-            initializer,
-            *indices.start(),
-            *indices.end(),
-            labels.as_mut_ptr(),
-            null_mut(),
+        assert_eq!(
+            InitializeResult::InitializeOk,
+            super::get_providers(providers.as_mut_ptr(), count)
         );
-        assert_eq!(InitializeResult::InitializeOk, result);
 
-        let mut expected = Vec::<u8>::with_capacity(indices.clone().count());
+        for provider in providers {
+            let indices = 0..=70;
 
-        CpuInitializer::new(ScryptParams::new(4, 0, 0))
-            .initialize_to(
-                &mut expected,
-                &[0u8; 32],
-                *indices.start()..*indices.end() + 1,
-                None,
-            )
-            .unwrap();
+            let initializer =
+                super::new_initializer(provider.id, 32, [0u8; 32].as_ptr(), std::ptr::null());
 
-        assert_eq!(expected, labels);
+            let mut labels = vec![0u8; 71 * 16];
+            let result = super::initialize(
+                initializer,
+                *indices.start(),
+                *indices.end(),
+                labels.as_mut_ptr(),
+                null_mut(),
+            );
+            assert_eq!(InitializeResult::InitializeOk, result);
 
-        super::free_initializer(initializer);
+            let mut expected = Vec::<u8>::with_capacity(indices.clone().count());
+
+            CpuInitializer::new(ScryptParams::new(4, 0, 0))
+                .initialize_to(
+                    &mut expected,
+                    &[0u8; 32],
+                    *indices.start()..*indices.end() + 1,
+                    None,
+                )
+                .unwrap();
+
+            assert_eq!(expected, labels);
+
+            super::free_initializer(initializer);
+        }
+    }
+
+    #[test]
+    fn free_initializer() {
+        let count = super::get_providers_count();
+        let mut providers = vec![
+            super::Provider {
+                name: [0; 64],
+                id: 0,
+                class: super::DeviceClass::CPU
+            };
+            count
+        ];
+
+        assert_eq!(
+            InitializeResult::InitializeOk,
+            super::get_providers(providers.as_mut_ptr(), count)
+        );
+
+        for provider in providers {
+            let indices = 0..=70;
+
+            let initializer =
+                super::new_initializer(provider.id, 32, [0u8; 32].as_ptr(), std::ptr::null());
+
+            // free then re-instantiate
+            super::free_initializer(initializer);
+            let initializer =
+                super::new_initializer(provider.id, 32, [0u8; 32].as_ptr(), std::ptr::null());
+
+            let mut labels = vec![0u8; 71 * 16];
+            let result = super::initialize(
+                initializer,
+                *indices.start(),
+                *indices.end(),
+                labels.as_mut_ptr(),
+                null_mut(),
+            );
+            assert_eq!(InitializeResult::InitializeOk, result);
+
+            let mut expected = Vec::<u8>::with_capacity(indices.clone().count());
+
+            CpuInitializer::new(ScryptParams::new(4, 0, 0))
+                .initialize_to(
+                    &mut expected,
+                    &[0u8; 32],
+                    *indices.start()..*indices.end() + 1,
+                    None,
+                )
+                .unwrap();
+
+            assert_eq!(expected, labels);
+
+            super::free_initializer(initializer);
+        }
     }
 
     #[test]
