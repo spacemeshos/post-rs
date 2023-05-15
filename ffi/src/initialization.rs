@@ -253,6 +253,7 @@ mod tests {
         );
 
         for provider in providers {
+            println!("provider: {:?}", provider);
             let indices = 0..=70;
 
             let initializer =
@@ -303,6 +304,7 @@ mod tests {
         );
 
         for provider in providers {
+            println!("provider: {:?}", provider);
             let indices = 0..=70;
 
             let initializer =
