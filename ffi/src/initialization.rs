@@ -269,9 +269,19 @@ mod tests {
     }
 
     #[test]
-    fn free_initializer() {
-        let initializer = super::new_initializer(0, 32, [0u8; 32].as_ptr(), std::ptr::null());
+    fn cpu_provider_is_always_available() {
+        let initializer =
+            super::new_initializer(CPU_PROVIDER_ID, 32, [0u8; 32].as_ptr(), std::ptr::null());
+        assert!(!initializer.is_null());
         super::free_initializer(initializer);
+    }
+
+    #[test]
+    fn free_gpu_initializer() {
+        let initializer = super::new_initializer(0, 32, [0u8; 32].as_ptr(), std::ptr::null());
+        if !initializer.is_null() {
+            super::free_initializer(initializer);
+        }
     }
 
     #[test]
