@@ -308,11 +308,6 @@ mod tests {
             let initializer =
                 super::new_initializer(provider.id, 32, [0u8; 32].as_ptr(), std::ptr::null());
 
-            // free then re-instantiate
-            super::free_initializer(initializer);
-            let initializer =
-                super::new_initializer(provider.id, 32, [0u8; 32].as_ptr(), std::ptr::null());
-
             let mut labels = vec![0u8; 71 * 16];
             let result = super::initialize(
                 initializer,
@@ -322,6 +317,21 @@ mod tests {
                 null_mut(),
             );
             assert_eq!(InitializeResult::InitializeOk, result);
+
+            // free then re-instantiate
+            super::free_initializer(initializer);
+            let initializer =
+                super::new_initializer(provider.id, 32, [0u8; 32].as_ptr(), std::ptr::null());
+
+                let mut labels = vec![0u8; 71 * 16];
+                let result = super::initialize(
+                    initializer,
+                    *indices.start(),
+                    *indices.end(),
+                    labels.as_mut_ptr(),
+                    null_mut(),
+                );
+                assert_eq!(InitializeResult::InitializeOk, result);
 
             let mut expected = Vec::<u8>::with_capacity(indices.clone().count());
 
