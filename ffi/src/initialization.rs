@@ -211,7 +211,7 @@ fn _new_initializer(
 
 #[no_mangle]
 pub extern "C" fn free_initializer(initializer: *mut Initializer) {
-    unsafe { Box::from_raw(initializer) };
+    unsafe { Box::from_raw(initializer as *mut InitializerWrapper) };
 }
 
 #[cfg(test)]
@@ -266,6 +266,22 @@ mod tests {
         assert_eq!(expected, labels);
 
         super::free_initializer(initializer);
+    }
+
+    #[test]
+    fn cpu_provider_is_always_available() {
+        let initializer =
+            super::new_initializer(CPU_PROVIDER_ID, 32, [0u8; 32].as_ptr(), std::ptr::null());
+        assert!(!initializer.is_null());
+        super::free_initializer(initializer);
+    }
+
+    #[test]
+    fn free_gpu_initializer() {
+        let initializer = super::new_initializer(0, 32, [0u8; 32].as_ptr(), std::ptr::null());
+        if !initializer.is_null() {
+            super::free_initializer(initializer);
+        }
     }
 
     #[test]
