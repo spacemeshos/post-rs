@@ -67,6 +67,8 @@ impl Log for ExternCLog {
 }
 
 /// Set a logging callback function
+/// The function is idempotent, calling it more then once will have no effect.
+/// Returns 0 if the callback was set successfully, 1 otherwise.
 #[no_mangle]
 pub extern "C" fn set_logging_callback(
     level: Level,
