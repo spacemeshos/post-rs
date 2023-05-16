@@ -221,6 +221,7 @@ fn list_providers() -> eyre::Result<()> {
 }
 
 fn main() -> eyre::Result<()> {
+    env_logger::init();
     let args = Cli::parse();
 
     match args

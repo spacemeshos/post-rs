@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.1.11", features = ["derive"] }
+env_logger = "0.10.0"
 eyre = "0.6.8"
 post-rs = { path = "../" }
 rayon = "1.7.0"
