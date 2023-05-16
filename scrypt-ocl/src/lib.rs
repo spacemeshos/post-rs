@@ -12,9 +12,11 @@ pub use ocl;
 #[derive(Debug)]
 pub struct Scrypter {
     kernel: Kernel,
+    input: Buffer<u32>,
     output: Buffer<u8>,
     global_work_size: usize,
     pro_que: ProQue,
+    labels_buffer: Vec<u8>,
 }
 
 #[derive(Error, Debug)]
@@ -105,12 +107,7 @@ fn scan_for_vrf_nonce(labels: &[u8], mut difficulty: [u8; 32]) -> Option<VrfNonc
 }
 
 impl Scrypter {
-    pub fn new(
-        platform: Platform,
-        device: Device,
-        n: usize,
-        commitment: &[u8; 32],
-    ) -> Result<Self, ScryptError> {
+    pub fn new(platform: Platform, device: Device, n: usize) -> Result<Self, ScryptError> {
         // Calculate kernel memory requirements
         const LOOKUP_GAP: usize = 2;
         const SCRYPT_MEM: usize = 128;
@@ -185,15 +182,9 @@ impl Scrypter {
             "Using: global_work_size: {global_work_size}, local_work_size: {local_work_size}"
         );
 
-        let commitment: Vec<u32> = commitment
-            .chunks(4)
-            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
-            .collect();
-
         println!("Allocating buffer for input: {INPUT_SIZE} bytes");
         let input = Buffer::<u32>::builder()
             .len(INPUT_SIZE / 4)
-            .copy_host_slice(commitment.as_slice())
             .flags(MemFlags::new().read_only())
             .queue(pro_que.queue().clone())
             .build()?;
@@ -223,8 +214,10 @@ impl Scrypter {
         Ok(Self {
             pro_que,
             kernel,
+            input,
             output,
             global_work_size,
+            labels_buffer: vec![0u8; global_work_size * ENTIRE_LABEL_SIZE],
         })
     }
 
@@ -243,9 +236,15 @@ impl Scrypter {
         &mut self,
         writer: &mut W,
         labels: Range<u64>,
+        commitment: &[u8; 32],
         mut vrf_difficulty: Option<[u8; 32]>,
     ) -> Result<Option<VrfNonce>, ScryptError> {
-        let mut labels_buffer = vec![0u8; self.global_work_size * ENTIRE_LABEL_SIZE];
+        let commitment: Vec<u32> = commitment
+            .chunks(4)
+            .map(|chunk| u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect();
+        self.input.write(&commitment).enq()?;
+
         let mut best_nonce = None;
         let labels_end = labels.end;
 
@@ -274,7 +273,7 @@ impl Scrypter {
             }
 
             let labels_buffer =
-                &mut labels_buffer.as_mut_slice()[..labels_to_init * ENTIRE_LABEL_SIZE];
+                &mut self.labels_buffer.as_mut_slice()[..labels_to_init * ENTIRE_LABEL_SIZE];
             self.output.read(labels_buffer.as_mut()).enq()?;
 
             // Look for VRF nonce if enabled
@@ -306,9 +305,7 @@ impl Scrypter {
 }
 
 pub struct OpenClInitializer {
-    platform: Platform,
-    device: Device,
-    n: usize,
+    scrypter: Scrypter,
 }
 
 impl OpenClInitializer {
@@ -330,11 +327,9 @@ impl OpenClInitializer {
         // TODO remove print
         println!("Using provider: {provider}");
 
-        Ok(Self {
-            platform,
-            device,
-            n,
-        })
+        let scrypter = Scrypter::new(platform, device, n)?;
+
+        Ok(Self { scrypter })
     }
 }
 
@@ -346,9 +341,8 @@ impl Initialize for OpenClInitializer {
         labels: Range<u64>,
         vrf_difficulty: Option<[u8; 32]>,
     ) -> Result<Option<VrfNonce>, Box<dyn std::error::Error>> {
-        let mut scrypter = Scrypter::new(self.platform, self.device, self.n, commitment)?;
-        scrypter
-            .scrypt(writer, labels, vrf_difficulty)
+        self.scrypter
+            .scrypt(writer, labels, commitment, vrf_difficulty)
             .map_err(Into::into)
     }
 }
