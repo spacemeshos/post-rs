@@ -178,7 +178,7 @@ fn initialize(args: InitializeArgs) -> eyre::Result<()> {
         InitializationMethod::Gpu => Box::new(OpenClInitializer::new(
             args.provider.map(ProviderId),
             args.n,
-            Some(DeviceType::GPU),
+            Some(DeviceType::GPU | DeviceType::CPU),
         )?),
     };
 
@@ -211,8 +211,7 @@ fn initialize(args: InitializeArgs) -> eyre::Result<()> {
 }
 
 fn list_providers() -> eyre::Result<()> {
-    let providers = scrypt_ocl::get_providers(Some(DeviceType::GPU))?;
-    println!("Found {} providers", providers.len());
+    let providers = scrypt_ocl::get_providers(Some(DeviceType::GPU | DeviceType::CPU))?;
     for (id, provider) in providers.iter().enumerate() {
         println!("{id}: {provider}");
     }
