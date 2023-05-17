@@ -1494,6 +1494,7 @@ dependencies = [
  "pprof",
  "proptest",
  "rand",
+ "randomx-rs",
  "rayon",
  "regex",
  "scrypt-jane",
@@ -1667,6 +1668,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f"
 dependencies = [
  "rand_core",
+]
+
+[[package]]
+name = "randomx-rs"
+version = "1.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e4ba6cd8d99a8ba5eb5e5ca9bbb96b9a180c7eddfe88df166e3ecb0284432cdb"
+dependencies = [
+ "bitflags",
+ "libc",
+ "thiserror",
 ]
 
 [[package]]

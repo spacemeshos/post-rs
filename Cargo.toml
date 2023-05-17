@@ -28,6 +28,7 @@ bitvec = "1.0.1"
 rayon = "1.6.1"
 rand = "0.8.5"
 log = "0.4.17"
+randomx-rs = "1.1.9"
 
 [dev-dependencies]
 criterion = "0.4"
