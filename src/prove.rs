@@ -305,9 +305,22 @@ pub fn generate_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::difficulty::proving_difficulty;
+    use crate::{compression::decompress_indexes, difficulty::proving_difficulty};
     use rand::{thread_rng, RngCore};
     use std::{collections::HashMap, iter::repeat};
+
+    #[test]
+    fn creating_proof() {
+        let indices = vec![0, 1, 2, 3, 4, 5, 6, 7, 8];
+        let keep_bits = 4;
+        let proof = Proof::new(7, &indices, keep_bits, 77);
+        assert_eq!(7, proof.nonce);
+        assert_eq!(77, proof.k2_pow);
+        assert_eq!(
+            indices,
+            decompress_indexes(&proof.indices, keep_bits).collect::<Vec<_>>()
+        );
+    }
 
     #[test]
     fn creating_prover() {
