@@ -10,6 +10,7 @@ pub struct StringView {
 }
 
 impl StringView {
+    #[cfg(test)]
     pub unsafe fn to_str<'a>(&self) -> &'a str {
         let bytes = std::slice::from_raw_parts(self.ptr as _, self.len);
         std::str::from_utf8_unchecked(bytes)
