@@ -10,12 +10,12 @@ use thiserror::Error;
 pub use ocl;
 
 #[derive(Debug)]
-pub struct Scrypter {
+struct Scrypter {
     kernel: Kernel,
     input: Buffer<u32>,
     output: Buffer<u8>,
     global_work_size: usize,
-    pro_que: ProQue,
+    preferred_wg_size_mult: usize,
     labels_buffer: Vec<u8>,
 }
 
@@ -159,13 +159,13 @@ impl Scrypter {
             .arg(pro_que.buffer_builder::<u32>().build()?)
             .build()?;
 
-        let preferred_wg_size_multiple = cast!(
+        let preferred_wg_size_mult = cast!(
             kernel.wg_info(device, KernelWorkGroupInfo::PreferredWorkGroupSizeMultiple)?,
             KernelWorkGroupInfoResult::PreferredWorkGroupSizeMultiple
         );
         let kernel_wg_size = kernel.wg_info(device, KernelWorkGroupInfo::WorkGroupSize)?;
 
-        println!("preferred_wg_size_multiple: {preferred_wg_size_multiple}, kernel_wg_size: {kernel_wg_size}");
+        println!("preferred_wg_size_multiple: {preferred_wg_size_mult}, kernel_wg_size: {kernel_wg_size}");
 
         let max_global_work_size_based_on_total_mem =
             ((device_memory - INPUT_SIZE as u64) / kernel_memory as u64) as usize;
@@ -175,7 +175,7 @@ impl Scrypter {
             max_global_work_size_based_on_max_mem_alloc_size,
             max_global_work_size_based_on_total_mem,
         );
-        let local_work_size = preferred_wg_size_multiple;
+        let local_work_size = preferred_wg_size_mult;
         // Round down to nearest multiple of local_work_size
         let global_work_size = (max_global_work_size / local_work_size) * local_work_size;
         eprintln!(
@@ -212,24 +212,13 @@ impl Scrypter {
         kernel.set_default_local_work_size(SpatialDims::One(local_work_size));
 
         Ok(Self {
-            pro_que,
             kernel,
             input,
             output,
             global_work_size,
+            preferred_wg_size_mult,
             labels_buffer: vec![0u8; global_work_size * ENTIRE_LABEL_SIZE],
         })
-    }
-
-    pub fn device(&self) -> ocl::Device {
-        self.pro_que.device()
-    }
-
-    pub fn buffer_len(labels: &Range<u64>) -> Result<usize, ScryptError> {
-        match usize::try_from(labels.end - labels.start) {
-            Ok(len) => Ok(len * LABEL_SIZE),
-            Err(_) => Err(ScryptError::LabelsRangeTooBig),
-        }
     }
 
     pub fn scrypt<W: std::io::Write + ?Sized>(
@@ -253,20 +242,18 @@ impl Scrypter {
 
             let index_end = min(index + self.global_work_size as u64, labels_end);
             let labels_to_init = (index_end - index) as usize;
-            if labels_to_init < self.global_work_size {
-                let preferred_wg_size = cast!(
-                    self.kernel.wg_info(
-                        self.device(),
-                        KernelWorkGroupInfo::PreferredWorkGroupSizeMultiple,
-                    )?,
-                    KernelWorkGroupInfoResult::PreferredWorkGroupSizeMultiple
-                );
-                // Round up labels_to_init to be multiple of preferred_wg_size
-                let global_work_size = (labels_to_init + preferred_wg_size - 1) / preferred_wg_size
-                    * preferred_wg_size;
-                self.kernel
-                    .set_default_global_work_size(SpatialDims::One(global_work_size));
-            }
+
+            let gws = if labels_to_init < self.global_work_size {
+                // Round up labels_to_init to be a multiple of preferred_wg_size_mult
+                (labels_to_init + self.preferred_wg_size_mult - 1) / self.preferred_wg_size_mult
+                    * self.preferred_wg_size_mult
+            } else {
+                self.global_work_size
+            };
+            // TODO(poszu) trace log when logging is implemented
+            // println!("initializing {index} -> {index_end} ({labels_to_init} labels, GWS: {gws})");
+            self.kernel
+                .set_default_global_work_size(SpatialDims::One(gws));
 
             unsafe {
                 self.kernel.enq()?;
@@ -494,5 +481,42 @@ mod tests {
             .unwrap();
 
         assert_eq!(cpu_nonce, opencl_nonce);
+    }
+
+    #[test]
+    fn initialize_in_batches() {
+        const N: usize = 512;
+
+        let mut initializer = OpenClInitializer::new(None, N, None).unwrap();
+        let gws = initializer.scrypter.global_work_size as u64;
+
+        let mut labels = Vec::<u8>::new();
+
+        // Initialize 2 GWS in two batches, first smaller then the second
+        let indices = 0..2 * gws;
+        let smaller_batch = gws / 3;
+
+        initializer
+            .initialize_to(&mut labels, &[0u8; 32], indices.start..smaller_batch, None)
+            .unwrap();
+        initializer
+            .initialize_to(&mut labels, &[0u8; 32], smaller_batch..indices.end, None)
+            .unwrap();
+
+        let mut expected =
+            Vec::<u8>::with_capacity(usize::try_from(indices.end - indices.start).unwrap());
+
+        CpuInitializer::new(ScryptParams::new(N.ilog2() as u8 - 1, 0, 0))
+            .initialize_to(&mut expected, &[0u8; 32], indices, None)
+            .unwrap();
+
+        let mut post_data = std::fs::File::create("labels.bin").unwrap();
+        post_data.write_all(&labels).unwrap();
+
+        let mut expected_data = std::fs::File::create("expected.bin").unwrap();
+        expected_data.write_all(&expected).unwrap();
+
+        assert_eq!(expected.len(), labels.len());
+        assert_eq!(expected, labels);
     }
 }
