@@ -3,15 +3,14 @@
 //! ## Steps to verify a proof:
 //!
 //! 1. verify k2_pow
-//! 2. verify k3_pow
-//! 3. verify number of indices == K2
-//! 4. select K3 indices
-//! 5. verify each of K3 selected indices satisfy difficulty (inferred from K1)
+//! 2. verify number of indices == K2
+//! 3. select K3 indices
+//! 4. verify each of K3 selected indices satisfy difficulty (inferred from K1)
 //!
 //! ## Selecting subset of K3 proven indices
 //!
 //! ```text
-//! seed = concat(ch, nonce, indices, k2pow, k3pow)
+//! seed = concat(ch, nonce, indices, k2pow)
 //! random_bytes = blake3(seed) // infinite blake output
 //! for (index=0; index<K3; index++) {
 //!   remaining = K2 - index
@@ -49,7 +48,7 @@ use crate::{
     difficulty::proving_difficulty,
     initialize::{calc_commitment, generate_label},
     metadata::ProofMetadata,
-    pow::{hash_k2_pow, hash_k3_pow},
+    pow::hash_k2_pow,
     prove::{Proof, Prover8_56},
     random_values_gen::RandomValuesIterator,
 };
@@ -62,7 +61,6 @@ pub struct VerifyingParams {
     pub k2: u32,
     pub k3: u32,
     pub k2_pow_difficulty: u64,
-    pub k3_pow_difficulty: u64,
     pub pow_scrypt: ScryptParams,
     pub scrypt: ScryptParams,
 }
@@ -75,7 +73,6 @@ impl VerifyingParams {
             k2: cfg.k2,
             k3: cfg.k3,
             k2_pow_difficulty: cfg.k2_pow_difficulty / metadata.num_units as u64,
-            k3_pow_difficulty: cfg.k3_pow_difficulty / metadata.num_units as u64,
             pow_scrypt: cfg.pow_scrypt,
             scrypt: cfg.scrypt,
         })
@@ -107,22 +104,6 @@ pub fn verify(
         ));
     }
 
-    // Verify K3 PoW
-    let k3_pow_value = hash_k3_pow(
-        &challenge,
-        proof.nonce,
-        &proof.indices,
-        params.pow_scrypt,
-        proof.k2_pow,
-        proof.k3_pow,
-    );
-    if k3_pow_value >= params.k3_pow_difficulty {
-        return Err(format!(
-            "k3 pow is invalid: {k3_pow_value} >= {}",
-            params.k3_pow_difficulty
-        ));
-    }
-
     // Verify the number of indices against K2
     let num_lables = metadata.num_units as u64 * metadata.labels_per_unit;
     let bits_per_index = required_bits(num_lables);
@@ -149,7 +130,6 @@ pub fn verify(
         &proof.nonce.to_le_bytes(),
         proof.indices.as_slice(),
         &proof.k2_pow.to_le_bytes(),
-        &proof.k3_pow.to_le_bytes(),
     ];
 
     let k3_indices = RandomValuesIterator::new(indices_unpacked, seed).take(params.k3 as usize);
@@ -211,11 +191,7 @@ fn expected_indices_bytes(required_bits: usize, k2: u32) -> usize {
 mod tests {
     use scrypt_jane::scrypt::ScryptParams;
 
-    use crate::{
-        metadata::ProofMetadata,
-        pow::{find_k2_pow, find_k3_pow},
-        prove::Proof,
-    };
+    use crate::{metadata::ProofMetadata, pow::find_k2_pow, prove::Proof};
 
     use super::{expected_indices_bytes, next_multiple_of, verify, VerifyingParams};
 
@@ -241,20 +217,11 @@ mod tests {
             k2: 10,
             k3: 10,
             k2_pow_difficulty: u64::MAX / 16,
-            k3_pow_difficulty: u64::MAX / 16,
             pow_scrypt: scrypt_params,
             scrypt: scrypt_params,
         };
 
         let k2_pow = find_k2_pow(&challenge, 0, params.scrypt, params.k2_pow_difficulty);
-        let k3_pow = find_k3_pow(
-            &challenge,
-            0,
-            &[],
-            params.scrypt,
-            params.k3_pow_difficulty,
-            k2_pow,
-        );
         let fake_metadata = ProofMetadata {
             node_id: [0u8; 32],
             commitment_atx_id: [0u8; 32],
@@ -267,7 +234,6 @@ mod tests {
                 nonce: 0,
                 indices: vec![],
                 k2_pow,
-                k3_pow,
             };
             assert!(verify(&empty_proof, &fake_metadata, params).is_err());
         }
@@ -276,7 +242,6 @@ mod tests {
                 nonce: 0,
                 indices: vec![1, 2, 3],
                 k2_pow,
-                k3_pow,
             };
             assert!(verify(&proof_with_not_enough_indices, &fake_metadata, params).is_err());
         }
@@ -285,7 +250,6 @@ mod tests {
                 nonce: 0,
                 indices: vec![1, 2, 3],
                 k2_pow: params.k2_pow_difficulty,
-                k3_pow,
             };
             assert!(verify(&proof_with_invalid_k2_pow, &fake_metadata, params).is_err());
         }
@@ -294,7 +258,6 @@ mod tests {
                 nonce: 0,
                 indices: vec![1, 2, 3],
                 k2_pow,
-                k3_pow: params.k3_pow_difficulty,
             };
             assert!(verify(&proof_with_invalid_k3_pow, &fake_metadata, params).is_err());
         }

@@ -32,7 +32,6 @@ fn prover_bench(c: &mut Criterion) {
         pow_scrypt: ScryptParams::new(6, 0, 0),
         difficulty: 0,               // impossible to find a proof
         k2_pow_difficulty: u64::MAX, // extremely easy to find k2_pow
-        k3_pow_difficulty: u64::MAX,
     };
 
     for (nonces, threads) in itertools::iproduct!(

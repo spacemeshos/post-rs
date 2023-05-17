@@ -48,9 +48,6 @@ struct Args {
     // Difficulty factor of k2_pow.
     #[arg(long, default_value_t = u64::MAX)]
     k2_pow_difficulty: u64,
-    // Difficulty factor of k3_pow.
-    #[arg(long, default_value_t = u64::MAX)]
-    k3_pow_difficulty: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -79,7 +76,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         pow_scrypt: ScryptParams::new(6, 0, 0),
         difficulty: 0, // impossible to find a proof
         k2_pow_difficulty: args.k2_pow_difficulty,
-        k3_pow_difficulty: args.k3_pow_difficulty,
     };
 
     let total_size = args.data_size * 1024 * 1024 * 1024;

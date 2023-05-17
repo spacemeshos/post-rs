@@ -19,7 +19,6 @@ fn test_generate_and_verify() {
         k2: 32,
         k3: 10,
         k2_pow_difficulty: u64::MAX / 8,
-        k3_pow_difficulty: u64::MAX / 8,
         pow_scrypt: ScryptParams::new(1, 0, 0),
         scrypt: ScryptParams::new(0, 0, 0),
     };
@@ -56,7 +55,7 @@ fn test_generate_and_verify() {
 
     // Check that the proof is invalid if we modify one index
     let mut invalid_proof = proof;
-    invalid_proof.indices[0] += 1;
+    invalid_proof.indices[0] += 2;
     let valid = verify(
         &invalid_proof,
         &metadata,
@@ -79,7 +78,6 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         k2: 30,
         k3: 30,
         k2_pow_difficulty: u64::MAX,
-        k3_pow_difficulty: u64::MAX,
         pow_scrypt: ScryptParams::new(0, 0, 0),
         scrypt: ScryptParams::new(0, 0, 0),
     };
