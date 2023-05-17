@@ -1450,7 +1450,7 @@ dependencies = [
 
 [[package]]
 name = "post-cbindings"
-version = "0.1.8"
+version = "0.1.11"
 dependencies = [
  "cbindgen",
  "eyre",
@@ -1460,7 +1460,7 @@ dependencies = [
 
 [[package]]
 name = "post-rs"
-version = "0.1.8"
+version = "0.1.11"
 dependencies = [
  "aes",
  "bitvec",
@@ -1839,7 +1839,7 @@ dependencies = [
 
 [[package]]
 name = "scrypt-ocl"
-version = "0.1.8"
+version = "0.1.11"
 dependencies = [
  "ocl",
  "post-rs",
