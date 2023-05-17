@@ -1,4 +1,5 @@
 mod initialization;
+mod log;
 mod post_impl;
 
 #[repr(C)]

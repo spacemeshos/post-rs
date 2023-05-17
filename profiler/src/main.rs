@@ -71,6 +71,7 @@ fn file_data(path: &Path, size: u64) -> Result<std::fs::File, std::io::Error> {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    env_logger::init();
     let args = Args::parse();
 
     let challenge = b"hello world, challenge me!!!!!!!";

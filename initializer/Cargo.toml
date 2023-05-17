@@ -13,3 +13,4 @@ scrypt-ocl = { path = "../scrypt-ocl" }
 rayon = "1.7.0"
 eyre = "0.6.8"
 rand = "0.8.5"
+env_logger = "0.10.0"
