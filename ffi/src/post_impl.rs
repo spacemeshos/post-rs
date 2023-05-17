@@ -49,7 +49,7 @@ pub extern "C" fn generate_proof(
         Ok(proof) => proof,
         Err(e) => {
             //TODO(poszu) communicate errors better
-            eprintln!("{e:?}");
+            log::error!("{e:?}");
             std::ptr::null_mut()
         }
     }
@@ -121,7 +121,7 @@ pub unsafe extern "C" fn verify_proof(
     let result = match verify(&proof, metadata, params) {
         Ok(_) => VerifyResult::Ok,
         Err(err) => {
-            eprintln!("Proof is invalid: {err}");
+            log::error!("Proof is invalid: {err}");
             VerifyResult::Invalid
         }
     };
