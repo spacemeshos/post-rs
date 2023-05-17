@@ -318,7 +318,9 @@ mod tests {
         assert_eq!(77, proof.k2_pow);
         assert_eq!(
             indices,
-            decompress_indexes(&proof.indices, keep_bits).collect::<Vec<_>>()
+            decompress_indexes(&proof.indices, keep_bits)
+                .take(indices.len())
+                .collect::<Vec<_>>()
         );
     }
 

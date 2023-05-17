@@ -1,6 +1,8 @@
 use bitvec::prelude::*;
 use bitvec::{slice::BitSlice, view::BitView};
 
+/// Compress indexes into a byte slice.
+/// The number of bits used to store each index is `keep_bits`.
 pub(crate) fn compress_indices(indexes: &[u64], keep_bits: usize) -> Vec<u8> {
     let mut bv = bitvec![u8, Lsb0;];
     for index in indexes {
@@ -9,6 +11,8 @@ pub(crate) fn compress_indices(indexes: &[u64], keep_bits: usize) -> Vec<u8> {
     bv.as_raw_slice().to_owned()
 }
 
+/// Decompress indexes from a byte slice, previously compressed with `compress_indices`.
+/// Might return more indexes than the original, if the last byte contains unused bits.
 pub(crate) fn decompress_indexes(indexes: &[u8], bits: usize) -> impl Iterator<Item = u64> + '_ {
     BitSlice::<_, Lsb0>::from_slice(indexes)
         .chunks_exact(bits)
@@ -57,7 +61,7 @@ mod tests {
             let max_value = max(indexes).unwrap();
             let bits = required_bits(max_value);
             let compressed = compress_indices(&indexes, bits);
-            let decompressed: Vec<_> = decompress_indexes(&compressed, bits).collect();
+            let decompressed: Vec<_> = decompress_indexes(&compressed, bits).take(indexes.len()).collect();
             assert_eq!(indexes.as_slice(), &decompressed);
         }
     }

@@ -115,7 +115,9 @@ pub fn verify(
         ));
     }
 
-    let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index).collect_vec();
+    let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index)
+        .take(params.k2 as usize)
+        .collect_vec();
     let commitment = calc_commitment(&metadata.node_id, &metadata.commitment_atx_id);
     let nonce_group = proof.nonce / NONCES_PER_AES;
     let cipher = AesCipher::new_with_k2pow(&challenge, nonce_group, proof.k2_pow);
