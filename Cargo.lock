@@ -1473,7 +1473,6 @@ name = "post-cbindings"
 version = "0.1.13"
 dependencies = [
  "cbindgen",
- "eyre",
  "log",
  "post-rs",
  "scrypt-ocl",

@@ -1,10 +1,10 @@
 use std::{
+    error::Error,
     ffi::{c_char, c_uchar, CStr},
     mem::{self, ManuallyDrop},
     path::Path,
 };
 
-use eyre::Context;
 pub use post::config::Config;
 pub use post::metadata::ProofMetadata;
 pub use post::ScryptParams;
@@ -16,6 +16,7 @@ use post::{
 use crate::ArrayU8;
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct Proof {
     nonce: u32,
     indices: ArrayU8,
@@ -46,7 +47,7 @@ pub extern "C" fn generate_proof(
     threads: usize,
 ) -> *mut Proof {
     match _generate_proof(datadir, challenge, cfg, nonces, threads) {
-        Ok(proof) => proof,
+        Ok(proof) => Box::into_raw(proof),
         Err(e) => {
             //TODO(poszu) communicate errors better
             log::error!("{e:?}");
@@ -61,9 +62,13 @@ fn _generate_proof(
     cfg: Config,
     nonces: usize,
     threads: usize,
-) -> eyre::Result<*mut Proof> {
+) -> Result<Box<Proof>, Box<dyn Error>> {
     let datadir = unsafe { CStr::from_ptr(datadir) };
-    let datadir = Path::new(datadir.to_str().context("parsing datadir as UTF-8")?);
+    let datadir = Path::new(
+        datadir
+            .to_str()
+            .map_err(|e| format!("reading datadir: {e:?}"))?,
+    );
 
     let challenge = unsafe { std::slice::from_raw_parts(challenge, 32) };
     let challenge = challenge.try_into()?;
@@ -78,7 +83,7 @@ fn _generate_proof(
         k2_pow: proof.k2_pow,
     });
 
-    Ok(Box::into_raw(proof))
+    Ok(proof)
 }
 
 #[repr(C)]
@@ -128,4 +133,22 @@ pub unsafe extern "C" fn verify_proof(
     // avoid deallocating proof.indices as this memory is owned by the other side.
     mem::forget(proof.indices);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn datadir_must_be_utf8() {
+        let datadir = std::ffi::CString::new([159, 146, 150]).unwrap();
+        let cfg = super::Config {
+            k1: 10,
+            k2: 20,
+            k3: 20,
+            k2_pow_difficulty: u64::MAX,
+            pow_scrypt: super::ScryptParams::new(1, 1, 1),
+            scrypt: super::ScryptParams::new(1, 1, 1),
+        };
+        let result = super::_generate_proof(datadir.as_ptr(), [0u8; 32].as_ptr(), cfg, 1, 0);
+        assert!(result.unwrap_err().to_string().contains("Utf8Error"));
+    }
 }
