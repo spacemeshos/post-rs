@@ -1,4 +1,4 @@
-use std::{ffi::c_char, fmt::Debug};
+use std::{error::Error, ffi::c_char, fmt::Debug};
 
 use post::{
     initialize::{CpuInitializer, Initialize},
@@ -48,17 +48,6 @@ pub const CPU_PROVIDER_ID: u32 = u32::MAX;
 pub enum DeviceClass {
     CPU = 1,
     GPU = 2,
-}
-
-impl Debug for Provider {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Provider")
-            .field("name", unsafe {
-                // SAFETY: The name is always null terminated.
-                &std::ffi::CStr::from_ptr(self.name.as_ptr())
-            })
-            .finish()
-    }
 }
 
 /// Returns the number of providers available.
@@ -163,7 +152,7 @@ pub extern "C" fn new_initializer(
     vrf_difficulty: *const u8,
 ) -> *mut Initializer {
     match _new_initializer(provider_id, n, commitment, vrf_difficulty) {
-        Ok(initializer) => initializer,
+        Ok(initializer) => Box::into_raw(initializer) as _,
         Err(e) => {
             log::error!("Error creating initializer: {e:?}");
             std::ptr::null_mut()
@@ -176,8 +165,10 @@ fn _new_initializer(
     n: usize,
     commitment: *const u8,
     vrf_difficulty: *const u8,
-) -> eyre::Result<*mut Initializer> {
-    eyre::ensure!(n.is_power_of_two(), "scrypt N must be a power of two");
+) -> Result<Box<InitializerWrapper>, Box<dyn Error>> {
+    if !n.is_power_of_two() {
+        return Err("scrypt N must be a power of two".into());
+    }
     let commitment = unsafe { std::slice::from_raw_parts(commitment, 32) };
     let commitment = commitment.try_into()?;
 
@@ -206,7 +197,7 @@ fn _new_initializer(
         vrf_difficulty,
     });
 
-    Ok(Box::into_raw(initializer) as *mut Initializer)
+    Ok(initializer)
 }
 
 #[no_mangle]
