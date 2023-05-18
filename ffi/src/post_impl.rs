@@ -20,7 +20,6 @@ pub struct Proof {
     nonce: u32,
     indices: ArrayU8,
     k2_pow: u64,
-    k3_pow: u64,
 }
 
 /// Deallocate a proof obtained with generate_proof().
@@ -77,7 +76,6 @@ fn _generate_proof(
         nonce: proof.nonce,
         indices: ArrayU8 { ptr, len, cap },
         k2_pow: proof.k2_pow,
-        k3_pow: proof.k3_pow,
     });
 
     Ok(Box::into_raw(proof))
@@ -107,7 +105,6 @@ pub unsafe extern "C" fn verify_proof(
             nonce: proof.nonce,
             indices,
             k2_pow: proof.k2_pow,
-            k3_pow: proof.k3_pow,
         }
     };
 

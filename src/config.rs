@@ -10,9 +10,6 @@ pub struct Config {
     /// Difficulty for K2 proof of work. Lower values increase difficulty of finding
     /// `k2_pow` for [Proof][crate::prove::Proof].
     pub k2_pow_difficulty: u64,
-    /// Difficulty for K3 proof of work. Lower values increase difficulty of finding
-    /// `k3_pow` for [Proof][crate::prove::Proof].
-    pub k3_pow_difficulty: u64,
     /// Scrypt parameters for the Proofs of Work
     pub pow_scrypt: scrypt_jane::scrypt::ScryptParams,
     /// Scrypt paramters for initilizing labels

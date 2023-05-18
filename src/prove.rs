@@ -7,8 +7,6 @@
 //! TODO: describe the algorithm
 //! ## k2 proof of work
 //! TODO: explain
-//! ## k3 proof of work
-//! TODO: explain
 
 use aes::cipher::block_padding::NoPadding;
 use aes::cipher::BlockEncrypt;
@@ -36,16 +34,14 @@ pub struct Proof {
     pub nonce: u32,
     pub indices: Vec<u8>,
     pub k2_pow: u64,
-    pub k3_pow: u64,
 }
 
 impl Proof {
-    pub fn new(nonce: u32, indices: &[u64], keep_bits: usize, k2_pow: u64, k3_pow: u64) -> Self {
+    pub fn new(nonce: u32, indices: &[u64], keep_bits: usize, k2_pow: u64) -> Self {
         Self {
             nonce,
             indices: compress_indices(indices, keep_bits),
             k2_pow,
-            k3_pow,
         }
     }
 }
@@ -54,7 +50,6 @@ impl Proof {
 pub struct ProvingParams {
     pub difficulty: u64,
     pub k2_pow_difficulty: u64,
-    pub k3_pow_difficulty: u64,
     pub pow_scrypt: ScryptParams,
 }
 
@@ -64,7 +59,6 @@ impl ProvingParams {
         Ok(Self {
             difficulty: proving_difficulty(cfg.k1, num_labels)?,
             k2_pow_difficulty: cfg.k2_pow_difficulty / metadata.num_units as u64,
-            k3_pow_difficulty: cfg.k3_pow_difficulty / metadata.num_units as u64,
             pow_scrypt: cfg.pow_scrypt,
         })
     }
@@ -296,19 +290,11 @@ pub fn generate_proof(
             let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
             let required_bits = required_bits(num_labels);
             let compressed_indices = compress_indices(&indexes, required_bits);
-            let k3_pow = crate::pow::find_k3_pow(
-                challenge,
-                nonce,
-                &compressed_indices,
-                params.pow_scrypt,
-                params.k3_pow_difficulty,
-                prover.cipher(nonce).unwrap().k2_pow,
-            );
+
             return Ok(Proof {
                 nonce,
                 indices: compressed_indices,
                 k2_pow: prover.get_k2_pow(nonce).unwrap(),
-                k3_pow,
             });
         }
 
@@ -319,9 +305,24 @@ pub fn generate_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::difficulty::proving_difficulty;
+    use crate::{compression::decompress_indexes, difficulty::proving_difficulty};
     use rand::{thread_rng, RngCore};
     use std::{collections::HashMap, iter::repeat};
+
+    #[test]
+    fn creating_proof() {
+        let indices = vec![0, 1, 2, 3, 4, 5, 6, 7, 8];
+        let keep_bits = 4;
+        let proof = Proof::new(7, &indices, keep_bits, 77);
+        assert_eq!(7, proof.nonce);
+        assert_eq!(77, proof.k2_pow);
+        assert_eq!(
+            indices,
+            decompress_indexes(&proof.indices, keep_bits)
+                .take(indices.len())
+                .collect::<Vec<_>>()
+        );
+    }
 
     #[test]
     fn creating_prover() {
@@ -336,7 +337,6 @@ mod tests {
             k2: 300,
             k3: 65,
             k2_pow_difficulty: u64::MAX,
-            k3_pow_difficulty: u64::MAX,
             pow_scrypt: ScryptParams::new(1, 0, 0),
             scrypt: ScryptParams::new(1, 0, 0),
         };
@@ -358,7 +358,6 @@ mod tests {
             k2: 32,
             k3: 10,
             k2_pow_difficulty: u64::MAX / 100,
-            k3_pow_difficulty: u64::MAX / 8,
             pow_scrypt: ScryptParams::new(1, 0, 0),
             scrypt: ScryptParams::new(2, 0, 0),
         };
@@ -377,10 +376,6 @@ mod tests {
             cfg.k2_pow_difficulty / metadata.num_units as u64,
             params.k2_pow_difficulty
         );
-        assert_eq!(
-            cfg.k3_pow_difficulty / metadata.num_units as u64,
-            params.k3_pow_difficulty
-        );
     }
 
     #[test]
@@ -391,7 +386,6 @@ mod tests {
             pow_scrypt: ScryptParams::new(1, 0, 0),
             difficulty: u64::MAX,
             k2_pow_difficulty: u64::MAX,
-            k3_pow_difficulty: u64::MAX,
         };
         let prover = Prover8_56::new(challenge, 0..Prover8_56::NONCES_PER_AES, params).unwrap();
         let res = prover.prove(&[0u8; 8 * LABEL_SIZE], 0, |nonce, index| {
@@ -427,7 +421,6 @@ mod tests {
             pow_scrypt: ScryptParams::new(1, 0, 0),
             difficulty: proving_difficulty(K1, NUM_LABELS as u64).unwrap(),
             k2_pow_difficulty: u64::MAX,
-            k3_pow_difficulty: u64::MAX,
         };
 
         let indexes = loop {
@@ -485,7 +478,6 @@ mod tests {
             pow_scrypt: ScryptParams::new(8, 0, 0),
             difficulty: proving_difficulty(k1, num_labels as u64).unwrap(),
             k2_pow_difficulty: u64::MAX,
-            k3_pow_difficulty: u64::MAX,
         };
         let data = repeat(0..=11) // it's important for range len to not be a multiple of AES block
             .flatten()

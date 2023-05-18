@@ -29,14 +29,12 @@ fn verifying(c: &mut Criterion) {
                     (0..k2 as u64).collect::<Vec<u64>>().as_slice(),
                     num_labels.ilog2() as usize + 1,
                     0,
-                    0,
                 );
                 let params = VerifyingParams {
                     difficulty: u64::MAX,
                     k2,
                     k3,
                     k2_pow_difficulty: u64::MAX,
-                    k3_pow_difficulty: u64::MAX,
                     pow_scrypt: ScryptParams::new(6, 0, 0),
                     scrypt: ScryptParams::new(12, 0, 0),
                 };
