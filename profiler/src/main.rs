@@ -80,8 +80,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let total_size = args.data_size * 1024 * 1024 * 1024;
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(args.threads)
+        .build()
+        .unwrap();
 
-    let prover = Prover8_56::new(challenge, 0..args.nonces, params)?;
+    let prover = pool.install(|| Prover8_56::new(challenge, 0..args.nonces, params))?;
 
     let consume = |_, _| None;
 
@@ -93,25 +97,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         let file = file_data(&args.data_file, total_size)?;
         let reader = post::reader::read_from(file, batch_size, total_size);
-        match args.threads {
-            1 => reader.for_each(|batch| {
+        pool.install(|| {
+            reader.par_bridge().for_each(|batch| {
                 prover.prove(&batch.data, batch.pos, consume);
-            }),
-            0 => reader.par_bridge().for_each(|batch| {
-                prover.prove(&batch.data, batch.pos, consume);
-            }),
-            n => {
-                let pool = rayon::ThreadPoolBuilder::new()
-                    .num_threads(n)
-                    .build()
-                    .unwrap();
-                pool.install(|| {
-                    reader.par_bridge().for_each(|batch| {
-                        prover.prove(&batch.data, batch.pos, consume);
-                    })
-                });
-            }
-        }
+            })
+        });
+
         iterations += 1;
     }
     let elapsed = start.elapsed();

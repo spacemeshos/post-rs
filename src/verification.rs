@@ -120,7 +120,7 @@ pub fn verify(
         .collect_vec();
     let commitment = calc_commitment(&metadata.node_id, &metadata.commitment_atx_id);
     let nonce_group = proof.nonce / NONCES_PER_AES;
-    let cipher = AesCipher::new_with_k2pow(&challenge, nonce_group, proof.k2_pow);
+    let cipher = AesCipher::new(&challenge, nonce_group, proof.k2_pow);
     let lazy_cipher = AesCipher::new_lazy(&challenge, proof.nonce, nonce_group, proof.k2_pow);
     let (difficulty_msb, difficulty_lsb) = Prover8_56::split_difficulty(params.difficulty);
 

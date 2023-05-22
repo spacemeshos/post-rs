@@ -21,6 +21,7 @@ use crate::{
     config::Config,
     difficulty::proving_difficulty,
     metadata::{self, PostMetadata},
+    pow::find_k2_pow,
     reader::read_data,
 };
 
@@ -114,14 +115,19 @@ impl Prover8_56 {
             !nonces.is_empty() && nonces.len() % Self::NONCES_PER_AES as usize == 0,
             "nonces must be a multiple of 16"
         );
+
         let ciphers: Vec<AesCipher> = nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
             .map(|nonce_group| {
-                AesCipher::new(
+                log::info!("calculating K2 POW for nonce group {nonce_group}");
+                let k2_pow = find_k2_pow(
                     challenge,
                     nonce_group,
                     params.pow_scrypt,
                     params.k2_pow_difficulty,
-                )
+                );
+                log::info!("K2 POW: {k2_pow}");
+
+                AesCipher::new(challenge, nonce_group, k2_pow)
             })
             .collect();
 
@@ -258,13 +264,16 @@ pub fn generate_proof(
 
     loop {
         let indexes = Mutex::new(HashMap::<u32, Vec<u64>>::new());
-        let prover = Prover8_56::new(challenge, start_nonce..end_nonce, params.clone())
-            .wrap_err("creating prover")?;
 
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .build()
             .wrap_err("building thread pool")?;
+
+        let prover = pool.install(|| {
+            Prover8_56::new(challenge, start_nonce..end_nonce, params.clone())
+                .wrap_err("creating prover")
+        })?;
 
         let result = pool.install(|| {
             read_data(datadir, 1024 * 1024, metadata.max_file_size)
@@ -286,15 +295,17 @@ pub fn generate_proof(
                 })
         });
 
-        if let Some((nonce, indexes)) = result {
+        if let Some((nonce, indices)) = result {
             let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
             let required_bits = required_bits(num_labels);
-            let compressed_indices = compress_indices(&indexes, required_bits);
+            let compressed_indices = compress_indices(&indices, required_bits);
 
+            let k2_pow = prover.get_k2_pow(nonce).unwrap();
+            log::info!("Found proof for nonce: {nonce}, k2pow: {k2_pow} with {indices:?} indices");
             return Ok(Proof {
                 nonce,
                 indices: compressed_indices,
-                k2_pow: prover.get_k2_pow(nonce).unwrap(),
+                k2_pow,
             });
         }
 
