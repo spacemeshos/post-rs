@@ -55,7 +55,7 @@ fn test_generate_and_verify() {
 
     // Check that the proof is invalid if we modify one index
     let mut invalid_proof = proof;
-    invalid_proof.indices[0] += 2;
+    invalid_proof.k2_pow = invalid_proof.k2_pow - 1;
     let valid = verify(
         &invalid_proof,
         &metadata,

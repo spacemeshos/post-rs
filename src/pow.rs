@@ -5,13 +5,13 @@
 //! with a powerful enough computer could try many nonces
 //! at the same time. In effect a proof could be found
 //! without actually holding the whole POST data.
-use rayon::prelude::*;
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use scrypt_jane::scrypt::{scrypt, ScryptParams};
 
 pub fn find_k2_pow(challenge: &[u8; 32], nonce: u32, params: ScryptParams, difficulty: u64) -> u64 {
     (0u64..u64::MAX)
         .into_par_iter()
-        .find_first(|&k2_pow| hash_k2_pow(challenge, nonce, params, k2_pow) < difficulty)
+        .find_any(|&k2_pow| hash_k2_pow(challenge, nonce, params, k2_pow) < difficulty)
         .expect("looking for k2pow")
 }
 
