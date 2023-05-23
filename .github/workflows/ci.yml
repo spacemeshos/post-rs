@@ -157,6 +157,8 @@ jobs:
 
       - name: Build profiler tool
         run: cd profiler && cargo build --release
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
       - name: Archive profiler artifacts
         uses: actions/upload-artifact@v3
         with:
