@@ -53,3 +53,4 @@ inherits = "release"
 strip = true
 lto = true
 rpath = true
+debug = true
