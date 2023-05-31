@@ -20,7 +20,7 @@ use crate::ArrayU8;
 pub struct Proof {
     nonce: u32,
     indices: ArrayU8,
-    k2_pow: u64,
+    pow: u64,
 }
 
 /// Deallocate a proof obtained with generate_proof().
@@ -80,7 +80,7 @@ fn _generate_proof(
     let proof = Box::new(Proof {
         nonce: proof.nonce,
         indices: ArrayU8 { ptr, len, cap },
-        k2_pow: proof.k2_pow,
+        pow: proof.pow,
     });
 
     Ok(proof)
@@ -109,7 +109,7 @@ pub unsafe extern "C" fn verify_proof(
         post::prove::Proof {
             nonce: proof.nonce,
             indices,
-            k2_pow: proof.k2_pow,
+            pow: proof.pow,
         }
     };
 
@@ -144,8 +144,7 @@ mod tests {
             k1: 10,
             k2: 20,
             k3: 20,
-            k2_pow_difficulty: u64::MAX,
-            pow_scrypt: super::ScryptParams::new(1, 1, 1),
+            pow_difficulty: [0xFF; 32],
             scrypt: super::ScryptParams::new(1, 1, 1),
         };
         let result = super::_generate_proof(datadir.as_ptr(), [0u8; 32].as_ptr(), cfg, 1, 0);

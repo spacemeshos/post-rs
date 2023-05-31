@@ -5,7 +5,6 @@ use post::{prove::Prover, prove::Prover8_56, prove::ProvingParams};
 use pprof::criterion::{Output, PProfProfiler};
 use rand::{thread_rng, RngCore};
 use rayon::prelude::{ParallelBridge, ParallelIterator};
-use scrypt_jane::scrypt::ScryptParams;
 
 const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;
@@ -29,9 +28,8 @@ fn prover_bench(c: &mut Criterion) {
 
     let chunk_size = 64 * KIB;
     let params = ProvingParams {
-        pow_scrypt: ScryptParams::new(6, 0, 0),
-        difficulty: 0,               // impossible to find a proof
-        k2_pow_difficulty: u64::MAX, // extremely easy to find k2_pow
+        difficulty: 0,              // impossible to find a proof
+        pow_difficulty: [0xFF; 32], // extremely easy to find pow nonce
     };
 
     for (nonces, threads) in itertools::iproduct!(

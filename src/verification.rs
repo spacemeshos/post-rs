@@ -2,7 +2,7 @@
 //!
 //! ## Steps to verify a proof:
 //!
-//! 1. verify k2_pow
+//! 1. verify PoW
 //! 2. verify number of indices == K2
 //! 3. select K3 indices
 //! 4. verify each of K3 selected indices satisfy difficulty (inferred from K1)
@@ -10,7 +10,7 @@
 //! ## Selecting subset of K3 proven indices
 //!
 //! ```text
-//! seed = concat(ch, nonce, indices, k2pow)
+//! seed = concat(ch, nonce, indices, pow)
 //! random_bytes = blake3(seed) // infinite blake output
 //! for (index=0; index<K3; index++) {
 //!   remaining = K2 - index
@@ -35,7 +35,7 @@
 //!     - encrypt it with AES,
 //!     - convert AES output to u64,
 //!     - compare it with difficulty.
-use std::cmp::Ordering;
+use std::{cmp::Ordering, error::Error};
 
 use cipher::BlockEncrypt;
 use itertools::Itertools;
@@ -48,7 +48,7 @@ use crate::{
     difficulty::proving_difficulty,
     initialize::{calc_commitment, generate_label},
     metadata::ProofMetadata,
-    pow::hash_k2_pow,
+    pow::{verify_pow, RandomXFlag},
     prove::{Proof, Prover8_56},
     random_values_gen::RandomValuesIterator,
 };
@@ -60,8 +60,7 @@ pub struct VerifyingParams {
     pub difficulty: u64,
     pub k2: u32,
     pub k3: u32,
-    pub k2_pow_difficulty: u64,
-    pub pow_scrypt: ScryptParams,
+    pub k2_pow_difficulty: [u8; 32],
     pub scrypt: ScryptParams,
 }
 
@@ -72,8 +71,7 @@ impl VerifyingParams {
             difficulty: proving_difficulty(cfg.k1, num_labels)?,
             k2: cfg.k2,
             k3: cfg.k3,
-            k2_pow_difficulty: cfg.k2_pow_difficulty / metadata.num_units as u64,
-            pow_scrypt: cfg.pow_scrypt,
+            k2_pow_difficulty: cfg.pow_difficulty,
             scrypt: cfg.scrypt,
         })
     }
@@ -91,18 +89,22 @@ pub fn verify(
     proof: &Proof,
     metadata: &ProofMetadata,
     params: VerifyingParams,
-) -> Result<(), String> {
+) -> Result<(), Box<dyn Error>> {
     let challenge = metadata.challenge;
 
     // Verify K2 PoW
     let nonce_group = proof.nonce / NONCES_PER_AES;
-    let k2_pow_value = hash_k2_pow(&challenge, nonce_group, params.pow_scrypt, proof.k2_pow);
-    if k2_pow_value >= params.k2_pow_difficulty {
-        return Err(format!(
-            "k2 pow is invalid: {k2_pow_value} >= {}",
-            params.k2_pow_difficulty
-        ));
-    }
+
+    verify_pow(
+        proof.pow,
+        &challenge[..8].try_into().unwrap(),
+        nonce_group
+            .try_into()
+            .map_err(|_| "nonce group out of bounds (max 255)")?,
+        &params.k2_pow_difficulty,
+        RandomXFlag::get_recommended_flags(),
+    )
+    .map_err(|e| e.to_string())?;
 
     // Verify the number of indices against K2
     let num_lables = metadata.num_units as u64 * metadata.labels_per_unit;
@@ -112,7 +114,8 @@ pub fn verify(
         return Err(format!(
             "indices length is invalid ({} != {expected_indices_len})",
             proof.indices.len()
-        ));
+        )
+        .into());
     }
 
     let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index)
@@ -120,8 +123,8 @@ pub fn verify(
         .collect_vec();
     let commitment = calc_commitment(&metadata.node_id, &metadata.commitment_atx_id);
     let nonce_group = proof.nonce / NONCES_PER_AES;
-    let cipher = AesCipher::new(&challenge, nonce_group, proof.k2_pow);
-    let lazy_cipher = AesCipher::new_lazy(&challenge, proof.nonce, nonce_group, proof.k2_pow);
+    let cipher = AesCipher::new(&challenge, nonce_group, proof.pow);
+    let lazy_cipher = AesCipher::new_lazy(&challenge, proof.nonce, nonce_group, proof.pow);
     let (difficulty_msb, difficulty_lsb) = Prover8_56::split_difficulty(params.difficulty);
 
     let output_index = (proof.nonce % NONCES_PER_AES) as usize;
@@ -131,7 +134,7 @@ pub fn verify(
         challenge.as_slice(),
         &proof.nonce.to_le_bytes(),
         proof.indices.as_slice(),
-        &proof.k2_pow.to_le_bytes(),
+        &proof.pow.to_le_bytes(),
     ];
 
     let k3_indices = RandomValuesIterator::new(indices_unpacked, seed).take(params.k3 as usize);
@@ -153,7 +156,7 @@ pub fn verify(
                 // invalid
                 return Err(format!(
                     "MSB value for index: {index} doesn't satisfy difficulty: {msb} > {difficulty_msb} (label: {label:?})",
-                ));
+                ).into());
             },
             Ordering::Equal => {
                 // Need to check LSB
@@ -166,7 +169,7 @@ pub fn verify(
                 if lsb >= difficulty_lsb {
                     return Err(format!(
                         "LSB value for index: {index} doesn't satisfy difficulty: {lsb} >= {difficulty_lsb} (label: {label:?})",
-                    ));
+                    ).into());
                 }
             }
         }
@@ -193,7 +196,7 @@ fn expected_indices_bytes(required_bits: usize, k2: u32) -> usize {
 mod tests {
     use scrypt_jane::scrypt::ScryptParams;
 
-    use crate::{metadata::ProofMetadata, pow::find_k2_pow, prove::Proof};
+    use crate::{metadata::ProofMetadata, pow::find_pow, prove::Proof};
 
     use super::{expected_indices_bytes, next_multiple_of, verify, VerifyingParams};
 
@@ -218,12 +221,21 @@ mod tests {
             difficulty: u64::MAX,
             k2: 10,
             k3: 10,
-            k2_pow_difficulty: u64::MAX / 16,
-            pow_scrypt: scrypt_params,
+            k2_pow_difficulty: [
+                0x00, 0xdf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff,
+            ],
             scrypt: scrypt_params,
         };
 
-        let k2_pow = find_k2_pow(&challenge, 0, params.scrypt, params.k2_pow_difficulty);
+        let k2_pow = find_pow(
+            &challenge[..8].try_into().unwrap(),
+            0,
+            &params.k2_pow_difficulty,
+            randomx_rs::RandomXFlag::get_recommended_flags(),
+        )
+        .unwrap();
         let fake_metadata = ProofMetadata {
             node_id: [0u8; 32],
             commitment_atx_id: [0u8; 32],
@@ -235,7 +247,7 @@ mod tests {
             let empty_proof = Proof {
                 nonce: 0,
                 indices: vec![],
-                k2_pow,
+                pow: k2_pow,
             };
             assert!(verify(&empty_proof, &fake_metadata, params).is_err());
         }
@@ -243,7 +255,7 @@ mod tests {
             let proof_with_not_enough_indices = Proof {
                 nonce: 0,
                 indices: vec![1, 2, 3],
-                k2_pow,
+                pow: k2_pow,
             };
             assert!(verify(&proof_with_not_enough_indices, &fake_metadata, params).is_err());
         }
@@ -251,7 +263,7 @@ mod tests {
             let proof_with_invalid_k2_pow = Proof {
                 nonce: 0,
                 indices: vec![1, 2, 3],
-                k2_pow: params.k2_pow_difficulty,
+                pow: 0,
             };
             assert!(verify(&proof_with_invalid_k2_pow, &fake_metadata, params).is_err());
         }
@@ -259,7 +271,7 @@ mod tests {
             let proof_with_invalid_k3_pow = Proof {
                 nonce: 0,
                 indices: vec![1, 2, 3],
-                k2_pow,
+                pow: k2_pow,
             };
             assert!(verify(&proof_with_invalid_k3_pow, &fake_metadata, params).is_err());
         }

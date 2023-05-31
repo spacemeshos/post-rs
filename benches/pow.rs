@@ -1,40 +1,32 @@
-use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 
-use itertools::iproduct;
+use post::pow::{find_pow, verify_pow, verify_pow_with_vm, RandomXFlag};
 use pprof::criterion::{Output, PProfProfiler};
 use rayon::ThreadPoolBuilder;
-use scrypt_jane::scrypt::ScryptParams;
 
-fn bench_k2_pow(c: &mut Criterion) {
-    // Base pow difficulty threshold
-    // Will be scaled up by the benchmark to see if time scales linearly
-    let difficulty_threshold = 891576961504;
+fn bench_pow(c: &mut Criterion) {
+    let difficulty = &[
+        0x00, 0xdf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff,
+    ];
 
-    let mut group = c.benchmark_group("k2_pow");
+    let flags = RandomXFlag::get_recommended_flags();
 
-    for (scale, threads) in iproduct!([1000, 100], [0, 1]) {
-        let threshold = difficulty_threshold * scale;
+    let mut group = c.benchmark_group("pow");
+
+    for threads in [0, 1] {
         let pool = ThreadPoolBuilder::new()
             .num_threads(threads)
             .build()
             .unwrap();
-        group.bench_with_input(
-            BenchmarkId::from_parameter(format!(
-                "scale={scale}/threshold={threshold}/threads={threads}"
-            )),
-            &(threshold),
-            |b, &threshold| {
+        group.bench_function(
+            BenchmarkId::from_parameter(format!("threads={threads}")),
+            |b| {
                 b.iter_batched(
                     || rand::random(),
                     |nonce| {
-                        pool.install(|| {
-                            post::pow::find_k2_pow(
-                                b"hello world, CHALLENGE me!!!!!!!",
-                                nonce,
-                                ScryptParams::new(6, 0, 0),
-                                threshold,
-                            )
-                        })
+                        pool.install(|| find_pow(b"challeng", nonce, difficulty, flags).unwrap())
                     },
                     BatchSize::SmallInput,
                 )
@@ -43,10 +35,73 @@ fn bench_k2_pow(c: &mut Criterion) {
     }
 }
 
+fn verify_pow_light_stateless(c: &mut Criterion) {
+    let flags = RandomXFlag::get_recommended_flags();
+    c.bench_function("verify_pow_light_stateless", |b| {
+        b.iter_batched(
+            || rand::random(),
+            |pow| {
+                verify_pow(pow, b"challeng", 7, &[0xFFu8; 32], flags).unwrap();
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
+fn verify_pow_light(c: &mut Criterion) {
+    let flags = RandomXFlag::get_recommended_flags();
+    let cache = randomx_rs::RandomXCache::new(flags, b"key").unwrap();
+    let vm = randomx_rs::RandomXVM::new(flags, Some(cache), None).unwrap();
+
+    c.bench_function("verify_pow_light", |b| {
+        b.iter_batched(
+            || rand::random(),
+            |pow| {
+                verify_pow_with_vm(pow, b"challeng", 7, &[0xFFu8; 32], &vm).unwrap();
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
+fn verify_pow_fast(c: &mut Criterion) {
+    let flags = RandomXFlag::get_recommended_flags() | RandomXFlag::FLAG_FULL_MEM;
+    let cache = randomx_rs::RandomXCache::new(flags, b"key").unwrap();
+    let dataset = randomx_rs::RandomXDataset::new(flags, cache, 0).unwrap();
+    let vm = randomx_rs::RandomXVM::new(flags, None, Some(dataset)).unwrap();
+
+    c.bench_function("verify_pow_fast", |b| {
+        b.iter_batched(
+            || rand::random(),
+            |pow| {
+                verify_pow_with_vm(pow, b"challeng", 7, &[0xFFu8; 32], &vm).unwrap();
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
+fn randomx_dataset_init(c: &mut Criterion) {
+    let flags = RandomXFlag::get_recommended_flags() | RandomXFlag::FLAG_FULL_MEM;
+
+    c.bench_function("randomx_dataset_init", |b| {
+        b.iter(|| {
+            let cache = randomx_rs::RandomXCache::new(flags, black_box(b"key")).unwrap();
+            let dataset = randomx_rs::RandomXDataset::new(flags, cache, 0).unwrap();
+            black_box(dataset);
+        })
+    });
+}
+
 criterion_group!(
     name = benches;
     config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
-    targets=bench_k2_pow
+    targets=
+        bench_pow,
+        verify_pow_light_stateless,
+        verify_pow_light,
+        verify_pow_fast,
+        randomx_dataset_init
 );
 
 criterion_main!(benches);

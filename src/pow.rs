@@ -1,90 +1,115 @@
-//! Proof of Work algorithms
+//! Proof of Work algorithm
 //!
-//! PoW for K2 is required to prevent grinding on nonces
+//! The PoW is required to prevent grinding on nonces
 //! when looking for a proof. Without it a malicious actor
 //! with a powerful enough computer could try many nonces
 //! at the same time. In effect a proof could be found
 //! without actually holding the whole POST data.
-use randomx_rs::{RandomXCache, RandomXDataset, RandomXFlag, RandomXVM};
+
+pub use randomx_rs::RandomXFlag;
+use randomx_rs::{RandomXCache, RandomXDataset, RandomXVM};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use scrypt_jane::scrypt::{scrypt, ScryptParams};
+use thiserror::Error;
 
-pub fn find_k2_pow(challenge: &[u8; 32], nonce: u32, params: ScryptParams, difficulty: u64) -> u64 {
-    (0u64..u64::MAX)
-        .into_par_iter()
-        .find_any(|&k2_pow| hash_k2_pow(challenge, nonce, params, k2_pow) < difficulty)
-        .expect("looking for k2pow")
+const RANDOMX_CACHE_KEY: &[u8] = b"spacemesh-randomx-cache-key";
+
+#[derive(Error, Debug)]
+pub enum Error {
+    #[error("Proof of work is invalid: {hash:?} >= {difficulty:?}")]
+    InvalidPoW {
+        hash: [u8; 32],
+        difficulty: [u8; 32],
+    },
+    #[error("Fail in RandomX: {0}")]
+    RandomXError(#[from] randomx_rs::RandomXError),
+    #[error("Proof of work not found")]
+    PoWNotFound,
 }
 
-#[inline(always)]
-pub(crate) fn hash_k2_pow(
-    challenge: &[u8; 32],
-    nonce: u32,
-    params: ScryptParams,
-    k2_pow: u64,
-) -> u64 {
-    // Note: the call in loop is inlined and the concat is optimized as loop-invariant.
-    let input = [challenge.as_slice(), &nonce.to_le_bytes()].concat();
-    let mut output = [0u8; 8];
-
-    scrypt(&input, &k2_pow.to_le_bytes(), params, &mut output);
-    u64::from_le_bytes(output)
+fn create_vm(flags: RandomXFlag) -> Result<RandomXVM, Error> {
+    let cache = RandomXCache::new(flags, RANDOMX_CACHE_KEY)?;
+    let (cache, dataset) = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
+        (None, Some(RandomXDataset::new(flags, cache, 0)?))
+    } else {
+        (Some(cache), None)
+    };
+    RandomXVM::new(flags, cache, dataset).map_err(Error::from)
 }
 
-struct RandomXState {
-    cache: RandomXCache,
-    dataset: RandomXDataset,
-    vm: RandomXVM,
-}
-
-pub fn find_k2_pow_randomx(
-    nonce_group: u8,
+pub fn verify_pow(
+    pow_nonce: u64,
     challenge: &[u8; 8],
+    nonce_group: u8,
     difficulty: &[u8; 32],
-) -> Option<(u64, Vec<u8>)> {
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(1)
-        .build()
-        .unwrap();
+    flags: RandomXFlag,
+) -> Result<(), Error> {
+    let vm = create_vm(flags)?;
+    verify_pow_with_vm(pow_nonce, challenge, nonce_group, difficulty, &vm)
+}
 
+/// Verify proof of work with a pre-initialized VM.
+pub fn verify_pow_with_vm(
+    pow_nonce: u64,
+    challenge: &[u8; 8],
+    nonce_group: u8,
+    difficulty: &[u8; 32],
+    vm: &RandomXVM,
+) -> Result<(), Error> {
+    let pow_input = [
+        &pow_nonce.to_le_bytes()[0..7],
+        [nonce_group].as_slice(),
+        challenge,
+    ]
+    .concat();
+
+    let hash = vm.calculate_hash(pow_input.as_slice())?;
+
+    if hash.as_slice() >= difficulty {
+        return Err(Error::InvalidPoW {
+            hash: hash.try_into().unwrap(),
+            difficulty: *difficulty,
+        });
+    }
+    Ok(())
+}
+
+pub fn find_pow(
+    challenge: &[u8; 8],
+    nonce_group: u8,
+    difficulty: &[u8; 32],
+    flags: RandomXFlag,
+) -> Result<u64, Error> {
     let pow_input = [[0u8; 7].as_slice(), [nonce_group].as_slice(), challenge].concat();
 
-    let k2pow = pool.install(|| {
-        (0u64..2u64.pow(56))
-            .into_par_iter()
-            .map_init(
-                || -> Result<_, Box<dyn Error>> {
-                    println!("initializing randomx");
-                    let cache = RandomXCache::new(
-                        RandomXFlag::FLAG_ARGON2_AVX2,
-                        format!("key: {:?}", std::thread::current().id()).as_bytes(),
-                    )?;
-                    let dataset = RandomXDataset::new(RandomXFlag::FLAG_ARGON2, &cache, 0)?;
-                    let vm = RandomXVM::new(
-                        RandomXFlag::FLAG_FULL_MEM
-                            | RandomXFlag::FLAG_HARD_AES
-                            | RandomXFlag::FLAG_JIT,
-                        Some(&cache),
-                        Some(&dataset),
-                    )?;
+    let cache = RandomXCache::new(flags, RANDOMX_CACHE_KEY)?;
+    let (cache, dataset) = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
+        (None, Some(RandomXDataset::new(flags, cache, 0)?))
+    } else {
+        (Some(cache), None)
+    };
 
-                    Ok((RandomXState { cache, dataset, vm }, pow_input.clone()))
-                },
-                |state, k2_pow| {
-                    let hash = if let Ok((rx, pow_input)) = state {
-                        pow_input[0..7].copy_from_slice(&k2_pow.to_le_bytes()[0..7]);
-                        rx.vm.calculate_hash(pow_input.as_slice()).ok()
-                    } else {
-                        None
-                    };
-                    (k2_pow, hash)
-                },
-            )
-            .filter_map(|(k2_pow, hash)| hash.map(|hash| (k2_pow, hash)))
-            .find_first(|(_, hash)| hash.as_slice() < difficulty)
-    });
+    let (pow_nonce, _) = (0..2u64.pow(56))
+        .into_par_iter()
+        .map_init(
+            || -> Result<_, Error> {
+                let vm = RandomXVM::new(flags, cache.clone(), dataset.clone())?;
+                Ok((vm, pow_input.clone()))
+            },
+            |state, pow_nonce| {
+                if let Ok((vm, pow_input)) = state {
+                    pow_input[0..7].copy_from_slice(&pow_nonce.to_le_bytes()[0..7]);
+                    let hash = vm.calculate_hash(pow_input.as_slice()).ok()?;
+                    Some((pow_nonce, hash))
+                } else {
+                    None
+                }
+            },
+        )
+        .filter_map(|res| res)
+        .find_any(|(_, hash)| hash.as_slice() < difficulty)
+        .ok_or(Error::PoWNotFound)?;
 
-    k2pow
+    Ok(pow_nonce)
 }
 
 #[cfg(test)]
@@ -93,40 +118,37 @@ mod tests {
     use proptest::prelude::*;
     proptest! {
         #[test]
-        fn test_k2_pow(nonce: u32) {
-            let difficulty = 0x7FFF_FFFF_FFFF_FFFF;
-            let k2_pow = find_k2_pow(&[0; 32], nonce, ScryptParams::new(2,0,0), difficulty);
-            assert!(hash_k2_pow(&[0; 32], nonce, ScryptParams::new(2,0,0), k2_pow) < difficulty);
-        }
+        fn test_pow(nonce: u8, challenge: [u8; 8]) {
+                let difficulty = &[
+                    0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                    0xff, 0xff, 0xff, 0xff,
+                ];
+                let pow = find_pow(&challenge, nonce, difficulty, RandomXFlag::get_recommended_flags()).unwrap();
+                verify_pow(pow, &challenge, nonce, difficulty, RandomXFlag::get_recommended_flags()).unwrap();
+            }
     }
 
     #[test]
-    fn test_randomx() {
-        use std::time::Instant;
+    fn randomx_hash_fast_vs_light() {
+        let input = b"hello world";
 
-        const TRIES: u8 = 2;
-        const CH: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+        let flags = RandomXFlag::get_recommended_flags() | RandomXFlag::FLAG_FULL_MEM;
+        let cache = RandomXCache::new(flags, RANDOMX_CACHE_KEY).unwrap();
+        let dataset = RandomXDataset::new(flags, cache, 0).unwrap();
+        let fast_vm = RandomXVM::new(flags, None, Some(dataset)).unwrap();
 
-        let k2_difficulty: [u8; 32] = [
-            0x00, 0x00, 0xdf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-            0xff, 0xff, 0xff, 0xff,
-        ];
+        let flags = RandomXFlag::get_recommended_flags();
+        let cache = RandomXCache::new(flags, RANDOMX_CACHE_KEY).unwrap();
+        let light_vm = RandomXVM::new(flags, Some(cache), None).unwrap();
 
-        let start = Instant::now();
-        for nonce_group in 0..TRIES {
-            let start = Instant::now();
-            let nonce_group = nonce_group + 1;
-            let k2pow = find_k2_pow_randomx(nonce_group, &CH, &k2_difficulty).unwrap();
+        let fast = fast_vm.calculate_hash(input).unwrap();
+        let light = light_vm.calculate_hash(input).unwrap();
+        assert_eq!(fast, light);
+    }
 
-            println!(
-                "nonce {nonce_group}, duration {:.2}: {k2pow:?}",
-                start.elapsed().as_secs_f64()
-            );
-        }
-        println!(
-            "Average duration: {:.2}",
-            start.elapsed().as_secs_f64() / TRIES as f64
-        );
+    #[test]
+    fn get_recommended_flags() {
+        dbg!(RandomXFlag::get_recommended_flags());
     }
 }
