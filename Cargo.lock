@@ -1766,7 +1766,7 @@ dependencies = [
 [[package]]
 name = "randomx-rs"
 version = "1.1.15"
-source = "git+https://github.com/poszu/randomx-rs?rev=5b03270fa4a0ae5a2d3b1d1b9bc60485f058827d#5b03270fa4a0ae5a2d3b1d1b9bc60485f058827d"
+source = "git+https://github.com/spacemeshos/randomx-rs?rev=5b03270fa4a0ae5a2d3b1d1b9bc60485f058827d#5b03270fa4a0ae5a2d3b1d1b9bc60485f058827d"
 dependencies = [
  "bitflags",
  "libc",
