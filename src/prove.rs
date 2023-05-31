@@ -71,7 +71,7 @@ pub trait Prover {
     where
         F: FnMut(u32, u64) -> Option<Vec<u64>>;
 
-    fn get_k2_pow(&self, nonce: u32) -> Option<u64>;
+    fn get_pow(&self, nonce: u32) -> Option<u64>;
 }
 
 // Calculate nonce value given nonce group and its offset within the group.
@@ -119,22 +119,22 @@ impl Prover8_56 {
 
         let ciphers: Vec<AesCipher> = nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
             .map(|nonce_group| {
-                log::info!("calculating K2 POW for nonce group {nonce_group}");
+                log::info!("calculating proof of work for nonce group {nonce_group}");
                 let difficulty = &[
                     0x00, 0xdf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                     0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                     0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 ];
-                let k2_pow = find_pow(
+                let pow = find_pow(
                     challenge[..8].try_into().unwrap(),
                     nonce_group as u8,
                     difficulty,
                     randomx_rs::RandomXFlag::get_recommended_flags(),
                 )
                 .unwrap();
-                log::info!("K2 POW: {k2_pow}");
+                log::info!("proof of work: {pow}");
 
-                AesCipher::new(challenge, nonce_group, k2_pow)
+                AesCipher::new(challenge, nonce_group, pow)
             })
             .collect();
 
@@ -145,7 +145,7 @@ impl Prover8_56 {
                     challenge,
                     nonce,
                     nonce_group as u32,
-                    ciphers[nonce_group % ciphers.len()].k2_pow,
+                    ciphers[nonce_group % ciphers.len()].pow,
                 )
             })
             .collect();
@@ -206,8 +206,8 @@ impl Prover8_56 {
 }
 
 impl Prover for Prover8_56 {
-    fn get_k2_pow(&self, nonce: u32) -> Option<u64> {
-        self.cipher(nonce).map(|aes| aes.k2_pow)
+    fn get_pow(&self, nonce: u32) -> Option<u64> {
+        self.cipher(nonce).map(|aes| aes.pow)
     }
 
     fn prove<F>(&self, batch: &[u8], mut index: u64, mut consume: F) -> Option<(u32, Vec<u64>)>
@@ -307,12 +307,12 @@ pub fn generate_proof(
             let required_bits = required_bits(num_labels);
             let compressed_indices = compress_indices(&indices, required_bits);
 
-            let k2_pow = prover.get_k2_pow(nonce).unwrap();
-            log::info!("Found proof for nonce: {nonce}, k2pow: {k2_pow} with {indices:?} indices");
+            let pow = prover.get_pow(nonce).unwrap();
+            log::info!("Found proof for nonce: {nonce}, pow: {pow} with {indices:?} indices");
             return Ok(Proof {
                 nonce,
                 indices: compressed_indices,
-                pow: k2_pow,
+                pow,
             });
         }
 

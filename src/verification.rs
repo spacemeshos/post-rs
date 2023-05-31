@@ -60,7 +60,7 @@ pub struct VerifyingParams {
     pub difficulty: u64,
     pub k2: u32,
     pub k3: u32,
-    pub k2_pow_difficulty: [u8; 32],
+    pub pow_difficulty: [u8; 32],
     pub scrypt: ScryptParams,
 }
 
@@ -71,7 +71,7 @@ impl VerifyingParams {
             difficulty: proving_difficulty(cfg.k1, num_labels)?,
             k2: cfg.k2,
             k3: cfg.k3,
-            k2_pow_difficulty: cfg.pow_difficulty,
+            pow_difficulty: cfg.pow_difficulty,
             scrypt: cfg.scrypt,
         })
     }
@@ -101,7 +101,7 @@ pub fn verify(
         nonce_group
             .try_into()
             .map_err(|_| "nonce group out of bounds (max 255)")?,
-        &params.k2_pow_difficulty,
+        &params.pow_difficulty,
         RandomXFlag::get_recommended_flags(),
     )
     .map_err(|e| e.to_string())?;
@@ -221,7 +221,7 @@ mod tests {
             difficulty: u64::MAX,
             k2: 10,
             k3: 10,
-            k2_pow_difficulty: [
+            pow_difficulty: [
                 0x00, 0xdf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0xff, 0xff,
@@ -229,10 +229,10 @@ mod tests {
             scrypt: scrypt_params,
         };
 
-        let k2_pow = find_pow(
+        let pow = find_pow(
             &challenge[..8].try_into().unwrap(),
             0,
-            &params.k2_pow_difficulty,
+            &params.pow_difficulty,
             randomx_rs::RandomXFlag::get_recommended_flags(),
         )
         .unwrap();
@@ -247,7 +247,7 @@ mod tests {
             let empty_proof = Proof {
                 nonce: 0,
                 indices: vec![],
-                pow: k2_pow,
+                pow,
             };
             assert!(verify(&empty_proof, &fake_metadata, params).is_err());
         }
@@ -255,23 +255,23 @@ mod tests {
             let proof_with_not_enough_indices = Proof {
                 nonce: 0,
                 indices: vec![1, 2, 3],
-                pow: k2_pow,
+                pow,
             };
             assert!(verify(&proof_with_not_enough_indices, &fake_metadata, params).is_err());
         }
         {
-            let proof_with_invalid_k2_pow = Proof {
+            let proof_with_invalid_pow = Proof {
                 nonce: 0,
                 indices: vec![1, 2, 3],
                 pow: 0,
             };
-            assert!(verify(&proof_with_invalid_k2_pow, &fake_metadata, params).is_err());
+            assert!(verify(&proof_with_invalid_pow, &fake_metadata, params).is_err());
         }
         {
             let proof_with_invalid_k3_pow = Proof {
                 nonce: 0,
                 indices: vec![1, 2, 3],
-                pow: k2_pow,
+                pow,
             };
             assert!(verify(&proof_with_invalid_k3_pow, &fake_metadata, params).is_err());
         }
