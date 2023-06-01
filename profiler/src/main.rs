@@ -5,7 +5,10 @@ use std::{
 };
 
 use clap::Parser;
-use post::prove::{Prover, Prover8_56, ProvingParams};
+use post::{
+    pow::RandomXFlag,
+    prove::{Prover, Prover8_56, ProvingParams},
+};
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 use serde::Serialize;
 
@@ -69,6 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let params = ProvingParams {
         difficulty: 0, // impossible to find a proof
         pow_difficulty: [0xFF; 32],
+        pow_flags: RandomXFlag::get_recommended_flags(),
     };
 
     let total_size = args.data_size * 1024 * 1024 * 1024;

@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 
-use post::pow::{find_pow, verify_pow, verify_pow_with_vm, RandomXFlag};
+use post::pow::{PowProver, RandomXFlag};
 use pprof::criterion::{Output, PProfProfiler};
 use rayon::ThreadPoolBuilder;
 
@@ -12,6 +12,7 @@ fn bench_pow(c: &mut Criterion) {
     ];
 
     let flags = RandomXFlag::get_recommended_flags();
+    let prover = PowProver::new(flags).unwrap();
 
     let mut group = c.benchmark_group("pow");
 
@@ -25,9 +26,7 @@ fn bench_pow(c: &mut Criterion) {
             |b| {
                 b.iter_batched(
                     || rand::random(),
-                    |nonce| {
-                        pool.install(|| find_pow(b"challeng", nonce, difficulty, flags).unwrap())
-                    },
+                    |nonce| pool.install(|| prover.prove(nonce, b"challeng", difficulty).unwrap()),
                     BatchSize::SmallInput,
                 )
             },
@@ -41,7 +40,8 @@ fn verify_pow_light_stateless(c: &mut Criterion) {
         b.iter_batched(
             || rand::random(),
             |pow| {
-                verify_pow(pow, b"challeng", 7, &[0xFFu8; 32], flags).unwrap();
+                let prover = PowProver::new(flags).unwrap();
+                prover.verify(pow, 7, b"challeng", &[0xFFu8; 32]).unwrap();
             },
             BatchSize::SmallInput,
         )
@@ -50,14 +50,13 @@ fn verify_pow_light_stateless(c: &mut Criterion) {
 
 fn verify_pow_light(c: &mut Criterion) {
     let flags = RandomXFlag::get_recommended_flags();
-    let cache = randomx_rs::RandomXCache::new(flags, b"key").unwrap();
-    let vm = randomx_rs::RandomXVM::new(flags, Some(cache), None).unwrap();
+    let prover = PowProver::new(flags).unwrap();
 
     c.bench_function("verify_pow_light", |b| {
         b.iter_batched(
             || rand::random(),
             |pow| {
-                verify_pow_with_vm(pow, b"challeng", 7, &[0xFFu8; 32], &vm).unwrap();
+                prover.verify(pow, 7, b"challeng", &[0xFFu8; 32]).unwrap();
             },
             BatchSize::SmallInput,
         )
@@ -66,15 +65,13 @@ fn verify_pow_light(c: &mut Criterion) {
 
 fn verify_pow_fast(c: &mut Criterion) {
     let flags = RandomXFlag::get_recommended_flags() | RandomXFlag::FLAG_FULL_MEM;
-    let cache = randomx_rs::RandomXCache::new(flags, b"key").unwrap();
-    let dataset = randomx_rs::RandomXDataset::new(flags, cache, 0).unwrap();
-    let vm = randomx_rs::RandomXVM::new(flags, None, Some(dataset)).unwrap();
+    let prover = PowProver::new(flags).unwrap();
 
     c.bench_function("verify_pow_fast", |b| {
         b.iter_batched(
             || rand::random(),
             |pow| {
-                verify_pow_with_vm(pow, b"challeng", 7, &[0xFFu8; 32], &vm).unwrap();
+                prover.verify(pow, 7, b"challeng", &[0xFFu8; 32]).unwrap();
             },
             BatchSize::SmallInput,
         )

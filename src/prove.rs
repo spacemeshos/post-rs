@@ -21,7 +21,7 @@ use crate::{
     config::Config,
     difficulty::proving_difficulty,
     metadata::{self, PostMetadata},
-    pow::find_pow,
+    pow::{PowProver, RandomXFlag},
     reader::read_data,
 };
 
@@ -51,10 +51,15 @@ impl Proof {
 pub struct ProvingParams {
     pub difficulty: u64,
     pub pow_difficulty: [u8; 32],
+    pub pow_flags: RandomXFlag,
 }
 
 impl ProvingParams {
-    pub fn new(metadata: &PostMetadata, cfg: &Config) -> eyre::Result<Self> {
+    pub fn new(
+        metadata: &PostMetadata,
+        cfg: &Config,
+        pow_flags: RandomXFlag,
+    ) -> eyre::Result<Self> {
         let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
         let mut pow_difficulty = [0u8; 32];
         let difficulty_scaled = U256::from_big_endian(&cfg.pow_difficulty) / metadata.num_units;
@@ -62,6 +67,7 @@ impl ProvingParams {
         Ok(Self {
             difficulty: proving_difficulty(cfg.k1, num_labels)?,
             pow_difficulty,
+            pow_flags,
         })
     }
 }
@@ -120,23 +126,17 @@ impl Prover8_56 {
         let ciphers: Vec<AesCipher> = nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
             .map(|nonce_group| {
                 log::info!("calculating proof of work for nonce group {nonce_group}");
-                let difficulty = &[
-                    0x00, 0xdf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                ];
-                let pow = find_pow(
+                let pow_prover = PowProver::new(params.pow_flags)?;
+                let pow = pow_prover.prove(
+                    nonce_group.try_into()?,
                     challenge[..8].try_into().unwrap(),
-                    nonce_group as u8,
-                    difficulty,
-                    randomx_rs::RandomXFlag::get_recommended_flags(),
-                )
-                .unwrap();
+                    &params.pow_difficulty,
+                )?;
                 log::info!("proof of work: {pow}");
 
-                AesCipher::new(challenge, nonce_group, pow)
+                Ok(AesCipher::new(challenge, nonce_group, pow))
             })
-            .collect();
+            .collect::<eyre::Result<_>>()?;
 
         let lazy_ciphers = nonces
             .map(|nonce| {
@@ -262,9 +262,10 @@ pub fn generate_proof(
     cfg: Config,
     nonces: usize,
     threads: usize,
+    pow_flags: crate::pow::RandomXFlag,
 ) -> eyre::Result<Proof> {
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
-    let params = ProvingParams::new(&metadata, &cfg)?;
+    let params = ProvingParams::new(&metadata, &cfg, pow_flags)?;
 
     let mut start_nonce = 0;
     let mut end_nonce = start_nonce + nonces as u32;
@@ -323,6 +324,7 @@ pub fn generate_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pow::RandomXFlag;
     use crate::{compression::decompress_indexes, difficulty::proving_difficulty};
     use rand::{thread_rng, RngCore};
     use scrypt_jane::scrypt::ScryptParams;
@@ -358,15 +360,32 @@ mod tests {
             pow_difficulty: [0xFF; 32],
             scrypt: ScryptParams::new(1, 0, 0),
         };
-        assert!(Prover8_56::new(&[0; 32], 0..16, ProvingParams::new(&meta, &cfg).unwrap()).is_ok());
-        assert!(
-            Prover8_56::new(&[0; 32], 16..32, ProvingParams::new(&meta, &cfg).unwrap()).is_ok()
-        );
+        let pow_flags = RandomXFlag::default();
+        assert!(Prover8_56::new(
+            &[0; 32],
+            0..16,
+            ProvingParams::new(&meta, &cfg, pow_flags).unwrap()
+        )
+        .is_ok());
+        assert!(Prover8_56::new(
+            &[0; 32],
+            16..32,
+            ProvingParams::new(&meta, &cfg, pow_flags).unwrap()
+        )
+        .is_ok());
 
-        assert!(Prover8_56::new(&[0; 32], 0..0, ProvingParams::new(&meta, &cfg).unwrap()).is_err());
-        assert!(
-            Prover8_56::new(&[0; 32], 1..16, ProvingParams::new(&meta, &cfg).unwrap()).is_err()
-        );
+        assert!(Prover8_56::new(
+            &[0; 32],
+            0..0,
+            ProvingParams::new(&meta, &cfg, pow_flags).unwrap()
+        )
+        .is_err());
+        assert!(Prover8_56::new(
+            &[0; 32],
+            1..16,
+            ProvingParams::new(&meta, &cfg, pow_flags).unwrap()
+        )
+        .is_err());
     }
 
     /// Test that PoW threshold is scaled with num_units.
@@ -388,8 +407,9 @@ mod tests {
             nonce: None,
             last_position: None,
         };
+        let pow_flags = RandomXFlag::default();
         {
-            let params = ProvingParams::new(&metadata, &cfg).unwrap();
+            let params = ProvingParams::new(&metadata, &cfg, pow_flags).unwrap();
             assert_eq!(params.pow_difficulty, cfg.pow_difficulty);
         }
         {
@@ -399,6 +419,7 @@ mod tests {
                     ..metadata
                 },
                 &cfg,
+                pow_flags,
             )
             .unwrap();
             assert!(params.pow_difficulty < cfg.pow_difficulty);
@@ -412,6 +433,7 @@ mod tests {
         let params = ProvingParams {
             difficulty: u64::MAX,
             pow_difficulty: [0xFF; 32],
+            pow_flags: RandomXFlag::get_recommended_flags(),
         };
         let prover = Prover8_56::new(challenge, 0..Prover8_56::NONCES_PER_AES, params).unwrap();
         let res = prover.prove(&[0u8; 8 * LABEL_SIZE], 0, |nonce, index| {
@@ -446,6 +468,7 @@ mod tests {
         let params = ProvingParams {
             difficulty: proving_difficulty(K1, NUM_LABELS as u64).unwrap(),
             pow_difficulty: [0xFF; 32],
+            pow_flags: RandomXFlag::get_recommended_flags(),
         };
 
         let indexes = loop {
@@ -502,6 +525,7 @@ mod tests {
         let params = ProvingParams {
             difficulty: proving_difficulty(k1, num_labels as u64).unwrap(),
             pow_difficulty: [0xFF; 32],
+            pow_flags: RandomXFlag::get_recommended_flags(),
         };
         let data = repeat(0..=11) // it's important for range len to not be a multiple of AES block
             .flatten()

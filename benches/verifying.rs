@@ -2,7 +2,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 use post::{
     metadata::ProofMetadata,
     prove::Proof,
-    verification::{verify, VerifyingParams},
+    verification::{Verifier, VerifyingParams},
 };
 use pprof::criterion::{Output, PProfProfiler};
 
@@ -19,24 +19,28 @@ fn verifying(c: &mut Criterion) {
     };
     let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
 
-    let (k2, k3) = (37, 37);
-    c.bench_function("verify", |b| {
-        let proof = Proof::new(
-            0,
-            (0..k2 as u64).collect::<Vec<u64>>().as_slice(),
-            num_labels.ilog2() as usize + 1,
-            0,
-        );
-        let params = VerifyingParams {
-            difficulty: u64::MAX,
-            k2,
-            k3,
-            pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(12, 0, 0),
-        };
+    let verifier = Verifier::new(post::pow::RandomXFlag::get_recommended_flags()).unwrap();
 
+    let (k2, k3) = (37, 37);
+    let proof = Proof::new(
+        0,
+        (0..k2 as u64).collect::<Vec<u64>>().as_slice(),
+        num_labels.ilog2() as usize + 1,
+        0,
+    );
+    let params = VerifyingParams {
+        difficulty: u64::MAX,
+        k2,
+        k3,
+        pow_difficulty: [0xFF; 32],
+        scrypt: ScryptParams::new(12, 0, 0),
+    };
+
+    c.bench_function("verify", |b| {
         b.iter(|| {
-            verify(&proof, &metadata, params).expect("proof should be valid");
+            verifier
+                .verify(&proof, &metadata, params)
+                .expect("proof should be valid");
         });
     });
 }

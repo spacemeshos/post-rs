@@ -7,11 +7,92 @@
 //! without actually holding the whole POST data.
 
 pub use randomx_rs::RandomXFlag;
-use randomx_rs::{RandomXCache, RandomXDataset, RandomXVM};
+use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXVM};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use thiserror::Error;
 
 const RANDOMX_CACHE_KEY: &[u8] = b"spacemesh-randomx-cache-key";
+
+pub struct PowProver {
+    cache: Option<randomx_rs::RandomXCache>,
+    dataset: Option<randomx_rs::RandomXDataset>,
+    flags: RandomXFlag,
+}
+
+impl PowProver {
+    pub fn new(flags: RandomXFlag) -> Result<PowProver, Error> {
+        let cache = RandomXCache::new(flags, RANDOMX_CACHE_KEY)?;
+        let (cache, dataset) = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
+            (None, Some(RandomXDataset::new(flags, cache, 0)?))
+        } else {
+            (Some(cache), None)
+        };
+
+        Ok(Self {
+            cache,
+            dataset,
+            flags,
+        })
+    }
+
+    fn new_vm(&self) -> Result<RandomXVM, RandomXError> {
+        RandomXVM::new(self.flags, self.cache.clone(), self.dataset.clone())
+    }
+
+    pub fn prove(
+        &self,
+        nonce_group: u8,
+        challenge: &[u8; 8],
+        difficulty: &[u8; 32],
+    ) -> Result<u64, Error> {
+        let pow_input = [[0u8; 7].as_slice(), [nonce_group].as_slice(), challenge].concat();
+
+        let (pow_nonce, _) = (0..2u64.pow(56))
+            .into_par_iter()
+            .map_init(
+                || -> Result<_, Error> { Ok((self.new_vm()?, pow_input.clone())) },
+                |state, pow_nonce| {
+                    if let Ok((vm, pow_input)) = state {
+                        pow_input[0..7].copy_from_slice(&pow_nonce.to_le_bytes()[0..7]);
+                        let hash = vm.calculate_hash(pow_input.as_slice()).ok()?;
+                        Some((pow_nonce, hash))
+                    } else {
+                        None
+                    }
+                },
+            )
+            .filter_map(|res| res)
+            .find_any(|(_, hash)| hash.as_slice() < difficulty)
+            .ok_or(Error::PoWNotFound)?;
+
+        Ok(pow_nonce)
+    }
+
+    pub fn verify(
+        &self,
+        pow: u64,
+        nonce_group: u8,
+        challenge: &[u8; 8],
+        difficulty: &[u8; 32],
+    ) -> Result<(), Error> {
+        let pow_input = [
+            &pow.to_le_bytes()[0..7],
+            [nonce_group].as_slice(),
+            challenge,
+        ]
+        .concat();
+        let vm = self.new_vm()?;
+        let hash = vm.calculate_hash(pow_input.as_slice())?;
+
+        if hash.as_slice() >= difficulty {
+            return Err(Error::InvalidPoW {
+                hash: hash.try_into().unwrap(),
+                difficulty: *difficulty,
+            });
+        }
+        Ok(())
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum Error {
@@ -26,107 +107,22 @@ pub enum Error {
     PoWNotFound,
 }
 
-fn create_vm(flags: RandomXFlag) -> Result<RandomXVM, Error> {
-    let cache = RandomXCache::new(flags, RANDOMX_CACHE_KEY)?;
-    let (cache, dataset) = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
-        (None, Some(RandomXDataset::new(flags, cache, 0)?))
-    } else {
-        (Some(cache), None)
-    };
-    RandomXVM::new(flags, cache, dataset).map_err(Error::from)
-}
-
-pub fn verify_pow(
-    pow_nonce: u64,
-    challenge: &[u8; 8],
-    nonce_group: u8,
-    difficulty: &[u8; 32],
-    flags: RandomXFlag,
-) -> Result<(), Error> {
-    let vm = create_vm(flags)?;
-    verify_pow_with_vm(pow_nonce, challenge, nonce_group, difficulty, &vm)
-}
-
-/// Verify proof of work with a pre-initialized VM.
-pub fn verify_pow_with_vm(
-    pow_nonce: u64,
-    challenge: &[u8; 8],
-    nonce_group: u8,
-    difficulty: &[u8; 32],
-    vm: &RandomXVM,
-) -> Result<(), Error> {
-    let pow_input = [
-        &pow_nonce.to_le_bytes()[0..7],
-        [nonce_group].as_slice(),
-        challenge,
-    ]
-    .concat();
-
-    let hash = vm.calculate_hash(pow_input.as_slice())?;
-
-    if hash.as_slice() >= difficulty {
-        return Err(Error::InvalidPoW {
-            hash: hash.try_into().unwrap(),
-            difficulty: *difficulty,
-        });
-    }
-    Ok(())
-}
-
-pub fn find_pow(
-    challenge: &[u8; 8],
-    nonce_group: u8,
-    difficulty: &[u8; 32],
-    flags: RandomXFlag,
-) -> Result<u64, Error> {
-    let pow_input = [[0u8; 7].as_slice(), [nonce_group].as_slice(), challenge].concat();
-
-    let cache = RandomXCache::new(flags, RANDOMX_CACHE_KEY)?;
-    let (cache, dataset) = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
-        (None, Some(RandomXDataset::new(flags, cache, 0)?))
-    } else {
-        (Some(cache), None)
-    };
-
-    let (pow_nonce, _) = (0..2u64.pow(56))
-        .into_par_iter()
-        .map_init(
-            || -> Result<_, Error> {
-                let vm = RandomXVM::new(flags, cache.clone(), dataset.clone())?;
-                Ok((vm, pow_input.clone()))
-            },
-            |state, pow_nonce| {
-                if let Ok((vm, pow_input)) = state {
-                    pow_input[0..7].copy_from_slice(&pow_nonce.to_le_bytes()[0..7]);
-                    let hash = vm.calculate_hash(pow_input.as_slice()).ok()?;
-                    Some((pow_nonce, hash))
-                } else {
-                    None
-                }
-            },
-        )
-        .filter_map(|res| res)
-        .find_any(|(_, hash)| hash.as_slice() < difficulty)
-        .ok_or(Error::PoWNotFound)?;
-
-    Ok(pow_nonce)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use proptest::prelude::*;
-    proptest! {
-        #[test]
-        fn test_pow(nonce: u8, challenge: [u8; 8]) {
-                let difficulty = &[
-                    0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                    0xff, 0xff, 0xff, 0xff,
-                ];
-                let pow = find_pow(&challenge, nonce, difficulty, RandomXFlag::get_recommended_flags()).unwrap();
-                verify_pow(pow, &challenge, nonce, difficulty, RandomXFlag::get_recommended_flags()).unwrap();
-            }
+
+    #[test]
+    fn test_pow() {
+        let nonce = 7;
+        let challenge = b"hello!!!";
+        let difficulty = &[
+            0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff,
+        ];
+        let prover = PowProver::new(RandomXFlag::get_recommended_flags()).unwrap();
+        let pow = prover.prove(nonce, &challenge, difficulty).unwrap();
+        prover.verify(pow, nonce, &challenge, difficulty).unwrap();
     }
 
     #[test]
@@ -145,6 +141,22 @@ mod tests {
         let fast = fast_vm.calculate_hash(input).unwrap();
         let light = light_vm.calculate_hash(input).unwrap();
         assert_eq!(fast, light);
+    }
+
+    #[test]
+    fn different_cache_key_gives_different_hash() {
+        let input = b"hello world";
+        let flags = RandomXFlag::get_recommended_flags();
+
+        let cache = RandomXCache::new(flags, b"key0").unwrap();
+        let vm = RandomXVM::new(flags, Some(cache), None).unwrap();
+        let hash_0 = vm.calculate_hash(input).unwrap();
+
+        let cache = RandomXCache::new(flags, b"key1").unwrap();
+        let vm = RandomXVM::new(flags, Some(cache), None).unwrap();
+        let hash_1 = vm.calculate_hash(input).unwrap();
+
+        assert_ne!(hash_0, hash_1);
     }
 
     #[test]

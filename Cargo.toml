@@ -28,7 +28,8 @@ bitvec = "1.0.1"
 rayon = "1.6.1"
 rand = "0.8.5"
 log = "0.4.17"
-randomx-rs = { git = "https://github.com/spacemeshos/randomx-rs", rev = "5b03270fa4a0ae5a2d3b1d1b9bc60485f058827d" }
+randomx-rs = { git = "https://github.com/spacemeshos/randomx-rs", rev = "c039f493ea922f54c8fd142c6b231ff2a8566a39" }
+
 
 primitive-types = "0.12.1"
 thiserror = "1.0.40"
