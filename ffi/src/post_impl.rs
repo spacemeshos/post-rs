@@ -231,7 +231,11 @@ mod tests {
                 std::ptr::null(),
                 super::Proof {
                     nonce: 0,
-                    indices: crate::ArrayU8::from([0; 4]),
+                    indices: crate::ArrayU8 {
+                        ptr: std::ptr::null_mut(),
+                        len: 0,
+                        cap: 0,
+                    },
                     pow: 0,
                 },
                 std::ptr::null(),
