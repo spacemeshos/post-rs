@@ -117,7 +117,7 @@ jobs:
             artifact-name: macos
             toolchain: stable
 
-          - os: windows-latest
+          - os: windows-2019
             dylib: post.dll
             staticlib: post.lib
             artifact-name: windows
@@ -126,7 +126,7 @@ jobs:
       - if: matrix.os == 'ubuntu-20.04'
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
         name: Install opencl
-      - if: matrix.os == 'windows-latest'
+      - if: matrix.os == 'windows-2019'
         name: Install opencl
         run: vcpkg install opencl
       - uses: actions/checkout@v3
@@ -137,7 +137,7 @@ jobs:
         with:
           key: ${{ join( matrix.os, '-' ) }}
 
-      - if: matrix.os == 'windows-latest'
+      - if: matrix.os == 'windows-2019'
         name: Download OpenCL.lib
         run: |
           pwd
@@ -171,7 +171,7 @@ jobs:
         with:
           name: profiler-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
           path: |
-            target/release/profiler${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+            target/release/profiler${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
 
   release:
