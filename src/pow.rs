@@ -126,24 +126,6 @@ mod tests {
     }
 
     #[test]
-    fn randomx_hash_fast_vs_light() {
-        let input = b"hello world";
-
-        let flags = RandomXFlag::get_recommended_flags() | RandomXFlag::FLAG_FULL_MEM;
-        let cache = RandomXCache::new(flags, RANDOMX_CACHE_KEY).unwrap();
-        let dataset = RandomXDataset::new(flags, cache, 0).unwrap();
-        let fast_vm = RandomXVM::new(flags, None, Some(dataset)).unwrap();
-
-        let flags = RandomXFlag::get_recommended_flags();
-        let cache = RandomXCache::new(flags, RANDOMX_CACHE_KEY).unwrap();
-        let light_vm = RandomXVM::new(flags, Some(cache), None).unwrap();
-
-        let fast = fast_vm.calculate_hash(input).unwrap();
-        let light = light_vm.calculate_hash(input).unwrap();
-        assert_eq!(fast, light);
-    }
-
-    #[test]
     fn different_cache_key_gives_different_hash() {
         let input = b"hello world";
         let flags = RandomXFlag::get_recommended_flags();

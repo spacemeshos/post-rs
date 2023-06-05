@@ -1,6 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 
 use post::pow::{PowProver, RandomXFlag};
+#[cfg(not(windows))]
 use pprof::criterion::{Output, PProfProfiler};
 use rayon::ThreadPoolBuilder;
 
@@ -78,21 +79,18 @@ fn verify_pow_fast(c: &mut Criterion) {
     });
 }
 
-fn randomx_dataset_init(c: &mut Criterion) {
-    let flags = RandomXFlag::get_recommended_flags() | RandomXFlag::FLAG_FULL_MEM;
-
-    c.bench_function("randomx_dataset_init", |b| {
-        b.iter(|| {
-            let cache = randomx_rs::RandomXCache::new(flags, black_box(b"key")).unwrap();
-            let dataset = randomx_rs::RandomXDataset::new(flags, cache, 0).unwrap();
-            black_box(dataset);
-        })
-    });
+#[cfg(not(windows))]
+fn config() -> Criterion {
+    Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)))
+}
+#[cfg(windows)]
+fn config() -> Criterion {
+    Criterion::default()
 }
 
 criterion_group!(
     name = benches;
-    config = Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)));
+    config = config();
     targets=
         bench_pow,
         verify_pow_light_stateless,

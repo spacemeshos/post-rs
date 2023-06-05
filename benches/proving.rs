@@ -2,6 +2,7 @@ use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use post::{prove::Prover, prove::Prover8_56, prove::ProvingParams};
+#[cfg(not(windows))]
 use pprof::criterion::{Output, PProfProfiler};
 use rand::{thread_rng, RngCore};
 use rayon::prelude::{ParallelBridge, ParallelIterator};
@@ -77,9 +78,18 @@ fn prover_bench(c: &mut Criterion) {
     }
 }
 
+#[cfg(not(windows))]
+fn config() -> Criterion {
+    Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)))
+}
+#[cfg(windows)]
+fn config() -> Criterion {
+    Criterion::default()
+}
+
 criterion_group!(
     name = benches;
-    config = Criterion::default().with_profiler(PProfProfiler::new(1000, Output::Flamegraph(None)));
+    config = config();
     targets=prover_bench,
 );
 

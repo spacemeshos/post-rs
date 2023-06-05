@@ -4,6 +4,7 @@ use post::{
     prove::Proof,
     verification::{Verifier, VerifyingParams},
 };
+#[cfg(not(windows))]
 use pprof::criterion::{Output, PProfProfiler};
 
 use scrypt_jane::scrypt::ScryptParams;
@@ -45,9 +46,18 @@ fn verifying(c: &mut Criterion) {
     });
 }
 
+#[cfg(not(windows))]
+fn config() -> Criterion {
+    Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)))
+}
+#[cfg(windows)]
+fn config() -> Criterion {
+    Criterion::default()
+}
+
 criterion_group!(
     name = benches;
-    config = Criterion::default().with_profiler(PProfProfiler::new(1000, Output::Flamegraph(None)));
+    config = config();
     targets=verifying
 );
 
