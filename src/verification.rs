@@ -270,6 +270,17 @@ mod tests {
                 .is_err());
         }
         {
+            let nonce_out_of_bounds_proof = Proof {
+                nonce: 256 * 16,
+                indices: vec![],
+                pow,
+            };
+            let res = verifier
+                .verify(&nonce_out_of_bounds_proof, &fake_metadata, params)
+                .expect_err("should fail");
+            assert!(res.to_string().contains("out of bound"));
+        }
+        {
             let proof_with_not_enough_indices = Proof {
                 nonce: 0,
                 indices: vec![1, 2, 3],
