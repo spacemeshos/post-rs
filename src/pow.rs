@@ -121,8 +121,8 @@ mod tests {
             0xff, 0xff, 0xff, 0xff,
         ];
         let prover = PowProver::new(RandomXFlag::get_recommended_flags()).unwrap();
-        let pow = prover.prove(nonce, &challenge, difficulty).unwrap();
-        prover.verify(pow, nonce, &challenge, difficulty).unwrap();
+        let pow = prover.prove(nonce, challenge, difficulty).unwrap();
+        prover.verify(pow, nonce, challenge, difficulty).unwrap();
     }
 
     #[test]

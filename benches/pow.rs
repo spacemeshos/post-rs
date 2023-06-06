@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 
 use post::pow::{PowProver, RandomXFlag};
 #[cfg(not(windows))]
@@ -26,7 +26,7 @@ fn bench_pow(c: &mut Criterion) {
             BenchmarkId::from_parameter(format!("threads={threads}")),
             |b| {
                 b.iter_batched(
-                    || rand::random(),
+                    rand::random,
                     |nonce| pool.install(|| prover.prove(nonce, b"challeng", difficulty).unwrap()),
                     BatchSize::SmallInput,
                 )
@@ -39,7 +39,7 @@ fn verify_pow_light_stateless(c: &mut Criterion) {
     let flags = RandomXFlag::get_recommended_flags();
     c.bench_function("verify_pow_light_stateless", |b| {
         b.iter_batched(
-            || rand::random(),
+            rand::random,
             |pow| {
                 let prover = PowProver::new(flags).unwrap();
                 prover.verify(pow, 7, b"challeng", &[0xFFu8; 32]).unwrap();
@@ -55,7 +55,7 @@ fn verify_pow_light(c: &mut Criterion) {
 
     c.bench_function("verify_pow_light", |b| {
         b.iter_batched(
-            || rand::random(),
+            rand::random,
             |pow| {
                 prover.verify(pow, 7, b"challeng", &[0xFFu8; 32]).unwrap();
             },
@@ -70,7 +70,7 @@ fn verify_pow_fast(c: &mut Criterion) {
 
     c.bench_function("verify_pow_fast", |b| {
         b.iter_batched(
-            || rand::random(),
+            rand::random,
             |pow| {
                 prover.verify(pow, 7, b"challeng", &[0xFFu8; 32]).unwrap();
             },
@@ -95,8 +95,7 @@ criterion_group!(
         bench_pow,
         verify_pow_light_stateless,
         verify_pow_light,
-        verify_pow_fast,
-        randomx_dataset_init
+        verify_pow_fast
 );
 
 criterion_main!(benches);

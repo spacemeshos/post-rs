@@ -121,12 +121,12 @@ pub extern "C" fn new_verifier(
     match post::verification::Verifier::new(flags) {
         Ok(verifier) => {
             unsafe { *out = Box::into_raw(Box::new(verifier)) };
-            return VerifyResult::Ok;
+            VerifyResult::Ok
         }
 
         Err(e) => {
             log::error!("{e:?}");
-            return VerifyResult::FailedToCreateVerifier;
+            VerifyResult::FailedToCreateVerifier
         }
     }
 }

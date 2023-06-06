@@ -58,7 +58,7 @@ fn test_generate_and_verify() {
 
     // Check that the proof is invalid if we modify one index
     let mut invalid_proof = proof;
-    invalid_proof.pow = invalid_proof.pow - 1;
+    invalid_proof.pow -= 1;
     verifier
         .verify(
             &invalid_proof,
