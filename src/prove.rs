@@ -12,6 +12,7 @@ use aes::cipher::block_padding::NoPadding;
 use aes::cipher::BlockEncrypt;
 use eyre::Context;
 use primitive_types::U256;
+use randomx_rs::RandomXFlag;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 use std::{collections::HashMap, ops::Range, path::Path, sync::Mutex};
 
@@ -21,7 +22,7 @@ use crate::{
     config::Config,
     difficulty::proving_difficulty,
     metadata::{self, PostMetadata},
-    pow::{PowProver, RandomXFlag},
+    pow,
     reader::read_data,
 };
 
@@ -126,7 +127,7 @@ impl Prover8_56 {
         let ciphers: Vec<AesCipher> = nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
             .map(|nonce_group| {
                 log::info!("calculating proof of work for nonce group {nonce_group}");
-                let pow_prover = PowProver::new(params.pow_flags)?;
+                let pow_prover = pow::randomx::PoW::new(params.pow_flags)?;
                 let pow = pow_prover.prove(
                     nonce_group.try_into()?,
                     challenge[..8].try_into().unwrap(),
@@ -262,7 +263,7 @@ pub fn generate_proof(
     cfg: Config,
     nonces: usize,
     threads: usize,
-    pow_flags: crate::pow::RandomXFlag,
+    pow_flags: RandomXFlag,
 ) -> eyre::Result<Proof> {
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
     let params = ProvingParams::new(&metadata, &cfg, pow_flags)?;
@@ -324,11 +325,11 @@ pub fn generate_proof(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pow::RandomXFlag;
     use crate::{compression::decompress_indexes, difficulty::proving_difficulty};
     use rand::{thread_rng, RngCore};
     use scrypt_jane::scrypt::ScryptParams;
     use std::{collections::HashMap, iter::repeat};
+    use RandomXFlag;
 
     #[test]
     fn creating_proof() {
@@ -357,6 +358,8 @@ mod tests {
             k1: 279,
             k2: 300,
             k3: 65,
+            k2_pow_dificulty: u64::MAX,
+            pow_scrypt: ScryptParams::new(1, 0, 0),
             pow_difficulty: [0xFF; 32],
             scrypt: ScryptParams::new(1, 0, 0),
         };
@@ -395,6 +398,8 @@ mod tests {
             k1: 32,
             k2: 32,
             k3: 10,
+            k2_pow_dificulty: u64::MAX / 100,
+            pow_scrypt: ScryptParams::new(1, 0, 0),
             pow_difficulty: [0x0F; 32],
             scrypt: ScryptParams::new(2, 0, 0),
         };

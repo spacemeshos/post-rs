@@ -31,7 +31,7 @@ fn prover_bench(c: &mut Criterion) {
     let params = ProvingParams {
         difficulty: 0,              // impossible to find a proof
         pow_difficulty: [0xFF; 32], // extremely easy to find pow nonce
-        pow_flags: post::pow::RandomXFlag::get_recommended_flags(),
+        pow_flags: post::pow::randomx::RandomXFlag::get_recommended_flags(),
     };
 
     for (nonces, threads) in itertools::iproduct!(

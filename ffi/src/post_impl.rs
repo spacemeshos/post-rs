@@ -45,7 +45,7 @@ pub extern "C" fn generate_proof(
     cfg: Config,
     nonces: usize,
     threads: usize,
-    pow_flags: post::pow::RandomXFlag,
+    pow_flags: post::pow::randomx::RandomXFlag,
 ) -> *mut Proof {
     match _generate_proof(datadir, challenge, cfg, nonces, threads, pow_flags) {
         Ok(proof) => Box::into_raw(proof),
@@ -63,7 +63,7 @@ fn _generate_proof(
     cfg: Config,
     nonces: usize,
     threads: usize,
-    pow_flags: post::pow::RandomXFlag,
+    pow_flags: post::pow::randomx::RandomXFlag,
 ) -> Result<Box<Proof>, Box<dyn Error>> {
     let datadir = unsafe { CStr::from_ptr(datadir) };
     let datadir = Path::new(
@@ -106,13 +106,13 @@ pub enum VerifyResult {
 ///
 /// The above flags need to be set manually, if required.
 #[no_mangle]
-pub extern "C" fn recommended_pow_flags() -> post::pow::RandomXFlag {
-    post::pow::RandomXFlag::get_recommended_flags()
+pub extern "C" fn recommended_pow_flags() -> post::pow::randomx::RandomXFlag {
+    post::pow::randomx::RandomXFlag::get_recommended_flags()
 }
 
 #[no_mangle]
 pub extern "C" fn new_verifier(
-    flags: post::pow::RandomXFlag,
+    flags: post::pow::randomx::RandomXFlag,
     out: *mut *mut Verifier,
 ) -> VerifyResult {
     if out.is_null() {
@@ -201,6 +201,8 @@ mod tests {
             k1: 10,
             k2: 20,
             k3: 20,
+            k2_pow_dificulty: u64::MAX,
+            pow_scrypt: ScryptParams::new(1, 1, 1),
             pow_difficulty: [0xFF; 32],
             scrypt: super::ScryptParams::new(1, 1, 1),
         };
@@ -218,7 +220,7 @@ mod tests {
     #[test]
     fn create_and_free_verifier() {
         let mut verifier = std::ptr::null_mut();
-        let result = super::new_verifier(post::pow::RandomXFlag::default(), &mut verifier);
+        let result = super::new_verifier(post::pow::randomx::RandomXFlag::default(), &mut verifier);
         assert_eq!(result, super::VerifyResult::Ok);
         assert!(!verifier.is_null());
         super::free_verifier(verifier);
@@ -243,6 +245,8 @@ mod tests {
                     k1: 1,
                     k2: 2,
                     k3: 2,
+                    k2_pow_dificulty: u64::MAX,
+                    pow_scrypt: ScryptParams::new(1, 0, 0),
                     pow_difficulty: [0xFF; 32],
                     scrypt: ScryptParams::new(1, 0, 0),
                 },

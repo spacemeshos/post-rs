@@ -1,26 +1,25 @@
-//! Proof of Work algorithm
-//!
-//! The PoW is required to prevent grinding on nonces
-//! when looking for a proof. Without it a malicious actor
-//! with a powerful enough computer could try many nonces
-//! at the same time. In effect a proof could be found
-//! without actually holding the whole POST data.
-
 pub use randomx_rs::RandomXFlag;
 use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXVM};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use thiserror::Error;
+
+use super::Error;
 
 const RANDOMX_CACHE_KEY: &[u8] = b"spacemesh-randomx-cache-key";
 
-pub struct PowProver {
+impl From<randomx_rs::RandomXError> for Error {
+    fn from(e: randomx_rs::RandomXError) -> Self {
+        Error::Internal(Box::new(e))
+    }
+}
+
+pub struct PoW {
     cache: Option<randomx_rs::RandomXCache>,
     dataset: Option<randomx_rs::RandomXDataset>,
     flags: RandomXFlag,
 }
 
-impl PowProver {
-    pub fn new(flags: RandomXFlag) -> Result<PowProver, Error> {
+impl PoW {
+    pub fn new(flags: RandomXFlag) -> Result<PoW, Error> {
         let cache = RandomXCache::new(flags, RANDOMX_CACHE_KEY)?;
         let (cache, dataset) = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
             (None, Some(RandomXDataset::new(flags, cache, 0)?))
@@ -85,26 +84,10 @@ impl PowProver {
         let hash = vm.calculate_hash(pow_input.as_slice())?;
 
         if hash.as_slice() >= difficulty {
-            return Err(Error::InvalidPoW {
-                hash: hash.try_into().unwrap(),
-                difficulty: *difficulty,
-            });
+            return Err(Error::InvalidPoW);
         }
         Ok(())
     }
-}
-
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("Proof of work is invalid: {hash:?} >= {difficulty:?}")]
-    InvalidPoW {
-        hash: [u8; 32],
-        difficulty: [u8; 32],
-    },
-    #[error("Fail in RandomX: {0}")]
-    RandomXError(#[from] randomx_rs::RandomXError),
-    #[error("Proof of work not found")]
-    PoWNotFound,
 }
 
 #[cfg(test)]
@@ -120,7 +103,7 @@ mod tests {
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff,
         ];
-        let prover = PowProver::new(RandomXFlag::get_recommended_flags()).unwrap();
+        let prover = PoW::new(RandomXFlag::get_recommended_flags()).unwrap();
         let pow = prover.prove(nonce, challenge, difficulty).unwrap();
         prover.verify(pow, nonce, challenge, difficulty).unwrap();
     }

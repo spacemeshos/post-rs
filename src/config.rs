@@ -7,6 +7,13 @@ pub struct Config {
     pub k2: u32,
     /// K3 is the size of the subset of proof indices that is validated.
     pub k3: u32,
+    /// Difficulty for K2 proof of work. Lower values increase difficulty of finding
+    /// `k2_pow` for [Proof][crate::prove::Proof].
+    /// deprecated since "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
+    pub k2_pow_dificulty: u64,
+    /// Scrypt parameters for the Proofs of Work
+    /// deprecated since "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
+    pub pow_scrypt: scrypt_jane::scrypt::ScryptParams,
     /// Difficulty for the nonce proof of work. Lower values increase difficulty of finding
     /// `pow` for [Proof][crate::prove::Proof].
     pub pow_difficulty: [u8; 32],

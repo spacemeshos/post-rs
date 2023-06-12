@@ -6,7 +6,7 @@ use std::{
 
 use clap::Parser;
 use post::{
-    pow::RandomXFlag,
+    pow::randomx::RandomXFlag,
     prove::{Prover, Prover8_56, ProvingParams},
 };
 use rayon::prelude::{ParallelBridge, ParallelIterator};
