@@ -192,8 +192,6 @@ pub unsafe extern "C" fn verify_proof(
 
 #[cfg(test)]
 mod tests {
-    use post::ScryptParams;
-
     #[test]
     fn datadir_must_be_utf8() {
         let datadir = std::ffi::CString::new([159, 146, 150]).unwrap();
@@ -201,8 +199,8 @@ mod tests {
             k1: 10,
             k2: 20,
             k3: 20,
-            k2_pow_dificulty: u64::MAX,
-            pow_scrypt: ScryptParams::new(1, 1, 1),
+            k2_pow_difficulty: u64::MAX,
+            pow_scrypt: super::ScryptParams::new(1, 1, 1),
             pow_difficulty: [0xFF; 32],
             scrypt: super::ScryptParams::new(1, 1, 1),
         };
@@ -245,10 +243,10 @@ mod tests {
                     k1: 1,
                     k2: 2,
                     k3: 2,
-                    k2_pow_dificulty: u64::MAX,
-                    pow_scrypt: ScryptParams::new(1, 0, 0),
+                    k2_pow_difficulty: u64::MAX,
+                    pow_scrypt: super::ScryptParams::new(1, 0, 0),
                     pow_difficulty: [0xFF; 32],
-                    scrypt: ScryptParams::new(1, 0, 0),
+                    scrypt: super::ScryptParams::new(1, 0, 0),
                 },
             )
         };

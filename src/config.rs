@@ -10,7 +10,7 @@ pub struct Config {
     /// Difficulty for K2 proof of work. Lower values increase difficulty of finding
     /// `k2_pow` for [Proof][crate::prove::Proof].
     /// deprecated since "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
-    pub k2_pow_dificulty: u64,
+    pub k2_pow_difficulty: u64,
     /// Scrypt parameters for the Proofs of Work
     /// deprecated since "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
     pub pow_scrypt: scrypt_jane::scrypt::ScryptParams,

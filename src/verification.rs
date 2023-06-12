@@ -39,6 +39,7 @@ use std::{cmp::Ordering, error::Error};
 
 use cipher::BlockEncrypt;
 use itertools::Itertools;
+use primitive_types::U256;
 use randomx_rs::RandomXFlag;
 use scrypt_jane::scrypt::ScryptParams;
 
@@ -62,9 +63,9 @@ pub struct VerifyingParams {
     pub k2: u32,
     pub k3: u32,
     /// deprecated since = "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
-    pub pow_scrypt: ScryptParams,
-    /// deprecated since = "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
     pub scrypt_pow_difficulty: u64,
+    /// deprecated since = "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
+    pub pow_scrypt: ScryptParams,
     pub pow_difficulty: [u8; 32],
     pub scrypt: ScryptParams,
 }
@@ -72,13 +73,20 @@ pub struct VerifyingParams {
 impl VerifyingParams {
     pub fn new(metadata: &ProofMetadata, cfg: &Config) -> eyre::Result<Self> {
         let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
+
+        // Scale PoW difficulty by number of units
+        eyre::ensure!(metadata.num_units > 0, "num_units must be > 0");
+        let difficulty_scaled = U256::from_big_endian(&cfg.pow_difficulty) / metadata.num_units;
+        let mut pow_difficulty = [0u8; 32];
+        difficulty_scaled.to_big_endian(&mut pow_difficulty);
+
         Ok(Self {
             difficulty: proving_difficulty(cfg.k1, num_labels)?,
             k2: cfg.k2,
             k3: cfg.k3,
+            scrypt_pow_difficulty: cfg.k2_pow_difficulty / metadata.num_units as u64,
             pow_scrypt: cfg.pow_scrypt,
-            scrypt_pow_difficulty: cfg.k2_pow_dificulty,
-            pow_difficulty: cfg.pow_difficulty,
+            pow_difficulty,
             scrypt: cfg.scrypt,
         })
     }
@@ -225,6 +233,7 @@ mod tests {
     use scrypt_jane::scrypt::ScryptParams;
 
     use crate::{
+        config::Config,
         metadata::ProofMetadata,
         pow::randomx::{PoW, RandomXFlag},
         prove::Proof,
@@ -370,5 +379,56 @@ mod tests {
             pow,
         };
         verifier.verify(&proof, &fake_metadata, params).unwrap();
+    }
+
+    /// Test that PoW threshold is scaled with num_units.
+    #[test]
+    fn scaling_pow_thresholds() {
+        let cfg = Config {
+            k1: 0,
+            k2: 0,
+            k3: 0,
+            k2_pow_difficulty: u64::MAX,
+            pow_difficulty: [0xFF; 32],
+            pow_scrypt: ScryptParams::new(1, 0, 0),
+            scrypt: ScryptParams::new(2, 0, 0),
+        };
+        let metadata = ProofMetadata {
+            node_id: [0u8; 32],
+            commitment_atx_id: [0u8; 32],
+            challenge: [0u8; 32],
+            num_units: 1,
+            labels_per_unit: 100,
+        };
+        {
+            // reject zero num_units
+            let params = VerifyingParams::new(
+                &ProofMetadata {
+                    num_units: 0,
+                    ..metadata
+                },
+                &cfg,
+            );
+            assert!(params.is_err());
+        }
+        {
+            // don't scale when num_units is 1
+            let params = VerifyingParams::new(&metadata, &cfg).unwrap();
+            assert_eq!(params.pow_difficulty, cfg.pow_difficulty);
+            assert_eq!(params.scrypt_pow_difficulty, cfg.k2_pow_difficulty);
+        }
+        {
+            // scale with num_units
+            let params = VerifyingParams::new(
+                &ProofMetadata {
+                    num_units: 10,
+                    ..metadata
+                },
+                &cfg,
+            )
+            .unwrap();
+            assert!(params.pow_difficulty < cfg.pow_difficulty);
+            assert!(params.scrypt_pow_difficulty < cfg.k2_pow_difficulty);
+        }
     }
 }
