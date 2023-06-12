@@ -93,13 +93,13 @@ impl VerifyingParams {
 }
 
 pub struct Verifier {
-    pow_prover: pow::randomx::PoW,
+    pow_verifier: pow::randomx::PoW,
 }
 
 impl Verifier {
     pub fn new(pow_flags: RandomXFlag) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
-            pow_prover: pow::randomx::PoW::new(pow_flags)?,
+            pow_verifier: pow::randomx::PoW::new(pow_flags)?,
         })
     }
 
@@ -121,7 +121,7 @@ impl Verifier {
 
         // Verify K2 PoW
         let nonce_group = proof.nonce / NONCES_PER_AES;
-        let res = self.pow_prover.verify(
+        let res = self.pow_verifier.verify(
             proof.pow,
             nonce_group
                 .try_into()
