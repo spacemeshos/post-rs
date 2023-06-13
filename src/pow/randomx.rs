@@ -1,6 +1,9 @@
+use std::ops::Deref;
+
 pub use randomx_rs::RandomXFlag;
 use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXVM};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use thread_local::ThreadLocal;
 
 use super::Error;
 
@@ -16,6 +19,23 @@ pub struct PoW {
     cache: Option<randomx_rs::RandomXCache>,
     dataset: Option<randomx_rs::RandomXDataset>,
     flags: RandomXFlag,
+    vms: ThreadLocal<Vm>,
+}
+
+struct Vm(RandomXVM);
+
+impl Drop for Vm {
+    fn drop(&mut self) {
+        log::debug!("Dropping RandomXVM");
+    }
+}
+
+impl Deref for Vm {
+    type Target = RandomXVM;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl PoW {
@@ -31,11 +51,16 @@ impl PoW {
             cache,
             dataset,
             flags,
+            vms: ThreadLocal::new(),
         })
     }
 
-    fn new_vm(&self) -> Result<RandomXVM, RandomXError> {
-        RandomXVM::new(self.flags, self.cache.clone(), self.dataset.clone())
+    fn get_vm(&self) -> Result<&Vm, RandomXError> {
+        self.vms.get_or_try(|| {
+            log::debug!("Creating RandomXVM");
+            let vm = RandomXVM::new(self.flags, self.cache.clone(), self.dataset.clone())?;
+            Ok(Vm(vm))
+        })
     }
 
     pub fn prove(
@@ -49,7 +74,7 @@ impl PoW {
         let (pow_nonce, _) = (0..2u64.pow(56))
             .into_par_iter()
             .map_init(
-                || -> Result<_, Error> { Ok((self.new_vm()?, pow_input.clone())) },
+                || -> Result<_, Error> { Ok((self.get_vm()?, pow_input.clone())) },
                 |state, pow_nonce| {
                     if let Ok((vm, pow_input)) = state {
                         pow_input[0..7].copy_from_slice(&pow_nonce.to_le_bytes()[0..7]);
@@ -80,7 +105,7 @@ impl PoW {
             challenge,
         ]
         .concat();
-        let vm = self.new_vm()?;
+        let vm = self.get_vm()?;
         let hash = vm.calculate_hash(pow_input.as_slice())?;
 
         if hash.as_slice() >= difficulty {

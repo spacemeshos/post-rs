@@ -98,6 +98,7 @@ pub struct Verifier {
 
 impl Verifier {
     pub fn new(pow_flags: RandomXFlag) -> Result<Self, Box<dyn Error>> {
+        log::info!("initializing verifier with PoW flags: {:?}", pow_flags);
         Ok(Self {
             pow_verifier: pow::randomx::PoW::new(pow_flags)?,
         })

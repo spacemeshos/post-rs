@@ -1574,6 +1574,7 @@ dependencies = [
  "serde_with",
  "tempfile",
  "thiserror",
+ "thread_local",
 ]
 
 [[package]]
@@ -1766,7 +1767,7 @@ dependencies = [
 [[package]]
 name = "randomx-rs"
 version = "1.1.15"
-source = "git+https://github.com/spacemeshos/randomx-rs?rev=c039f493ea922f54c8fd142c6b231ff2a8566a39#c039f493ea922f54c8fd142c6b231ff2a8566a39"
+source = "git+https://github.com/spacemeshos/randomx-rs?rev=18080c74da8b179a2e99d2eef4e0c0279fd6f75a#18080c74da8b179a2e99d2eef4e0c0279fd6f75a"
 dependencies = [
  "bitflags",
  "libc",
@@ -2193,6 +2194,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.15",
+]
+
+[[package]]
+name = "thread_local"
+version = "1.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fdd6f064ccff2d6567adcb3873ca630700f00b5ad3f060c25b5dcfd9a4ce152"
+dependencies = [
+ "cfg-if",
+ "once_cell",
 ]
 
 [[package]]
