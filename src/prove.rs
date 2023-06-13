@@ -123,17 +123,20 @@ impl Prover8_56 {
             !nonces.is_empty() && nonces.len() % Self::NONCES_PER_AES as usize == 0,
             "nonces must be a multiple of 16"
         );
-
+        log::info!(
+            "calculating proof of work for nonces {nonces:?} with PoW flags: {:?}",
+            params.pow_flags
+        );
         let ciphers: Vec<AesCipher> = nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
             .map(|nonce_group| {
-                log::info!("calculating proof of work for nonce group {nonce_group}");
+                log::debug!("calculating proof of work for nonce group {nonce_group}");
                 let pow_prover = pow::randomx::PoW::new(params.pow_flags)?;
                 let pow = pow_prover.prove(
                     nonce_group.try_into()?,
                     challenge[..8].try_into().unwrap(),
                     &params.pow_difficulty,
                 )?;
-                log::info!("proof of work: {pow}");
+                log::debug!("proof of work: {pow}");
 
                 Ok(AesCipher::new(challenge, nonce_group, pow))
             })
