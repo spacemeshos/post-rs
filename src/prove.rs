@@ -127,10 +127,10 @@ impl Prover8_56 {
             "calculating proof of work for nonces {nonces:?} with PoW flags: {:?}",
             params.pow_flags
         );
+        let pow_prover = pow::randomx::PoW::new(params.pow_flags)?;
         let ciphers: Vec<AesCipher> = nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
             .map(|nonce_group| {
                 log::debug!("calculating proof of work for nonce group {nonce_group}");
-                let pow_prover = pow::randomx::PoW::new(params.pow_flags)?;
                 let pow = pow_prover.prove(
                     nonce_group.try_into()?,
                     challenge[..8].try_into().unwrap(),
