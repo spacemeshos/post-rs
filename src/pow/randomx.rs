@@ -3,7 +3,7 @@ use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXVM};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use thread_local::ThreadLocal;
 
-use super::Error;
+use super::{Error, Prover};
 
 const RANDOMX_CACHE_KEY: &[u8] = b"spacemesh-randomx-cache-key";
 
@@ -42,7 +42,31 @@ impl PoW {
             .get_or_try(|| RandomXVM::new(self.flags, self.cache.clone(), self.dataset.clone()))
     }
 
-    pub fn prove(
+    pub fn verify(
+        &self,
+        pow: u64,
+        nonce_group: u8,
+        challenge: &[u8; 8],
+        difficulty: &[u8; 32],
+    ) -> Result<(), Error> {
+        let pow_input = [
+            &pow.to_le_bytes()[0..7],
+            [nonce_group].as_slice(),
+            challenge,
+        ]
+        .concat();
+        let vm = self.get_vm()?;
+        let hash = vm.calculate_hash(pow_input.as_slice())?;
+
+        if hash.as_slice() >= difficulty {
+            return Err(Error::InvalidPoW);
+        }
+        Ok(())
+    }
+}
+
+impl Prover for PoW {
+    fn prove(
         &self,
         nonce_group: u8,
         challenge: &[u8; 8],
@@ -69,28 +93,6 @@ impl PoW {
             .ok_or(Error::PoWNotFound)?;
 
         Ok(pow_nonce)
-    }
-
-    pub fn verify(
-        &self,
-        pow: u64,
-        nonce_group: u8,
-        challenge: &[u8; 8],
-        difficulty: &[u8; 32],
-    ) -> Result<(), Error> {
-        let pow_input = [
-            &pow.to_le_bytes()[0..7],
-            [nonce_group].as_slice(),
-            challenge,
-        ]
-        .concat();
-        let vm = self.get_vm()?;
-        let hash = vm.calculate_hash(pow_input.as_slice())?;
-
-        if hash.as_slice() >= difficulty {
-            return Err(Error::InvalidPoW);
-        }
-        Ok(())
     }
 }
 

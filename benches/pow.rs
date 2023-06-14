@@ -1,6 +1,9 @@
 use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 
-use post::pow::randomx::{PoW, RandomXFlag};
+use post::pow::{
+    randomx::{PoW, RandomXFlag},
+    Prover,
+};
 #[cfg(not(windows))]
 use pprof::criterion::{Output, PProfProfiler};
 use rayon::ThreadPoolBuilder;
