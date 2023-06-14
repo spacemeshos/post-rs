@@ -13,7 +13,7 @@ use aes::cipher::BlockEncrypt;
 use eyre::Context;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 use scrypt_jane::scrypt::ScryptParams;
-use std::{collections::HashMap, ops::Range, path::Path, sync::Mutex};
+use std::{borrow::Cow, collections::HashMap, ops::Range, path::Path, sync::Mutex};
 
 use crate::{
     cipher::AesCipher,
@@ -31,17 +31,17 @@ const AES_BATCH: usize = 8; // will use encrypt8 asm method
 const CHUNK_SIZE: usize = BLOCK_SIZE * AES_BATCH;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Proof {
+pub struct Proof<'a> {
     pub nonce: u32,
-    pub indices: Vec<u8>,
+    pub indices: Cow<'a, [u8]>,
     pub k2_pow: u64,
 }
 
-impl Proof {
-    pub fn new(nonce: u32, indices: &[u64], keep_bits: usize, k2_pow: u64) -> Self {
+impl<'a> Proof<'a> {
+    pub fn new(nonce: u32, indices: &[u64], num_labels: u64, k2_pow: u64) -> Self {
         Self {
             nonce,
-            indices: compress_indices(indices, keep_bits),
+            indices: Cow::Owned(compress_indices(indices, required_bits(num_labels))),
             k2_pow,
         }
     }
@@ -255,7 +255,7 @@ pub fn generate_proof(
     cfg: Config,
     nonces: usize,
     threads: usize,
-) -> eyre::Result<Proof> {
+) -> eyre::Result<Proof<'static>> {
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
     let params = ProvingParams::new(&metadata, &cfg)?;
 
@@ -297,16 +297,9 @@ pub fn generate_proof(
 
         if let Some((nonce, indices)) = result {
             let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
-            let required_bits = required_bits(num_labels);
-            let compressed_indices = compress_indices(&indices, required_bits);
-
             let k2_pow = prover.get_k2_pow(nonce).unwrap();
             log::info!("Found proof for nonce: {nonce}, k2pow: {k2_pow} with {indices:?} indices");
-            return Ok(Proof {
-                nonce,
-                indices: compressed_indices,
-                k2_pow,
-            });
+            return Ok(Proof::new(nonce, &indices, num_labels, k2_pow));
         }
 
         (start_nonce, end_nonce) = (end_nonce, end_nonce + nonces as u32);
@@ -324,7 +317,7 @@ mod tests {
     fn creating_proof() {
         let indices = vec![0, 1, 2, 3, 4, 5, 6, 7, 8];
         let keep_bits = 4;
-        let proof = Proof::new(7, &indices, keep_bits, 77);
+        let proof = Proof::new(7, &indices, 9, 77);
         assert_eq!(7, proof.nonce);
         assert_eq!(77, proof.k2_pow);
         assert_eq!(

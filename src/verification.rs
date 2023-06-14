@@ -130,7 +130,7 @@ pub fn verify(
     let seed = &[
         challenge.as_slice(),
         &proof.nonce.to_le_bytes(),
-        proof.indices.as_slice(),
+        proof.indices.as_ref(),
         &proof.k2_pow.to_le_bytes(),
     ];
 
@@ -191,6 +191,8 @@ fn expected_indices_bytes(required_bits: usize, k2: u32) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
     use scrypt_jane::scrypt::ScryptParams;
 
     use crate::{metadata::ProofMetadata, pow::find_k2_pow, prove::Proof};
@@ -234,7 +236,7 @@ mod tests {
         {
             let empty_proof = Proof {
                 nonce: 0,
-                indices: vec![],
+                indices: Cow::from(vec![]),
                 k2_pow,
             };
             assert!(verify(&empty_proof, &fake_metadata, params).is_err());
@@ -242,7 +244,7 @@ mod tests {
         {
             let proof_with_not_enough_indices = Proof {
                 nonce: 0,
-                indices: vec![1, 2, 3],
+                indices: Cow::from(vec![1, 2, 3]),
                 k2_pow,
             };
             assert!(verify(&proof_with_not_enough_indices, &fake_metadata, params).is_err());
@@ -250,7 +252,7 @@ mod tests {
         {
             let proof_with_invalid_k2_pow = Proof {
                 nonce: 0,
-                indices: vec![1, 2, 3],
+                indices: Cow::from(vec![1, 2, 3]),
                 k2_pow: params.k2_pow_difficulty,
             };
             assert!(verify(&proof_with_invalid_k2_pow, &fake_metadata, params).is_err());
@@ -258,7 +260,7 @@ mod tests {
         {
             let proof_with_invalid_k3_pow = Proof {
                 nonce: 0,
-                indices: vec![1, 2, 3],
+                indices: Cow::from(vec![1, 2, 3]),
                 k2_pow,
             };
             assert!(verify(&proof_with_invalid_k3_pow, &fake_metadata, params).is_err());
