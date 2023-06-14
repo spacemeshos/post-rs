@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 pub use randomx_rs::RandomXFlag;
 use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXVM};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
@@ -16,26 +14,10 @@ impl From<randomx_rs::RandomXError> for Error {
 }
 
 pub struct PoW {
-    cache: Option<randomx_rs::RandomXCache>,
-    dataset: Option<randomx_rs::RandomXDataset>,
+    cache: Option<RandomXCache>,
+    dataset: Option<RandomXDataset>,
     flags: RandomXFlag,
-    vms: ThreadLocal<Vm>,
-}
-
-struct Vm(RandomXVM);
-
-impl Drop for Vm {
-    fn drop(&mut self) {
-        log::debug!("Dropping RandomXVM");
-    }
-}
-
-impl Deref for Vm {
-    type Target = RandomXVM;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+    vms: ThreadLocal<RandomXVM>,
 }
 
 impl PoW {
@@ -55,12 +37,9 @@ impl PoW {
         })
     }
 
-    fn get_vm(&self) -> Result<&Vm, RandomXError> {
-        self.vms.get_or_try(|| {
-            log::debug!("Creating RandomXVM");
-            let vm = RandomXVM::new(self.flags, self.cache.clone(), self.dataset.clone())?;
-            Ok(Vm(vm))
-        })
+    fn get_vm(&self) -> Result<&RandomXVM, RandomXError> {
+        self.vms
+            .get_or_try(|| RandomXVM::new(self.flags, self.cache.clone(), self.dataset.clone()))
     }
 
     pub fn prove(
