@@ -9,9 +9,14 @@ pub struct Config {
     pub k3: u32,
     /// Difficulty for K2 proof of work. Lower values increase difficulty of finding
     /// `k2_pow` for [Proof][crate::prove::Proof].
+    /// deprecated since "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
     pub k2_pow_difficulty: u64,
     /// Scrypt parameters for the Proofs of Work
+    /// deprecated since "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
     pub pow_scrypt: scrypt_jane::scrypt::ScryptParams,
+    /// Difficulty for the nonce proof of work. Lower values increase difficulty of finding
+    /// `pow` for [Proof][crate::prove::Proof].
+    pub pow_difficulty: [u8; 32],
     /// Scrypt paramters for initilizing labels
     pub scrypt: scrypt_jane::scrypt::ScryptParams,
 }

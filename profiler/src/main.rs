@@ -6,8 +6,8 @@ use std::{
 
 use clap::Parser;
 use post::{
+    pow::randomx::RandomXFlag,
     prove::{Prover, Prover8_56, ProvingParams},
-    ScryptParams,
 };
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 use serde::Serialize;
@@ -44,10 +44,6 @@ struct Args {
     /// but also slows down the process.
     #[arg(short, long, default_value_t = 16)]
     nonces: u32,
-
-    // Difficulty factor of k2_pow.
-    #[arg(long, default_value_t = u64::MAX)]
-    k2_pow_difficulty: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -74,9 +70,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let challenge = b"hello world, challenge me!!!!!!!";
     let batch_size = 1024 * 1024;
     let params = ProvingParams {
-        pow_scrypt: ScryptParams::new(6, 0, 0),
         difficulty: 0, // impossible to find a proof
-        k2_pow_difficulty: args.k2_pow_difficulty,
+        pow_difficulty: [0xFF; 32],
+        pow_flags: RandomXFlag::get_recommended_flags(),
     };
 
     let total_size = args.data_size * 1024 * 1024 * 1024;

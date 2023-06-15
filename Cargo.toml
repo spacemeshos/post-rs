@@ -28,13 +28,21 @@ bitvec = "1.0.1"
 rayon = "1.6.1"
 rand = "0.8.5"
 log = "0.4.17"
+randomx-rs = { git = "https://github.com/spacemeshos/randomx-rs", rev = "18080c74da8b179a2e99d2eef4e0c0279fd6f75a" }
+
+
+primitive-types = "0.12.1"
+thiserror = "1.0.40"
+thread_local = "1.1.7"
 
 [dev-dependencies]
 criterion = "0.4"
-pprof = { version = "0.11.1", features = ["flamegraph", "criterion"] }
 tempfile = "3.3.0"
 rand = "0.8.5"
 proptest = "1.1.0"
+
+[target.'cfg(not(windows))'.dev-dependencies]
+pprof = { version = "0.11.1", features = ["flamegraph", "criterion"] }
 
 [[bench]]
 name = "proving"

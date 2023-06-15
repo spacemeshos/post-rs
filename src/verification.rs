@@ -2,7 +2,7 @@
 //!
 //! ## Steps to verify a proof:
 //!
-//! 1. verify k2_pow
+//! 1. verify PoW
 //! 2. verify number of indices == K2
 //! 3. select K3 indices
 //! 4. verify each of K3 selected indices satisfy difficulty (inferred from K1)
@@ -10,7 +10,7 @@
 //! ## Selecting subset of K3 proven indices
 //!
 //! ```text
-//! seed = concat(ch, nonce, indices, k2pow)
+//! seed = concat(ch, nonce, indices, pow)
 //! random_bytes = blake3(seed) // infinite blake output
 //! for (index=0; index<K3; index++) {
 //!   remaining = K2 - index
@@ -35,10 +35,12 @@
 //!     - encrypt it with AES,
 //!     - convert AES output to u64,
 //!     - compare it with difficulty.
-use std::cmp::Ordering;
+use std::{cmp::Ordering, error::Error};
 
 use cipher::BlockEncrypt;
 use itertools::Itertools;
+use primitive_types::U256;
+use randomx_rs::RandomXFlag;
 use scrypt_jane::scrypt::ScryptParams;
 
 use crate::{
@@ -48,7 +50,7 @@ use crate::{
     difficulty::proving_difficulty,
     initialize::{calc_commitment, generate_label},
     metadata::ProofMetadata,
-    pow::hash_k2_pow,
+    pow,
     prove::{Proof, Prover8_56},
     random_values_gen::RandomValuesIterator,
 };
@@ -60,83 +62,120 @@ pub struct VerifyingParams {
     pub difficulty: u64,
     pub k2: u32,
     pub k3: u32,
-    pub k2_pow_difficulty: u64,
+    /// deprecated since = "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
+    pub scrypt_pow_difficulty: u64,
+    /// deprecated since = "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
     pub pow_scrypt: ScryptParams,
+    pub pow_difficulty: [u8; 32],
     pub scrypt: ScryptParams,
 }
 
 impl VerifyingParams {
     pub fn new(metadata: &ProofMetadata, cfg: &Config) -> eyre::Result<Self> {
         let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
+
+        // Scale PoW difficulty by number of units
+        eyre::ensure!(metadata.num_units > 0, "num_units must be > 0");
+        let difficulty_scaled = U256::from_big_endian(&cfg.pow_difficulty) / metadata.num_units;
+        let mut pow_difficulty = [0u8; 32];
+        difficulty_scaled.to_big_endian(&mut pow_difficulty);
+
         Ok(Self {
             difficulty: proving_difficulty(cfg.k1, num_labels)?,
             k2: cfg.k2,
             k3: cfg.k3,
-            k2_pow_difficulty: cfg.k2_pow_difficulty / metadata.num_units as u64,
+            scrypt_pow_difficulty: cfg.k2_pow_difficulty / metadata.num_units as u64,
             pow_scrypt: cfg.pow_scrypt,
+            pow_difficulty,
             scrypt: cfg.scrypt,
         })
     }
 }
 
-/// Verify if a proof is valid.
-///
-/// Arguments:
-///
-/// * `proof`: The proof that to verify
-/// * `metadata`: ProofMetadata
-/// * `params`: VerifyingParams
-/// * `threads`: The number of threads to use for verification.
-pub fn verify(
-    proof: &Proof,
-    metadata: &ProofMetadata,
-    params: VerifyingParams,
-) -> Result<(), String> {
-    let challenge = metadata.challenge;
+pub struct Verifier {
+    pow_verifier: pow::randomx::PoW,
+}
 
-    // Verify K2 PoW
-    let nonce_group = proof.nonce / NONCES_PER_AES;
-    let k2_pow_value = hash_k2_pow(&challenge, nonce_group, params.pow_scrypt, proof.k2_pow);
-    if k2_pow_value >= params.k2_pow_difficulty {
-        return Err(format!(
-            "k2 pow is invalid: {k2_pow_value} >= {}",
-            params.k2_pow_difficulty
-        ));
+impl Verifier {
+    pub fn new(pow_flags: RandomXFlag) -> Result<Self, Box<dyn Error>> {
+        log::info!("initializing verifier with PoW flags: {:?}", pow_flags);
+        Ok(Self {
+            pow_verifier: pow::randomx::PoW::new(pow_flags)?,
+        })
     }
 
-    // Verify the number of indices against K2
-    let num_lables = metadata.num_units as u64 * metadata.labels_per_unit;
-    let bits_per_index = required_bits(num_lables);
-    let expected_indices_len = expected_indices_bytes(bits_per_index, params.k2);
-    if proof.indices.len() != expected_indices_len {
-        return Err(format!(
-            "indices length is invalid ({} != {expected_indices_len})",
-            proof.indices.len()
-        ));
-    }
+    /// Verify if a proof is valid.
+    ///
+    /// Arguments:
+    ///
+    /// * `proof`: The proof that to verify
+    /// * `metadata`: ProofMetadata
+    /// * `params`: VerifyingParams
+    /// * `threads`: The number of threads to use for verification.
+    pub fn verify(
+        &self,
+        proof: &Proof,
+        metadata: &ProofMetadata,
+        params: VerifyingParams,
+    ) -> Result<(), Box<dyn Error>> {
+        let challenge = metadata.challenge;
 
-    let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index)
-        .take(params.k2 as usize)
-        .collect_vec();
-    let commitment = calc_commitment(&metadata.node_id, &metadata.commitment_atx_id);
-    let nonce_group = proof.nonce / NONCES_PER_AES;
-    let cipher = AesCipher::new(&challenge, nonce_group, proof.k2_pow);
-    let lazy_cipher = AesCipher::new_lazy(&challenge, proof.nonce, nonce_group, proof.k2_pow);
-    let (difficulty_msb, difficulty_lsb) = Prover8_56::split_difficulty(params.difficulty);
+        // Verify K2 PoW
+        let nonce_group = proof.nonce / NONCES_PER_AES;
+        let res = self.pow_verifier.verify(
+            proof.pow,
+            nonce_group
+                .try_into()
+                .map_err(|_| "nonce group out of bounds (max 255)")?,
+            &challenge[..8].try_into().unwrap(),
+            &params.pow_difficulty,
+        );
+        // FIXME: remove support for verifying old scrypt-based PoW
+        if res.is_err() {
+            log::debug!("verifying scrypt-based PoW");
+            pow::scrypt::verify(
+                proof.pow,
+                nonce_group,
+                &challenge,
+                params.scrypt,
+                params.scrypt_pow_difficulty,
+            )?;
+        }
 
-    let output_index = (proof.nonce % NONCES_PER_AES) as usize;
+        // Verify the number of indices against K2
+        let num_lables = metadata.num_units as u64 * metadata.labels_per_unit;
+        let bits_per_index = required_bits(num_lables);
+        let expected_indices_len = expected_indices_bytes(bits_per_index, params.k2);
+        if proof.indices.len() != expected_indices_len {
+            return Err(format!(
+                "indices length is invalid ({} != {expected_indices_len})",
+                proof.indices.len()
+            )
+            .into());
+        }
 
-    // Select K3 indices
-    let seed = &[
-        challenge.as_slice(),
-        &proof.nonce.to_le_bytes(),
-        proof.indices.as_slice(),
-        &proof.k2_pow.to_le_bytes(),
-    ];
+        let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index)
+            .take(params.k2 as usize)
+            .collect_vec();
+        let commitment = calc_commitment(&metadata.node_id, &metadata.commitment_atx_id);
+        let nonce_group = proof.nonce / NONCES_PER_AES;
+        let cipher = AesCipher::new(&challenge, nonce_group, proof.pow);
+        let lazy_cipher = AesCipher::new_lazy(&challenge, proof.nonce, nonce_group, proof.pow);
+        let (difficulty_msb, difficulty_lsb) = Prover8_56::split_difficulty(params.difficulty);
 
-    let k3_indices = RandomValuesIterator::new(indices_unpacked, seed).take(params.k3 as usize);
+        let output_index = (proof.nonce % NONCES_PER_AES) as usize;
 
-    k3_indices.into_iter().try_for_each(|index| {
+        // Select K3 indices
+        let seed = &[
+            challenge.as_slice(),
+            &proof.nonce.to_le_bytes(),
+            proof.indices.as_slice(),
+            &proof.pow.to_le_bytes(),
+        ];
+
+        let k3_indices = RandomValuesIterator::new(indices_unpacked, seed).take(params.k3 as usize);
+
+        k3_indices.into_iter().try_for_each(|index| {
         let mut output = [0u8; 16];
         let label = generate_label(&commitment, params.scrypt, index);
         cipher.aes.encrypt_block_b2b(
@@ -153,7 +192,7 @@ pub fn verify(
                 // invalid
                 return Err(format!(
                     "MSB value for index: {index} doesn't satisfy difficulty: {msb} > {difficulty_msb} (label: {label:?})",
-                ));
+                ).into());
             },
             Ordering::Equal => {
                 // Need to check LSB
@@ -166,12 +205,13 @@ pub fn verify(
                 if lsb >= difficulty_lsb {
                     return Err(format!(
                         "LSB value for index: {index} doesn't satisfy difficulty: {lsb} >= {difficulty_lsb} (label: {label:?})",
-                    ));
+                    ).into());
                 }
             }
         }
         Ok(())
     })
+    }
 }
 
 fn next_multiple_of(n: usize, mult: usize) -> usize {
@@ -193,9 +233,16 @@ fn expected_indices_bytes(required_bits: usize, k2: u32) -> usize {
 mod tests {
     use scrypt_jane::scrypt::ScryptParams;
 
-    use crate::{metadata::ProofMetadata, pow::find_k2_pow, prove::Proof};
+    use crate::{
+        config::Config,
+        metadata::ProofMetadata,
+        pow::randomx::{PoW, RandomXFlag},
+        prove::Proof,
+    };
 
-    use super::{expected_indices_bytes, next_multiple_of, verify, VerifyingParams};
+    use super::{
+        expected_indices_bytes, next_multiple_of, Verifier, VerifyingParams, NONCES_PER_AES,
+    };
 
     #[test]
     fn test_next_mutliple_of() {
@@ -218,12 +265,24 @@ mod tests {
             difficulty: u64::MAX,
             k2: 10,
             k3: 10,
-            k2_pow_difficulty: u64::MAX / 16,
+            scrypt_pow_difficulty: 0,
             pow_scrypt: scrypt_params,
+            pow_difficulty: [
+                0x00, 0xdf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0xff, 0xff, 0xff,
+            ],
             scrypt: scrypt_params,
         };
 
-        let k2_pow = find_k2_pow(&challenge, 0, params.scrypt, params.k2_pow_difficulty);
+        let pow = PoW::new(RandomXFlag::get_recommended_flags())
+            .unwrap()
+            .prove(
+                0,
+                &challenge[..8].try_into().unwrap(),
+                &params.pow_difficulty,
+            )
+            .unwrap();
         let fake_metadata = ProofMetadata {
             node_id: [0u8; 32],
             commitment_atx_id: [0u8; 32],
@@ -231,37 +290,146 @@ mod tests {
             num_units: 10,
             labels_per_unit: 2048,
         };
+        let verifier = Verifier::new(RandomXFlag::get_recommended_flags()).unwrap();
         {
             let empty_proof = Proof {
                 nonce: 0,
                 indices: vec![],
-                k2_pow,
+                pow,
             };
-            assert!(verify(&empty_proof, &fake_metadata, params).is_err());
+            assert!(verifier
+                .verify(&empty_proof, &fake_metadata, params)
+                .is_err());
+        }
+        {
+            let nonce_out_of_bounds_proof = Proof {
+                nonce: 256 * 16,
+                indices: vec![],
+                pow,
+            };
+            let res = verifier
+                .verify(&nonce_out_of_bounds_proof, &fake_metadata, params)
+                .expect_err("should fail");
+            assert!(res.to_string().contains("out of bound"));
         }
         {
             let proof_with_not_enough_indices = Proof {
                 nonce: 0,
                 indices: vec![1, 2, 3],
-                k2_pow,
+                pow,
             };
-            assert!(verify(&proof_with_not_enough_indices, &fake_metadata, params).is_err());
+            assert!(verifier
+                .verify(&proof_with_not_enough_indices, &fake_metadata, params)
+                .is_err());
         }
         {
-            let proof_with_invalid_k2_pow = Proof {
+            let proof_with_invalid_pow = Proof {
                 nonce: 0,
                 indices: vec![1, 2, 3],
-                k2_pow: params.k2_pow_difficulty,
+                pow: 0,
             };
-            assert!(verify(&proof_with_invalid_k2_pow, &fake_metadata, params).is_err());
+            assert!(verifier
+                .verify(&proof_with_invalid_pow, &fake_metadata, params)
+                .is_err());
         }
         {
             let proof_with_invalid_k3_pow = Proof {
                 nonce: 0,
                 indices: vec![1, 2, 3],
-                k2_pow,
+                pow,
             };
-            assert!(verify(&proof_with_invalid_k3_pow, &fake_metadata, params).is_err());
+            assert!(verifier
+                .verify(&proof_with_invalid_k3_pow, &fake_metadata, params)
+                .is_err());
+        }
+    }
+
+    #[test]
+    fn verify_proof_with_scrypt_based_pow() {
+        let challenge = [0u8; 32];
+        let params = VerifyingParams {
+            difficulty: u64::MAX,
+            k2: 0,
+            k3: 0,
+            scrypt_pow_difficulty: u64::MAX / 16,
+            pow_scrypt: ScryptParams::new(1, 0, 0),
+            pow_difficulty: [0x00; 32],
+            scrypt: ScryptParams::new(1, 0, 0),
+        };
+
+        let pow = crate::pow::scrypt::find_k2_pow(
+            &challenge,
+            7,
+            params.pow_scrypt,
+            params.scrypt_pow_difficulty,
+        )
+        .unwrap();
+
+        let fake_metadata = ProofMetadata {
+            node_id: [0u8; 32],
+            commitment_atx_id: [0u8; 32],
+            challenge,
+            num_units: 10,
+            labels_per_unit: 2048,
+        };
+        let verifier = Verifier::new(RandomXFlag::get_recommended_flags()).unwrap();
+
+        let proof = Proof {
+            nonce: 7 * NONCES_PER_AES,
+            indices: vec![],
+            pow,
+        };
+        verifier.verify(&proof, &fake_metadata, params).unwrap();
+    }
+
+    /// Test that PoW threshold is scaled with num_units.
+    #[test]
+    fn scaling_pow_thresholds() {
+        let cfg = Config {
+            k1: 0,
+            k2: 0,
+            k3: 0,
+            k2_pow_difficulty: u64::MAX,
+            pow_difficulty: [0xFF; 32],
+            pow_scrypt: ScryptParams::new(1, 0, 0),
+            scrypt: ScryptParams::new(2, 0, 0),
+        };
+        let metadata = ProofMetadata {
+            node_id: [0u8; 32],
+            commitment_atx_id: [0u8; 32],
+            challenge: [0u8; 32],
+            num_units: 1,
+            labels_per_unit: 100,
+        };
+        {
+            // reject zero num_units
+            let params = VerifyingParams::new(
+                &ProofMetadata {
+                    num_units: 0,
+                    ..metadata
+                },
+                &cfg,
+            );
+            assert!(params.is_err());
+        }
+        {
+            // don't scale when num_units is 1
+            let params = VerifyingParams::new(&metadata, &cfg).unwrap();
+            assert_eq!(params.pow_difficulty, cfg.pow_difficulty);
+            assert_eq!(params.scrypt_pow_difficulty, cfg.k2_pow_difficulty);
+        }
+        {
+            // scale with num_units
+            let params = VerifyingParams::new(
+                &ProofMetadata {
+                    num_units: 10,
+                    ..metadata
+                },
+                &cfg,
+            )
+            .unwrap();
+            assert!(params.pow_difficulty < cfg.pow_difficulty);
+            assert!(params.scrypt_pow_difficulty < cfg.k2_pow_difficulty);
         }
     }
 }

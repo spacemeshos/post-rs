@@ -10,7 +10,7 @@ pub use post::metadata::ProofMetadata;
 pub use post::ScryptParams;
 use post::{
     prove,
-    verification::{verify, VerifyingParams},
+    verification::{Verifier, VerifyingParams},
 };
 
 use crate::ArrayU8;
@@ -20,7 +20,7 @@ use crate::ArrayU8;
 pub struct Proof {
     nonce: u32,
     indices: ArrayU8,
-    k2_pow: u64,
+    pow: u64,
 }
 
 /// Deallocate a proof obtained with generate_proof().
@@ -45,8 +45,9 @@ pub extern "C" fn generate_proof(
     cfg: Config,
     nonces: usize,
     threads: usize,
+    pow_flags: post::pow::randomx::RandomXFlag,
 ) -> *mut Proof {
-    match _generate_proof(datadir, challenge, cfg, nonces, threads) {
+    match _generate_proof(datadir, challenge, cfg, nonces, threads, pow_flags) {
         Ok(proof) => Box::into_raw(proof),
         Err(e) => {
             //TODO(poszu) communicate errors better
@@ -62,6 +63,7 @@ fn _generate_proof(
     cfg: Config,
     nonces: usize,
     threads: usize,
+    pow_flags: post::pow::randomx::RandomXFlag,
 ) -> Result<Box<Proof>, Box<dyn Error>> {
     let datadir = unsafe { CStr::from_ptr(datadir) };
     let datadir = Path::new(
@@ -73,24 +75,68 @@ fn _generate_proof(
     let challenge = unsafe { std::slice::from_raw_parts(challenge, 32) };
     let challenge = challenge.try_into()?;
 
-    let proof = prove::generate_proof(datadir, challenge, cfg, nonces, threads)?;
+    let proof = prove::generate_proof(datadir, challenge, cfg, nonces, threads, pow_flags)?;
 
     let mut indices = ManuallyDrop::new(proof.indices);
     let (ptr, len, cap) = (indices.as_mut_ptr(), indices.len(), indices.capacity());
     let proof = Box::new(Proof {
         nonce: proof.nonce,
         indices: ArrayU8 { ptr, len, cap },
-        k2_pow: proof.k2_pow,
+        pow: proof.pow,
     });
 
     Ok(proof)
 }
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerifyResult {
     Ok,
     Invalid,
     InvalidArgument,
+    FailedToCreateVerifier,
+}
+
+/// Get the recommended RandomX flags
+///
+/// Does not include:
+/// * FLAG_LARGE_PAGES
+/// * FLAG_FULL_MEM
+/// * FLAG_SECURE
+///
+/// The above flags need to be set manually, if required.
+#[no_mangle]
+pub extern "C" fn recommended_pow_flags() -> post::pow::randomx::RandomXFlag {
+    post::pow::randomx::RandomXFlag::get_recommended_flags()
+}
+
+#[no_mangle]
+pub extern "C" fn new_verifier(
+    flags: post::pow::randomx::RandomXFlag,
+    out: *mut *mut Verifier,
+) -> VerifyResult {
+    if out.is_null() {
+        return VerifyResult::InvalidArgument;
+    }
+    match post::verification::Verifier::new(flags) {
+        Ok(verifier) => {
+            unsafe { *out = Box::into_raw(Box::new(verifier)) };
+            VerifyResult::Ok
+        }
+
+        Err(e) => {
+            log::error!("{e:?}");
+            VerifyResult::FailedToCreateVerifier
+        }
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn free_verifier(verifier: *mut Verifier) {
+    if verifier.is_null() {
+        return;
+    }
+    unsafe { Box::from_raw(verifier) };
 }
 
 /// Verify a proof
@@ -99,17 +145,26 @@ pub enum VerifyResult {
 /// `metadata` must be initialized and properly aligned.
 #[no_mangle]
 pub unsafe extern "C" fn verify_proof(
+    verifier: *const Verifier,
     proof: Proof,
     metadata: *const ProofMetadata,
     cfg: Config,
 ) -> VerifyResult {
+    let verifier = match verifier.as_ref() {
+        Some(verifier) => verifier,
+        None => {
+            log::error!("Verifier is null");
+            return VerifyResult::InvalidArgument;
+        }
+    };
+
     let proof = {
         let indices =
             unsafe { Vec::from_raw_parts(proof.indices.ptr, proof.indices.len, proof.indices.cap) };
         post::prove::Proof {
             nonce: proof.nonce,
             indices,
-            k2_pow: proof.k2_pow,
+            pow: proof.pow,
         }
     };
 
@@ -123,7 +178,7 @@ pub unsafe extern "C" fn verify_proof(
         Err(_) => return VerifyResult::InvalidArgument,
     };
 
-    let result = match verify(&proof, metadata, params) {
+    let result = match verifier.verify(&proof, metadata, params) {
         Ok(_) => VerifyResult::Ok,
         Err(err) => {
             log::error!("Proof is invalid: {err}");
@@ -146,9 +201,55 @@ mod tests {
             k3: 20,
             k2_pow_difficulty: u64::MAX,
             pow_scrypt: super::ScryptParams::new(1, 1, 1),
+            pow_difficulty: [0xFF; 32],
             scrypt: super::ScryptParams::new(1, 1, 1),
         };
-        let result = super::_generate_proof(datadir.as_ptr(), [0u8; 32].as_ptr(), cfg, 1, 0);
+        let result = super::_generate_proof(
+            datadir.as_ptr(),
+            [0u8; 32].as_ptr(),
+            cfg,
+            1,
+            0,
+            Default::default(),
+        );
         assert!(result.unwrap_err().to_string().contains("Utf8Error"));
+    }
+
+    #[test]
+    fn create_and_free_verifier() {
+        let mut verifier = std::ptr::null_mut();
+        let result = super::new_verifier(post::pow::randomx::RandomXFlag::default(), &mut verifier);
+        assert_eq!(result, super::VerifyResult::Ok);
+        assert!(!verifier.is_null());
+        super::free_verifier(verifier);
+    }
+
+    #[test]
+    fn detects_null_verifier() {
+        let result = unsafe {
+            super::verify_proof(
+                std::ptr::null(),
+                super::Proof {
+                    nonce: 0,
+                    indices: crate::ArrayU8 {
+                        ptr: std::ptr::null_mut(),
+                        len: 0,
+                        cap: 0,
+                    },
+                    pow: 0,
+                },
+                std::ptr::null(),
+                super::Config {
+                    k1: 1,
+                    k2: 2,
+                    k3: 2,
+                    k2_pow_difficulty: u64::MAX,
+                    pow_scrypt: super::ScryptParams::new(1, 0, 0),
+                    pow_difficulty: [0xFF; 32],
+                    scrypt: super::ScryptParams::new(1, 0, 0),
+                },
+            )
+        };
+        assert_eq!(result, super::VerifyResult::InvalidArgument);
     }
 }
