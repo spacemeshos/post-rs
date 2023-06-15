@@ -509,12 +509,6 @@ mod tests {
             .initialize_to(&mut expected, &[0u8; 32], indices, None)
             .unwrap();
 
-        let mut post_data = std::fs::File::create("labels.bin").unwrap();
-        post_data.write_all(&labels).unwrap();
-
-        let mut expected_data = std::fs::File::create("expected.bin").unwrap();
-        expected_data.write_all(&expected).unwrap();
-
         assert_eq!(expected.len(), labels.len());
         assert_eq!(expected, labels);
     }
