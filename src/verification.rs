@@ -137,7 +137,7 @@ impl Verifier {
                 proof.pow,
                 nonce_group,
                 &challenge,
-                params.scrypt,
+                params.pow_scrypt,
                 params.scrypt_pow_difficulty,
             )?;
         }
@@ -354,7 +354,7 @@ mod tests {
             scrypt_pow_difficulty: u64::MAX / 16,
             pow_scrypt: ScryptParams::new(1, 0, 0),
             pow_difficulty: [0x00; 32],
-            scrypt: ScryptParams::new(1, 0, 0),
+            scrypt: ScryptParams::new(3, 0, 0),
         };
 
         let pow = crate::pow::scrypt::find_k2_pow(
