@@ -199,7 +199,7 @@ jobs:
         with:
           name: libpost-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
           path: |
-            ffi/prover.h
+            ffi/post.h
             target/release-clib/${{ matrix.dylib }}
             target/release-clib/${{ matrix.staticlib }}
           if-no-files-found: error

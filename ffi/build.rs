@@ -18,5 +18,5 @@ fn main() {
         .with_parse_include(&["post-rs", "scrypt-jane", "log", "randomx-rs"])
         .generate()
         .expect("Unable to generate bindings")
-        .write_to_file("prover.h");
+        .write_to_file("post.h");
 }
