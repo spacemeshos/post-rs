@@ -55,6 +55,9 @@ jobs:
           wget https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v2023.04.17/OpenCL-SDK-v2023.04.17-Win-x64.zip
           unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
       - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v1-rust
+          key: ${{ join( matrix.os, '-' ) }}
 
       - name: Test post crate
         run: cargo test --all-features --release
@@ -108,6 +111,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
       - name: cargo install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: cargo generate-lockfile
@@ -175,6 +179,7 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
         with:
+          prefix-key: v1-rust
           key: ${{ join( matrix.os, '-' ) }}
 
       - if: matrix.os == 'windows-2019'
