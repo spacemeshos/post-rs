@@ -250,9 +250,6 @@ impl Scrypter {
             } else {
                 self.global_work_size
             };
-            log::trace!(
-                "initializing {index} -> {index_end} ({labels_to_init} labels, GWS: {gws})"
-            );
             self.kernel
                 .set_default_global_work_size(SpatialDims::One(gws));
 
