@@ -33,8 +33,6 @@ fn verifying(c: &mut Criterion) {
         difficulty: u64::MAX,
         k2,
         k3,
-        scrypt_pow_difficulty: 0,
-        pow_scrypt: ScryptParams::new(6, 0, 0),
         pow_difficulty: [0xFF; 32],
         scrypt: ScryptParams::new(12, 0, 0),
     };

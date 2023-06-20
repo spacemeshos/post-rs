@@ -199,8 +199,6 @@ mod tests {
             k1: 10,
             k2: 20,
             k3: 20,
-            k2_pow_difficulty: u64::MAX,
-            pow_scrypt: super::ScryptParams::new(1, 1, 1),
             pow_difficulty: [0xFF; 32],
             scrypt: super::ScryptParams::new(1, 1, 1),
         };
@@ -243,8 +241,6 @@ mod tests {
                     k1: 1,
                     k2: 2,
                     k3: 2,
-                    k2_pow_difficulty: u64::MAX,
-                    pow_scrypt: super::ScryptParams::new(1, 0, 0),
                     pow_difficulty: [0xFF; 32],
                     scrypt: super::ScryptParams::new(1, 0, 0),
                 },

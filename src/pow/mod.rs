@@ -7,7 +7,6 @@
 //! without actually holding the whole POST data.
 
 pub mod randomx;
-pub(crate) mod scrypt;
 
 use thiserror::Error;
 

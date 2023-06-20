@@ -62,10 +62,6 @@ pub struct VerifyingParams {
     pub difficulty: u64,
     pub k2: u32,
     pub k3: u32,
-    /// deprecated since = "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
-    pub scrypt_pow_difficulty: u64,
-    /// deprecated since = "0.2.0", scrypt-based K2 pow is deprecated, use RandomX instead
-    pub pow_scrypt: ScryptParams,
     pub pow_difficulty: [u8; 32],
     pub scrypt: ScryptParams,
 }
@@ -84,8 +80,6 @@ impl VerifyingParams {
             difficulty: proving_difficulty(cfg.k1, num_labels)?,
             k2: cfg.k2,
             k3: cfg.k3,
-            scrypt_pow_difficulty: cfg.k2_pow_difficulty / metadata.num_units as u64,
-            pow_scrypt: cfg.pow_scrypt,
             pow_difficulty,
             scrypt: cfg.scrypt,
         })
@@ -122,25 +116,14 @@ impl Verifier {
 
         // Verify K2 PoW
         let nonce_group = proof.nonce / NONCES_PER_AES;
-        let res = self.pow_verifier.verify(
+        self.pow_verifier.verify(
             proof.pow,
             nonce_group
                 .try_into()
                 .map_err(|_| "nonce group out of bounds (max 255)")?,
             &challenge[..8].try_into().unwrap(),
             &params.pow_difficulty,
-        );
-        // FIXME: remove support for verifying old scrypt-based PoW
-        if res.is_err() {
-            log::debug!("verifying scrypt-based PoW");
-            pow::scrypt::verify(
-                proof.pow,
-                nonce_group,
-                &challenge,
-                params.pow_scrypt,
-                params.scrypt_pow_difficulty,
-            )?;
-        }
+        )?;
 
         // Verify the number of indices against K2
         let num_lables = metadata.num_units as u64 * metadata.labels_per_unit;
@@ -240,9 +223,7 @@ mod tests {
         prove::Proof,
     };
 
-    use super::{
-        expected_indices_bytes, next_multiple_of, Verifier, VerifyingParams, NONCES_PER_AES,
-    };
+    use super::{expected_indices_bytes, next_multiple_of, Verifier, VerifyingParams};
 
     #[test]
     fn test_next_mutliple_of() {
@@ -265,8 +246,6 @@ mod tests {
             difficulty: u64::MAX,
             k2: 10,
             k3: 10,
-            scrypt_pow_difficulty: 0,
-            pow_scrypt: scrypt_params,
             pow_difficulty: [
                 0x00, 0xdf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -344,44 +323,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn verify_proof_with_scrypt_based_pow() {
-        let challenge = [0u8; 32];
-        let params = VerifyingParams {
-            difficulty: u64::MAX,
-            k2: 0,
-            k3: 0,
-            scrypt_pow_difficulty: u64::MAX / 16,
-            pow_scrypt: ScryptParams::new(1, 0, 0),
-            pow_difficulty: [0x00; 32],
-            scrypt: ScryptParams::new(3, 0, 0),
-        };
-
-        let pow = crate::pow::scrypt::find_k2_pow(
-            &challenge,
-            7,
-            params.pow_scrypt,
-            params.scrypt_pow_difficulty,
-        )
-        .unwrap();
-
-        let fake_metadata = ProofMetadata {
-            node_id: [0u8; 32],
-            commitment_atx_id: [0u8; 32],
-            challenge,
-            num_units: 10,
-            labels_per_unit: 2048,
-        };
-        let verifier = Verifier::new(RandomXFlag::get_recommended_flags()).unwrap();
-
-        let proof = Proof {
-            nonce: 7 * NONCES_PER_AES,
-            indices: vec![],
-            pow,
-        };
-        verifier.verify(&proof, &fake_metadata, params).unwrap();
-    }
-
     /// Test that PoW threshold is scaled with num_units.
     #[test]
     fn scaling_pow_thresholds() {
@@ -389,9 +330,7 @@ mod tests {
             k1: 0,
             k2: 0,
             k3: 0,
-            k2_pow_difficulty: u64::MAX,
             pow_difficulty: [0xFF; 32],
-            pow_scrypt: ScryptParams::new(1, 0, 0),
             scrypt: ScryptParams::new(2, 0, 0),
         };
         let metadata = ProofMetadata {
@@ -416,7 +355,6 @@ mod tests {
             // don't scale when num_units is 1
             let params = VerifyingParams::new(&metadata, &cfg).unwrap();
             assert_eq!(params.pow_difficulty, cfg.pow_difficulty);
-            assert_eq!(params.scrypt_pow_difficulty, cfg.k2_pow_difficulty);
         }
         {
             // scale with num_units
@@ -429,7 +367,6 @@ mod tests {
             )
             .unwrap();
             assert!(params.pow_difficulty < cfg.pow_difficulty);
-            assert!(params.scrypt_pow_difficulty < cfg.k2_pow_difficulty);
         }
     }
 }
