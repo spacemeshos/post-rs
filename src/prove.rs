@@ -328,7 +328,7 @@ pub fn generate_proof(
 mod tests {
     use super::*;
     use crate::{compression::decompress_indexes, difficulty::proving_difficulty};
-    use mockall::predicate;
+    use mockall::predicate::eq;
     use rand::{thread_rng, RngCore};
     use scrypt_jane::scrypt::ScryptParams;
     use std::{collections::HashMap, iter::repeat};
@@ -370,22 +370,14 @@ mod tests {
 
         pow_prover
             .expect_prove()
-            .with(
-                predicate::eq(0),
-                predicate::eq([0; 8]),
-                predicate::eq(cfg.pow_difficulty),
-            )
+            .with(eq(0), eq([0; 8]), eq(cfg.pow_difficulty))
             .once()
             .returning(|_, _, _| Ok(0));
         assert!(Prover8_56::new(&[0; 32], 0..16, params.clone(), &pow_prover).is_ok());
 
         pow_prover
             .expect_prove()
-            .with(
-                predicate::eq(1),
-                predicate::eq([0; 8]),
-                predicate::eq(cfg.pow_difficulty),
-            )
+            .with(eq(1), eq([0; 8]), eq(cfg.pow_difficulty))
             .once()
             .returning(|_, _, _| Ok(0));
         assert!(Prover8_56::new(&[0; 32], 16..32, params.clone(), &pow_prover).is_ok());
