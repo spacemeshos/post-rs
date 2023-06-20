@@ -105,7 +105,6 @@ impl Initialize for CpuInitializer {
         labels: Range<u64>,
         mut vrf_difficulty: Option<[u8; 32]>,
     ) -> Result<Option<VrfNonce>, Box<dyn Error>> {
-        log::trace!("Initializing labels {:?}...", labels);
         let data = labels
             .clone()
             .into_par_iter()
