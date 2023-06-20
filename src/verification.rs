@@ -40,7 +40,6 @@ use std::{cmp::Ordering, error::Error};
 use cipher::BlockEncrypt;
 use itertools::Itertools;
 use primitive_types::U256;
-use randomx_rs::RandomXFlag;
 use scrypt_jane::scrypt::ScryptParams;
 
 use crate::{
@@ -50,7 +49,7 @@ use crate::{
     difficulty::proving_difficulty,
     initialize::{calc_commitment, generate_label},
     metadata::ProofMetadata,
-    pow,
+    pow::PowVerifier,
     prove::{Proof, Prover8_56},
     random_values_gen::RandomValuesIterator,
 };
@@ -87,15 +86,12 @@ impl VerifyingParams {
 }
 
 pub struct Verifier {
-    pow_verifier: pow::randomx::PoW,
+    pow_verifier: Box<dyn PowVerifier>,
 }
 
 impl Verifier {
-    pub fn new(pow_flags: RandomXFlag) -> Result<Self, Box<dyn Error>> {
-        log::info!("initializing verifier with PoW flags: {:?}", pow_flags);
-        Ok(Self {
-            pow_verifier: pow::randomx::PoW::new(pow_flags)?,
-        })
+    pub fn new(pow_verifier: Box<dyn PowVerifier>) -> Self {
+        Self { pow_verifier }
     }
 
     /// Verify if a proof is valid.
@@ -216,12 +212,7 @@ fn expected_indices_bytes(required_bits: usize, k2: u32) -> usize {
 mod tests {
     use scrypt_jane::scrypt::ScryptParams;
 
-    use crate::{
-        config::Config,
-        metadata::ProofMetadata,
-        pow::randomx::{PoW, RandomXFlag},
-        prove::Proof,
-    };
+    use crate::{config::Config, metadata::ProofMetadata, pow::MockPowVerifier, prove::Proof};
 
     use super::{expected_indices_bytes, next_multiple_of, Verifier, VerifyingParams};
 
@@ -239,42 +230,63 @@ mod tests {
     }
 
     #[test]
+    fn reject_invalid_pow() {
+        let params = VerifyingParams {
+            difficulty: u64::MAX,
+            k2: 3,
+            k3: 3,
+            pow_difficulty: [0xFF; 32],
+            scrypt: ScryptParams::new(1, 0, 0),
+        };
+
+        let fake_metadata = ProofMetadata {
+            node_id: [0; 32],
+            commitment_atx_id: [0; 32],
+            challenge: [0; 32],
+            num_units: 10,
+            labels_per_unit: 2048,
+        };
+        let mut pow_verifier = Box::new(MockPowVerifier::new());
+        pow_verifier.expect_verify().returning(|_, _, _, _| Ok(()));
+        let verifier = Verifier::new(pow_verifier);
+        assert!(verifier
+            .verify(
+                &Proof {
+                    nonce: 0,
+                    indices: vec![1, 2, 3],
+                    pow: 0,
+                },
+                &fake_metadata,
+                params
+            )
+            .is_err());
+    }
+
+    #[test]
     fn reject_invalid_proof() {
-        let challenge = [0u8; 32];
-        let scrypt_params = ScryptParams::new(1, 0, 0);
         let params = VerifyingParams {
             difficulty: u64::MAX,
             k2: 10,
             k3: 10,
-            pow_difficulty: [
-                0x00, 0xdf, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-                0xff, 0xff, 0xff, 0xff,
-            ],
-            scrypt: scrypt_params,
+            pow_difficulty: [0xFF; 32],
+            scrypt: ScryptParams::new(1, 0, 0),
         };
 
-        let pow = PoW::new(RandomXFlag::get_recommended_flags())
-            .unwrap()
-            .prove(
-                0,
-                &challenge[..8].try_into().unwrap(),
-                &params.pow_difficulty,
-            )
-            .unwrap();
         let fake_metadata = ProofMetadata {
             node_id: [0u8; 32],
             commitment_atx_id: [0u8; 32],
-            challenge,
+            challenge: [0u8; 32],
             num_units: 10,
             labels_per_unit: 2048,
         };
-        let verifier = Verifier::new(RandomXFlag::get_recommended_flags()).unwrap();
+        let mut pow_verifier = Box::new(MockPowVerifier::new());
+        pow_verifier.expect_verify().returning(|_, _, _, _| Ok(()));
+        let verifier = Verifier::new(pow_verifier);
         {
             let empty_proof = Proof {
                 nonce: 0,
                 indices: vec![],
-                pow,
+                pow: 0,
             };
             assert!(verifier
                 .verify(&empty_proof, &fake_metadata, params)
@@ -284,7 +296,7 @@ mod tests {
             let nonce_out_of_bounds_proof = Proof {
                 nonce: 256 * 16,
                 indices: vec![],
-                pow,
+                pow: 0,
             };
             let res = verifier
                 .verify(&nonce_out_of_bounds_proof, &fake_metadata, params)
@@ -295,30 +307,10 @@ mod tests {
             let proof_with_not_enough_indices = Proof {
                 nonce: 0,
                 indices: vec![1, 2, 3],
-                pow,
-            };
-            assert!(verifier
-                .verify(&proof_with_not_enough_indices, &fake_metadata, params)
-                .is_err());
-        }
-        {
-            let proof_with_invalid_pow = Proof {
-                nonce: 0,
-                indices: vec![1, 2, 3],
                 pow: 0,
             };
             assert!(verifier
-                .verify(&proof_with_invalid_pow, &fake_metadata, params)
-                .is_err());
-        }
-        {
-            let proof_with_invalid_k3_pow = Proof {
-                nonce: 0,
-                indices: vec![1, 2, 3],
-                pow,
-            };
-            assert!(verifier
-                .verify(&proof_with_invalid_k3_pow, &fake_metadata, params)
+                .verify(&proof_with_not_enough_indices, &fake_metadata, params)
                 .is_err());
         }
     }

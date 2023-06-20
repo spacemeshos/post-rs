@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use post::{
     metadata::ProofMetadata,
+    pow::randomx::{PoW, RandomXFlag},
     prove::Proof,
     verification::{Verifier, VerifyingParams},
 };
@@ -20,7 +21,9 @@ fn verifying(c: &mut Criterion) {
     };
     let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
 
-    let verifier = Verifier::new(post::pow::randomx::RandomXFlag::get_recommended_flags()).unwrap();
+    let verifier = Verifier::new(Box::new(
+        PoW::new(RandomXFlag::get_recommended_flags()).unwrap(),
+    ));
 
     let (k2, k3) = (37, 37);
     let proof = Proof::new(

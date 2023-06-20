@@ -70,8 +70,10 @@ impl PoW {
 
         Ok(pow_nonce)
     }
+}
 
-    pub fn verify(
+impl super::PowVerifier for PoW {
+    fn verify(
         &self,
         pow: u64,
         nonce_group: u8,
@@ -96,6 +98,8 @@ impl PoW {
 
 #[cfg(test)]
 mod tests {
+    use crate::pow::PowVerifier;
+
     use super::*;
 
     #[test]
@@ -110,6 +114,13 @@ mod tests {
         let prover = PoW::new(RandomXFlag::get_recommended_flags()).unwrap();
         let pow = prover.prove(nonce, challenge, difficulty).unwrap();
         prover.verify(pow, nonce, challenge, difficulty).unwrap();
+    }
+
+    #[test]
+    fn reject_invalid_pow() {
+        let prover = PoW::new(RandomXFlag::get_recommended_flags()).unwrap();
+        // difficulty 0 is impossible to be met
+        assert!(prover.verify(0, 0, b"challeng", &[0; 32]).is_err());
     }
 
     #[test]

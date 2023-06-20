@@ -8,6 +8,7 @@
 
 pub mod randomx;
 
+use mockall::automock;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -18,4 +19,15 @@ pub enum Error {
     InvalidPoW,
     #[error(transparent)]
     Internal(Box<dyn std::error::Error + Send + Sync>),
+}
+
+#[automock]
+pub trait PowVerifier {
+    fn verify(
+        &self,
+        pow: u64,
+        nonce_group: u8,
+        challenge: &[u8; 8],
+        difficulty: &[u8; 32],
+    ) -> Result<(), Error>;
 }
