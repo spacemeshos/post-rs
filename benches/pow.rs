@@ -64,6 +64,21 @@ fn verify_pow_light(c: &mut Criterion) {
     });
 }
 
+fn verify_pow_light_no_jit(c: &mut Criterion) {
+    let flags = RandomXFlag::get_recommended_flags().symmetric_difference(RandomXFlag::FLAG_JIT);
+    let prover = PoW::new(dbg!(flags)).unwrap();
+
+    c.bench_function("verify_pow_light_no_jit", |b| {
+        b.iter_batched(
+            rand::random,
+            |pow| {
+                prover.verify(pow, 7, b"challeng", &[0xFFu8; 32]).unwrap();
+            },
+            BatchSize::SmallInput,
+        )
+    });
+}
+
 fn verify_pow_fast(c: &mut Criterion) {
     let flags = RandomXFlag::get_recommended_flags() | RandomXFlag::FLAG_FULL_MEM;
     let prover = PoW::new(flags).unwrap();
@@ -95,7 +110,8 @@ criterion_group!(
         bench_pow,
         verify_pow_light_stateless,
         verify_pow_light,
-        verify_pow_fast
+        verify_pow_fast,
+        verify_pow_light_no_jit
 );
 
 criterion_main!(benches);

@@ -1558,6 +1558,7 @@ dependencies = [
  "bytemuck",
  "cipher",
  "criterion",
+ "env_logger",
  "eyre",
  "itertools",
  "log",

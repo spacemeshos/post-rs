@@ -27,18 +27,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-20.04
-            toolchain: stable
-          - os: [self-hosted, linux, arm64]
-            rustflags: --cfg=aes_armv8
-            toolchain: nightly # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
+          # - os: ubuntu-20.04
+          #   toolchain: stable
+          # - os: [self-hosted, linux, arm64]
+          #   rustflags: --cfg=aes_armv8
+          #   toolchain: nightly # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
           - os: [self-hosted, macos, arm64]
             rustflags: --cfg=aes_armv8
             toolchain: nightly # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
-          - os: macos-latest
-            toolchain: stable
-          - os: windows-2019
-            toolchain: stable
+          # - os: macos-latest
+          #   toolchain: stable
+          # - os: windows-2019
+          #   toolchain: stable
 
     steps:
       - uses: actions/checkout@v3
@@ -131,18 +131,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-20.04
-            dylib: libpost.so
-            staticlib: libpost.a
-            artifact-name: linux
-            toolchain: stable
+          # - os: ubuntu-20.04
+          #   dylib: libpost.so
+          #   staticlib: libpost.a
+          #   artifact-name: linux
+          #   toolchain: stable
 
-          - os: [self-hosted, linux, arm64]
-            dylib: libpost.so
-            staticlib: libpost.a
-            rustflags: --cfg=aes_armv8
-            artifact-name: linux-arm64
-            toolchain: nightly # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
+          # - os: [self-hosted, linux, arm64]
+          #   dylib: libpost.so
+          #   staticlib: libpost.a
+          #   rustflags: --cfg=aes_armv8
+          #   artifact-name: linux-arm64
+          #   toolchain: nightly # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
 
           - os: [self-hosted, macos, arm64]
             dylib: libpost.dylib
@@ -151,17 +151,17 @@ jobs:
             artifact-name: macos-m1
             toolchain: nightly # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
 
-          - os: macos-latest
-            dylib: libpost.dylib
-            staticlib: libpost.a
-            artifact-name: macos
-            toolchain: stable
+          # - os: macos-latest
+          #   dylib: libpost.dylib
+          #   staticlib: libpost.a
+          #   artifact-name: macos
+          #   toolchain: stable
 
-          - os: windows-2019
-            dylib: post.dll
-            staticlib: post.lib
-            artifact-name: windows
-            toolchain: stable
+          # - os: windows-2019
+          #   dylib: post.dll
+          #   staticlib: post.lib
+          #   artifact-name: windows
+          #   toolchain: stable
     steps:
       - if: matrix.os == 'ubuntu-20.04'
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
@@ -208,6 +208,7 @@ jobs:
         run: cargo build -p profiler --release
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
+          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
       - name: Archive profiler artifacts
         uses: actions/upload-artifact@v3
         with:

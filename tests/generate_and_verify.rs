@@ -10,6 +10,7 @@ use tempfile::tempdir;
 
 #[test]
 fn test_generate_and_verify() {
+    env_logger::init();
     // Initialize some data
     let challenge = b"hello world, challenge me!!!!!!!";
     let labels_per_unit = 256 * 16;
@@ -21,7 +22,7 @@ fn test_generate_and_verify() {
         k3: 10,
         k2_pow_difficulty: u64::MAX / 8,
         pow_scrypt: ScryptParams::new(1, 0, 0),
-        pow_difficulty: [0xFF; 32],
+        pow_difficulty: [0x0F; 32],
         scrypt: ScryptParams::new(0, 0, 0),
     };
 

@@ -78,6 +78,7 @@ impl PoW {
         challenge: &[u8; 8],
         difficulty: &[u8; 32],
     ) -> Result<(), Error> {
+        log::info!("Verifying RandomX pow for nonce: {pow}, nonce_group: {nonce_group}, challenge: {challenge:X?}, difficulty: {difficulty:X?}");
         let pow_input = [
             &pow.to_le_bytes()[0..7],
             [nonce_group].as_slice(),
@@ -107,7 +108,23 @@ mod tests {
             0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
             0xff, 0xff, 0xff, 0xff,
         ];
-        let prover = PoW::new(RandomXFlag::get_recommended_flags()).unwrap();
+        let prover = PoW::new(dbg!(RandomXFlag::get_recommended_flags())).unwrap();
+        let pow = prover.prove(nonce, challenge, difficulty).unwrap();
+        prover.verify(pow, nonce, challenge, difficulty).unwrap();
+    }
+
+    #[test]
+    fn test_pow_no_jit() {
+        let nonce = 7;
+        let challenge = b"hello!!!";
+        let difficulty = &[
+            0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff,
+        ];
+        let flags =
+            RandomXFlag::get_recommended_flags().symmetric_difference(RandomXFlag::FLAG_JIT);
+        let prover = PoW::new(dbg!(flags)).unwrap();
         let pow = prover.prove(nonce, challenge, difficulty).unwrap();
         prover.verify(pow, nonce, challenge, difficulty).unwrap();
     }
