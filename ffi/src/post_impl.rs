@@ -1,7 +1,9 @@
+use core::slice;
 use std::{
+    borrow::Cow,
     error::Error,
     ffi::{c_char, c_uchar, CStr},
-    mem::{self, ManuallyDrop},
+    mem::ManuallyDrop,
     path::Path,
 };
 
@@ -21,6 +23,18 @@ pub struct Proof {
     nonce: u32,
     indices: ArrayU8,
     pow: u64,
+}
+
+impl<'a> From<prove::Proof<'a>> for Proof {
+    fn from(proof: prove::Proof<'a>) -> Self {
+        let mut indices = ManuallyDrop::new(proof.indices.into_owned());
+        let (ptr, len, cap) = (indices.as_mut_ptr(), indices.len(), indices.capacity());
+        Self {
+            nonce: proof.nonce,
+            indices: ArrayU8 { ptr, len, cap },
+            pow: proof.pow,
+        }
+    }
 }
 
 /// Deallocate a proof obtained with generate_proof().
@@ -76,16 +90,7 @@ fn _generate_proof(
     let challenge = challenge.try_into()?;
 
     let proof = prove::generate_proof(datadir, challenge, cfg, nonces, threads, pow_flags)?;
-
-    let mut indices = ManuallyDrop::new(proof.indices);
-    let (ptr, len, cap) = (indices.as_mut_ptr(), indices.len(), indices.capacity());
-    let proof = Box::new(Proof {
-        nonce: proof.nonce,
-        indices: ArrayU8 { ptr, len, cap },
-        pow: proof.pow,
-    });
-
-    Ok(proof)
+    Ok(Box::new(Proof::from(proof)))
 }
 
 #[repr(C)]
@@ -159,11 +164,10 @@ pub unsafe extern "C" fn verify_proof(
     };
 
     let proof = {
-        let indices =
-            unsafe { Vec::from_raw_parts(proof.indices.ptr, proof.indices.len, proof.indices.cap) };
+        let indices = unsafe { slice::from_raw_parts(proof.indices.ptr, proof.indices.len) };
         post::prove::Proof {
             nonce: proof.nonce,
-            indices,
+            indices: Cow::from(indices),
             pow: proof.pow,
         }
     };
@@ -178,16 +182,13 @@ pub unsafe extern "C" fn verify_proof(
         Err(_) => return VerifyResult::InvalidArgument,
     };
 
-    let result = match verifier.verify(&proof, metadata, params) {
+    match verifier.verify(&proof, metadata, params) {
         Ok(_) => VerifyResult::Ok,
         Err(err) => {
             log::error!("Proof is invalid: {err}");
             VerifyResult::Invalid
         }
-    };
-    // avoid deallocating proof.indices as this memory is owned by the other side.
-    mem::forget(proof.indices);
-    result
+    }
 }
 
 #[cfg(test)]

@@ -124,7 +124,7 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
 
     // Check that the proof is invalid if we modify one index
     let mut invalid_proof = proof;
-    invalid_proof.indices[0] += 1;
+    invalid_proof.indices.to_mut()[0] += 1;
     verifier
         .verify(
             &invalid_proof,

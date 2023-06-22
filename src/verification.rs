@@ -169,7 +169,7 @@ impl Verifier {
         let seed = &[
             challenge.as_slice(),
             &proof.nonce.to_le_bytes(),
-            proof.indices.as_slice(),
+            proof.indices.as_ref(),
             &proof.pow.to_le_bytes(),
         ];
 
@@ -231,6 +231,8 @@ fn expected_indices_bytes(required_bits: usize, k2: u32) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
     use scrypt_jane::scrypt::ScryptParams;
 
     use crate::{
@@ -297,7 +299,7 @@ mod tests {
         {
             let empty_proof = Proof {
                 nonce: 0,
-                indices: vec![],
+                indices: Cow::from(vec![]),
                 pow,
             };
             assert!(verifier
@@ -307,7 +309,7 @@ mod tests {
         {
             let nonce_out_of_bounds_proof = Proof {
                 nonce: 256 * 16,
-                indices: vec![],
+                indices: Cow::from(vec![]),
                 pow,
             };
             let res = verifier
@@ -318,7 +320,7 @@ mod tests {
         {
             let proof_with_not_enough_indices = Proof {
                 nonce: 0,
-                indices: vec![1, 2, 3],
+                indices: Cow::from(vec![1, 2, 3]),
                 pow,
             };
             assert!(verifier
@@ -328,7 +330,7 @@ mod tests {
         {
             let proof_with_invalid_pow = Proof {
                 nonce: 0,
-                indices: vec![1, 2, 3],
+                indices: Cow::from(vec![1, 2, 3]),
                 pow: 0,
             };
             assert!(verifier
@@ -338,7 +340,7 @@ mod tests {
         {
             let proof_with_invalid_k3_pow = Proof {
                 nonce: 0,
-                indices: vec![1, 2, 3],
+                indices: Cow::from(vec![1, 2, 3]),
                 pow,
             };
             assert!(verifier
@@ -379,7 +381,7 @@ mod tests {
 
         let proof = Proof {
             nonce: 7 * NONCES_PER_AES,
-            indices: vec![],
+            indices: Cow::Owned(vec![]),
             pow,
         };
         verifier.verify(&proof, &fake_metadata, params).unwrap();
