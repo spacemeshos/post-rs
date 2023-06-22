@@ -139,7 +139,7 @@ pub extern "C" fn free_verifier(verifier: *mut Verifier) {
     if verifier.is_null() {
         return;
     }
-    unsafe { Box::from_raw(verifier) };
+    unsafe { drop(Box::from_raw(verifier)) };
 }
 
 /// Verify a proof
