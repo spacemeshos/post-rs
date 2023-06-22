@@ -35,7 +35,7 @@
 //!     - encrypt it with AES,
 //!     - convert AES output to u64,
 //!     - compare it with difficulty.
-use std::{cmp::Ordering, error::Error};
+use std::cmp::Ordering;
 
 use cipher::BlockEncrypt;
 use itertools::Itertools;
@@ -89,6 +89,30 @@ pub struct Verifier {
     pow_verifier: Box<dyn PowVerifier>,
 }
 
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    #[error("nonce group (0) out of bounds (max 255)")]
+    NonceGroupOutOfBounds(u32),
+    #[error("invalid proof of work")]
+    InvalidPoW(#[from] crate::pow::Error),
+    #[error("invalid number of indices (expected: {expected}, got: {got})")]
+    InvalidIndicesLen { expected: usize, got: usize },
+    #[error("MSB value for index: {index} doesn't satisfy difficulty: {msb} > {difficulty_msb} (label: {label:?})")]
+    InvalidMsb {
+        index: u64,
+        msb: u8,
+        difficulty_msb: u8,
+        label: [u8; 16],
+    },
+    #[error("LSB value for index: {index} doesn't satisfy difficulty: {lsb} >= {difficulty_lsb} (label: {label:?})")]
+    InvalidLsb {
+        index: u64,
+        lsb: u64,
+        difficulty_lsb: u64,
+        label: [u8; 16],
+    },
+}
+
 impl Verifier {
     pub fn new(pow_verifier: Box<dyn PowVerifier>) -> Self {
         Self { pow_verifier }
@@ -107,7 +131,7 @@ impl Verifier {
         proof: &Proof,
         metadata: &ProofMetadata,
         params: VerifyingParams,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<(), Error> {
         let challenge = metadata.challenge;
 
         // Verify K2 PoW
@@ -116,7 +140,7 @@ impl Verifier {
             proof.pow,
             nonce_group
                 .try_into()
-                .map_err(|_| "nonce group out of bounds (max 255)")?,
+                .map_err(|_| Error::NonceGroupOutOfBounds(nonce_group))?,
             &challenge[..8].try_into().unwrap(),
             &params.pow_difficulty,
         )?;
@@ -124,13 +148,12 @@ impl Verifier {
         // Verify the number of indices against K2
         let num_lables = metadata.num_units as u64 * metadata.labels_per_unit;
         let bits_per_index = required_bits(num_lables);
-        let expected_indices_len = expected_indices_bytes(bits_per_index, params.k2);
-        if proof.indices.len() != expected_indices_len {
-            return Err(format!(
-                "indices length is invalid ({} != {expected_indices_len})",
-                proof.indices.len()
-            )
-            .into());
+        let expected = expected_indices_bytes(bits_per_index, params.k2);
+        if proof.indices.len() != expected {
+            return Err(Error::InvalidIndicesLen {
+                expected,
+                got: proof.indices.len(),
+            });
         }
 
         let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index)
@@ -155,41 +178,45 @@ impl Verifier {
         let k3_indices = RandomValuesIterator::new(indices_unpacked, seed).take(params.k3 as usize);
 
         k3_indices.into_iter().try_for_each(|index| {
-        let mut output = [0u8; 16];
-        let label = generate_label(&commitment, params.scrypt, index);
-        cipher.aes.encrypt_block_b2b(
-            &label.into(),
-            (&mut output).into(),
-        );
+            let mut output = [0u8; 16];
+            let label = generate_label(&commitment, params.scrypt, index);
+            cipher
+                .aes
+                .encrypt_block_b2b(&label.into(), (&mut output).into());
 
-        let msb = output[output_index];
-        match msb.cmp(&difficulty_msb) {
-            Ordering::Less => {
-                // valid
-            },
-            Ordering::Greater => {
-                // invalid
-                return Err(format!(
-                    "MSB value for index: {index} doesn't satisfy difficulty: {msb} > {difficulty_msb} (label: {label:?})",
-                ).into());
-            },
-            Ordering::Equal => {
-                // Need to check LSB
-                let mut output = [0u64; 2];
-                lazy_cipher.aes.encrypt_block_b2b(
-                    &label.into(),
-                    bytemuck::cast_slice_mut(&mut output).into(),
-                );
-                let lsb = output[0].to_le() & 0x00ff_ffff_ffff_ffff;
-                if lsb >= difficulty_lsb {
-                    return Err(format!(
-                        "LSB value for index: {index} doesn't satisfy difficulty: {lsb} >= {difficulty_lsb} (label: {label:?})",
-                    ).into());
+            let msb = output[output_index];
+            match msb.cmp(&difficulty_msb) {
+                Ordering::Less => {
+                    // valid
+                }
+                Ordering::Greater => {
+                    return Err(Error::InvalidMsb {
+                        index,
+                        msb,
+                        difficulty_msb,
+                        label,
+                    })
+                }
+                Ordering::Equal => {
+                    // Need to check LSB
+                    let mut output = [0u64; 2];
+                    lazy_cipher.aes.encrypt_block_b2b(
+                        &label.into(),
+                        bytemuck::cast_slice_mut(&mut output).into(),
+                    );
+                    let lsb = output[0].to_le() & 0x00ff_ffff_ffff_ffff;
+                    if lsb >= difficulty_lsb {
+                        return Err(Error::InvalidLsb {
+                            index,
+                            lsb,
+                            difficulty_lsb,
+                            label,
+                        });
+                    }
                 }
             }
-        }
-        Ok(())
-    })
+            Ok(())
+        })
     }
 }
 
@@ -214,7 +241,10 @@ mod tests {
 
     use scrypt_jane::scrypt::ScryptParams;
 
-    use crate::{config::Config, metadata::ProofMetadata, pow::MockPowVerifier, prove::Proof};
+    use crate::{
+        config::Config, metadata::ProofMetadata, pow::MockPowVerifier, prove::Proof,
+        verification::Error,
+    };
 
     use super::{expected_indices_bytes, next_multiple_of, Verifier, VerifyingParams};
 
@@ -253,17 +283,16 @@ mod tests {
             .expect_verify()
             .returning(|_, _, _, _| Err(crate::pow::Error::InvalidPoW));
         let verifier = Verifier::new(pow_verifier);
-        assert!(verifier
-            .verify(
-                &Proof {
-                    nonce: 0,
-                    indices: Cow::from(vec![1, 2, 3]),
-                    pow: 0,
-                },
-                &fake_metadata,
-                params
-            )
-            .is_err());
+        let result = verifier.verify(
+            &Proof {
+                nonce: 0,
+                indices: Cow::from(vec![1, 2, 3]),
+                pow: 0,
+            },
+            &fake_metadata,
+            params,
+        );
+        assert!(matches!(result, Err(Error::InvalidPoW(_))));
     }
 
     #[test]
@@ -292,9 +321,14 @@ mod tests {
                 indices: Cow::from(vec![]),
                 pow: 0,
             };
-            assert!(verifier
-                .verify(&empty_proof, &fake_metadata, params)
-                .is_err());
+            let result = verifier.verify(&empty_proof, &fake_metadata, params);
+            assert!(matches!(
+                result,
+                Err(Error::InvalidIndicesLen {
+                    expected: _,
+                    got: 0
+                })
+            ));
         }
         {
             let nonce_out_of_bounds_proof = Proof {
@@ -302,10 +336,8 @@ mod tests {
                 indices: Cow::from(vec![]),
                 pow: 0,
             };
-            let res = verifier
-                .verify(&nonce_out_of_bounds_proof, &fake_metadata, params)
-                .expect_err("should fail");
-            assert!(res.to_string().contains("out of bound"));
+            let res = verifier.verify(&nonce_out_of_bounds_proof, &fake_metadata, params);
+            assert!(matches!(res, Err(Error::NonceGroupOutOfBounds(256))));
         }
         {
             let proof_with_not_enough_indices = Proof {
@@ -313,9 +345,14 @@ mod tests {
                 indices: Cow::from(vec![1, 2, 3]),
                 pow: 0,
             };
-            assert!(verifier
-                .verify(&proof_with_not_enough_indices, &fake_metadata, params)
-                .is_err());
+            let result = verifier.verify(&proof_with_not_enough_indices, &fake_metadata, params);
+            assert!(matches!(
+                result,
+                Err(Error::InvalidIndicesLen {
+                    expected: _,
+                    got: 3
+                })
+            ));
         }
     }
 
