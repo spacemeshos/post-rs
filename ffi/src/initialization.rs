@@ -202,7 +202,7 @@ fn _new_initializer(
 
 #[no_mangle]
 pub extern "C" fn free_initializer(initializer: *mut Initializer) {
-    unsafe { Box::from_raw(initializer as *mut InitializerWrapper) };
+    unsafe { drop(Box::from_raw(initializer as *mut InitializerWrapper)) };
 }
 
 #[cfg(test)]
