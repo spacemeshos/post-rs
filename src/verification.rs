@@ -236,7 +236,10 @@ mod tests {
     use crate::{
         config::Config,
         metadata::ProofMetadata,
-        pow::randomx::{PoW, RandomXFlag},
+        pow::{
+            randomx::{PoW, RandomXFlag},
+            Prover,
+        },
         prove::Proof,
     };
 

@@ -8,7 +8,7 @@
 
 pub mod randomx;
 pub(crate) mod scrypt;
-
+use mockall::*;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -19,4 +19,14 @@ pub enum Error {
     InvalidPoW,
     #[error(transparent)]
     Internal(Box<dyn std::error::Error + Send + Sync>),
+}
+
+#[automock]
+pub trait Prover {
+    fn prove(
+        &self,
+        nonce_group: u8,
+        challenge: &[u8; 8],
+        difficulty: &[u8; 32],
+    ) -> Result<u64, Error>;
 }

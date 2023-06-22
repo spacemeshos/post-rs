@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use post::{prove::Prover, prove::Prover8_56, prove::ProvingParams};
+use post::{pow, prove::Prover, prove::Prover8_56, prove::ProvingParams};
 #[cfg(not(windows))]
 use pprof::criterion::{Output, PProfProfiler};
 use rand::{thread_rng, RngCore};
@@ -31,7 +31,6 @@ fn prover_bench(c: &mut Criterion) {
     let params = ProvingParams {
         difficulty: 0,              // impossible to find a proof
         pow_difficulty: [0xFF; 32], // extremely easy to find pow nonce
-        pow_flags: post::pow::randomx::RandomXFlag::get_recommended_flags(),
     };
 
     for (nonces, threads) in itertools::iproduct!(
@@ -45,7 +44,13 @@ fn prover_bench(c: &mut Criterion) {
             ),
             &(nonces, threads),
             |b, &(nonces, threads)| {
-                let prover = Prover8_56::new(CHALLENGE, 0..nonces, params.clone()).unwrap();
+                let mut pow_prover = pow::MockProver::new();
+                pow_prover
+                    .expect_prove()
+                    .times(nonces as usize / 16)
+                    .returning(|_, _, _| Ok(0));
+                let prover =
+                    Prover8_56::new(CHALLENGE, 0..nonces, params.clone(), &pow_prover).unwrap();
                 b.iter(|| {
                     let f = black_box(|_, _| None);
                     match threads {

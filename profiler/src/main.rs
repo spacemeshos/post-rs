@@ -6,7 +6,7 @@ use std::{
 
 use clap::Parser;
 use post::{
-    pow::randomx::RandomXFlag,
+    pow,
     prove::{Prover, Prover8_56, ProvingParams},
 };
 use rayon::prelude::{ParallelBridge, ParallelIterator};
@@ -72,7 +72,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let params = ProvingParams {
         difficulty: 0, // impossible to find a proof
         pow_difficulty: [0xFF; 32],
-        pow_flags: RandomXFlag::get_recommended_flags(),
     };
 
     let total_size = args.data_size * 1024 * 1024 * 1024;
@@ -80,8 +79,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .num_threads(args.threads)
         .build()
         .unwrap();
-
-    let prover = pool.install(|| Prover8_56::new(challenge, 0..args.nonces, params))?;
+    let mut pow_prover = pow::MockProver::new();
+    pow_prover.expect_prove().returning(|_, _, _| Ok(0));
+    let prover = Prover8_56::new(challenge, 0..args.nonces, params, &pow_prover)?;
 
     let consume = |_, _| None;
 
