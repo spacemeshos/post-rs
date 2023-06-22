@@ -38,7 +38,7 @@ pub struct Proof<'a> {
     pub pow: u64,
 }
 
-impl<'a> Proof<'a> {
+impl Proof<'_> {
     pub fn new(nonce: u32, indices: &[u64], num_labels: u64, pow: u64) -> Self {
         Self {
             nonce,
