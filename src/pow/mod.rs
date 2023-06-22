@@ -7,7 +7,6 @@
 //! without actually holding the whole POST data.
 
 pub mod randomx;
-pub(crate) mod scrypt;
 use mockall::*;
 use thiserror::Error;
 
@@ -29,4 +28,15 @@ pub trait Prover {
         challenge: &[u8; 8],
         difficulty: &[u8; 32],
     ) -> Result<u64, Error>;
+}
+
+#[automock]
+pub trait PowVerifier {
+    fn verify(
+        &self,
+        pow: u64,
+        nonce_group: u8,
+        challenge: &[u8; 8],
+        difficulty: &[u8; 32],
+    ) -> Result<(), Error>;
 }

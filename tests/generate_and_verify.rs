@@ -1,7 +1,7 @@
 use post::{
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
-    pow::randomx::RandomXFlag,
+    pow::randomx::{PoW, RandomXFlag},
     prove::generate_proof,
     verification::{Verifier, VerifyingParams},
 };
@@ -19,8 +19,6 @@ fn test_generate_and_verify() {
         k1: 23,
         k2: 32,
         k3: 10,
-        k2_pow_difficulty: u64::MAX / 8,
-        pow_scrypt: ScryptParams::new(1, 0, 0),
         pow_difficulty: [0xFF; 32],
         scrypt: ScryptParams::new(0, 0, 0),
     };
@@ -49,7 +47,7 @@ fn test_generate_and_verify() {
         num_units: metadata.num_units,
         labels_per_unit: metadata.labels_per_unit,
     };
-    let verifier = Verifier::new(pow_flags).unwrap();
+    let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
     verifier
         .verify(
             &proof,
@@ -83,8 +81,6 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         k1: 20,
         k2: 30,
         k3: 30,
-        k2_pow_difficulty: u64::MAX,
-        pow_scrypt: ScryptParams::new(0, 0, 0),
         pow_difficulty: [0xFF; 32],
         scrypt: ScryptParams::new(0, 0, 0),
     };
@@ -113,7 +109,7 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         num_units: metadata.num_units,
         labels_per_unit: metadata.labels_per_unit,
     };
-    let verifier = Verifier::new(pow_flags).unwrap();
+    let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
     verifier
         .verify(
             &proof,

@@ -3,7 +3,7 @@ use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXVM};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use thread_local::ThreadLocal;
 
-use super::{Error, Prover};
+use super::{Error, PowVerifier, Prover};
 
 const RANDOMX_CACHE_KEY: &[u8] = b"spacemesh-randomx-cache-key";
 
@@ -41,28 +41,6 @@ impl PoW {
         self.vms
             .get_or_try(|| RandomXVM::new(self.flags, self.cache.clone(), self.dataset.clone()))
     }
-
-    pub fn verify(
-        &self,
-        pow: u64,
-        nonce_group: u8,
-        challenge: &[u8; 8],
-        difficulty: &[u8; 32],
-    ) -> Result<(), Error> {
-        let pow_input = [
-            &pow.to_le_bytes()[0..7],
-            [nonce_group].as_slice(),
-            challenge,
-        ]
-        .concat();
-        let vm = self.get_vm()?;
-        let hash = vm.calculate_hash(pow_input.as_slice())?;
-
-        if hash.as_slice() >= difficulty {
-            return Err(Error::InvalidPoW);
-        }
-        Ok(())
-    }
 }
 
 impl Prover for PoW {
@@ -96,8 +74,34 @@ impl Prover for PoW {
     }
 }
 
+impl PowVerifier for PoW {
+    fn verify(
+        &self,
+        pow: u64,
+        nonce_group: u8,
+        challenge: &[u8; 8],
+        difficulty: &[u8; 32],
+    ) -> Result<(), Error> {
+        let pow_input = [
+            &pow.to_le_bytes()[0..7],
+            [nonce_group].as_slice(),
+            challenge,
+        ]
+        .concat();
+        let vm = self.get_vm()?;
+        let hash = vm.calculate_hash(pow_input.as_slice())?;
+
+        if hash.as_slice() >= difficulty {
+            return Err(Error::InvalidPoW);
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::pow::PowVerifier;
+
     use super::*;
 
     #[test]
@@ -112,6 +116,13 @@ mod tests {
         let prover = PoW::new(RandomXFlag::get_recommended_flags()).unwrap();
         let pow = prover.prove(nonce, challenge, difficulty).unwrap();
         prover.verify(pow, nonce, challenge, difficulty).unwrap();
+    }
+
+    #[test]
+    fn reject_invalid_pow() {
+        let prover = PoW::new(RandomXFlag::get_recommended_flags()).unwrap();
+        // difficulty 0 is impossible to be met
+        assert!(prover.verify(0, 0, b"challeng", &[0; 32]).is_err());
     }
 
     #[test]

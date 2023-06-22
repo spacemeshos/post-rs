@@ -353,8 +353,6 @@ mod tests {
             k1: 279,
             k2: 300,
             k3: 65,
-            k2_pow_difficulty: u64::MAX,
-            pow_scrypt: ScryptParams::new(1, 0, 0),
             pow_difficulty: [0xFF; 32],
             scrypt: ScryptParams::new(1, 0, 0),
         };
@@ -391,8 +389,6 @@ mod tests {
             k1: 279,
             k2: 300,
             k3: 65,
-            k2_pow_difficulty: u64::MAX,
-            pow_scrypt: ScryptParams::new(1, 0, 0),
             pow_difficulty: [0xFF; 32],
             scrypt: ScryptParams::new(1, 0, 0),
         };
@@ -412,8 +408,6 @@ mod tests {
             k1: 32,
             k2: 32,
             k3: 10,
-            k2_pow_difficulty: u64::MAX / 100,
-            pow_scrypt: ScryptParams::new(1, 0, 0),
             pow_difficulty: [0x0F; 32],
             scrypt: ScryptParams::new(2, 0, 0),
         };

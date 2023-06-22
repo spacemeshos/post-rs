@@ -2,7 +2,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criteri
 
 use post::pow::{
     randomx::{PoW, RandomXFlag},
-    Prover,
+    PowVerifier, Prover,
 };
 #[cfg(not(windows))]
 use pprof::criterion::{Output, PProfProfiler};

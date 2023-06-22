@@ -11,6 +11,7 @@ pub use post::config::Config;
 pub use post::metadata::ProofMetadata;
 pub use post::ScryptParams;
 use post::{
+    pow::randomx::{PoW, RandomXFlag},
     prove,
     verification::{Verifier, VerifyingParams},
 };
@@ -59,7 +60,7 @@ pub extern "C" fn generate_proof(
     cfg: Config,
     nonces: usize,
     threads: usize,
-    pow_flags: post::pow::randomx::RandomXFlag,
+    pow_flags: RandomXFlag,
 ) -> *mut Proof {
     match _generate_proof(datadir, challenge, cfg, nonces, threads, pow_flags) {
         Ok(proof) => Box::into_raw(proof),
@@ -77,7 +78,7 @@ fn _generate_proof(
     cfg: Config,
     nonces: usize,
     threads: usize,
-    pow_flags: post::pow::randomx::RandomXFlag,
+    pow_flags: RandomXFlag,
 ) -> Result<Box<Proof>, Box<dyn Error>> {
     let datadir = unsafe { CStr::from_ptr(datadir) };
     let datadir = Path::new(
@@ -111,21 +112,18 @@ pub enum VerifyResult {
 ///
 /// The above flags need to be set manually, if required.
 #[no_mangle]
-pub extern "C" fn recommended_pow_flags() -> post::pow::randomx::RandomXFlag {
-    post::pow::randomx::RandomXFlag::get_recommended_flags()
+pub extern "C" fn recommended_pow_flags() -> RandomXFlag {
+    RandomXFlag::get_recommended_flags()
 }
 
 #[no_mangle]
-pub extern "C" fn new_verifier(
-    flags: post::pow::randomx::RandomXFlag,
-    out: *mut *mut Verifier,
-) -> VerifyResult {
+pub extern "C" fn new_verifier(flags: RandomXFlag, out: *mut *mut Verifier) -> VerifyResult {
     if out.is_null() {
         return VerifyResult::InvalidArgument;
     }
-    match post::verification::Verifier::new(flags) {
+    match PoW::new(flags) {
         Ok(verifier) => {
-            unsafe { *out = Box::into_raw(Box::new(verifier)) };
+            unsafe { *out = Box::into_raw(Box::new(Verifier::new(Box::new(verifier)))) };
             VerifyResult::Ok
         }
 
@@ -193,6 +191,8 @@ pub unsafe extern "C" fn verify_proof(
 
 #[cfg(test)]
 mod tests {
+    use post::pow::randomx::RandomXFlag;
+
     #[test]
     fn datadir_must_be_utf8() {
         let datadir = std::ffi::CString::new([159, 146, 150]).unwrap();
@@ -200,8 +200,6 @@ mod tests {
             k1: 10,
             k2: 20,
             k3: 20,
-            k2_pow_difficulty: u64::MAX,
-            pow_scrypt: super::ScryptParams::new(1, 1, 1),
             pow_difficulty: [0xFF; 32],
             scrypt: super::ScryptParams::new(1, 1, 1),
         };
@@ -219,7 +217,7 @@ mod tests {
     #[test]
     fn create_and_free_verifier() {
         let mut verifier = std::ptr::null_mut();
-        let result = super::new_verifier(post::pow::randomx::RandomXFlag::default(), &mut verifier);
+        let result = super::new_verifier(RandomXFlag::default(), &mut verifier);
         assert_eq!(result, super::VerifyResult::Ok);
         assert!(!verifier.is_null());
         super::free_verifier(verifier);
@@ -244,8 +242,6 @@ mod tests {
                     k1: 1,
                     k2: 2,
                     k3: 2,
-                    k2_pow_difficulty: u64::MAX,
-                    pow_scrypt: super::ScryptParams::new(1, 0, 0),
                     pow_difficulty: [0xFF; 32],
                     scrypt: super::ScryptParams::new(1, 0, 0),
                 },
