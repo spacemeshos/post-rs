@@ -3,7 +3,7 @@ use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXVM};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use thread_local::ThreadLocal;
 
-use super::Error;
+use super::{Error, PowVerifier, Prover};
 
 const RANDOMX_CACHE_KEY: &[u8] = b"spacemesh-randomx-cache-key";
 
@@ -41,8 +41,10 @@ impl PoW {
         self.vms
             .get_or_try(|| RandomXVM::new(self.flags, self.cache.clone(), self.dataset.clone()))
     }
+}
 
-    pub fn prove(
+impl Prover for PoW {
+    fn prove(
         &self,
         nonce_group: u8,
         challenge: &[u8; 8],
@@ -72,7 +74,7 @@ impl PoW {
     }
 }
 
-impl super::PowVerifier for PoW {
+impl PowVerifier for PoW {
     fn verify(
         &self,
         pow: u64,

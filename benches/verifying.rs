@@ -29,7 +29,7 @@ fn verifying(c: &mut Criterion) {
     let proof = Proof::new(
         0,
         (0..k2 as u64).collect::<Vec<u64>>().as_slice(),
-        num_labels.ilog2() as usize + 1,
+        num_labels,
         0,
     );
     let params = VerifyingParams {
