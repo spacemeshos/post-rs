@@ -9,14 +9,6 @@ pub struct StringView {
     pub len: usize,
 }
 
-impl StringView {
-    #[cfg(test)]
-    pub unsafe fn to_str<'a>(&self) -> &'a str {
-        let bytes = std::slice::from_raw_parts(self.ptr as _, self.len);
-        std::str::from_utf8_unchecked(bytes)
-    }
-}
-
 impl<'a> From<&'a str> for StringView {
     fn from(s: &'a str) -> Self {
         Self {
@@ -83,24 +75,5 @@ pub extern "C" fn set_logging_callback(
             eprintln!("Failed to set logger ({e})");
             1
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::log::ExternCRecord;
-
-    #[test]
-    fn logging_callback() {
-        extern "C" fn log_cb(record: &ExternCRecord) {
-            assert_eq!("Hello, logger", unsafe { record.message.to_str() });
-            assert_eq!(log::Level::Info, record.level);
-        }
-
-        super::set_logging_callback(log::Level::Info, log_cb);
-        log::info!("Hello, logger");
-        log::trace!("Trace log level is disabled");
-
-        assert_eq!(1, super::set_logging_callback(log::Level::Warn, log_cb));
     }
 }

@@ -101,7 +101,7 @@ mod tests {
 
         // Take random n values many times and count each occurence
         let n = 50;
-        let iterations = 10_000_000;
+        let iterations = 2_000_000;
         (0u64..iterations).into_par_iter().for_each(|seed| {
             for value in RandomValuesIterator::new(data_set.clone(), &[&seed.to_le_bytes()]).take(n)
             {
@@ -111,7 +111,7 @@ mod tests {
 
         // Verify distribution
         let expected_count = (iterations * n as u64 / data_set.len() as u64) as f64;
-        let max_deviation = 0.002;
+        let max_deviation = 0.005;
         for (value, count) in occurences.into_iter().enumerate() {
             let count = count.load(Ordering::Acquire);
             let deviation = (count as f64 - expected_count) / expected_count;

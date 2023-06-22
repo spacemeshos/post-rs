@@ -1,11 +1,11 @@
 use std::hint::black_box;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use post::{prove::Prover, prove::Prover8_56, prove::ProvingParams};
+use post::{pow, prove::Prover, prove::Prover8_56, prove::ProvingParams};
+#[cfg(not(windows))]
 use pprof::criterion::{Output, PProfProfiler};
 use rand::{thread_rng, RngCore};
 use rayon::prelude::{ParallelBridge, ParallelIterator};
-use scrypt_jane::scrypt::ScryptParams;
 
 const KIB: usize = 1024;
 const MIB: usize = 1024 * KIB;
@@ -29,9 +29,8 @@ fn prover_bench(c: &mut Criterion) {
 
     let chunk_size = 64 * KIB;
     let params = ProvingParams {
-        pow_scrypt: ScryptParams::new(6, 0, 0),
-        difficulty: 0,               // impossible to find a proof
-        k2_pow_difficulty: u64::MAX, // extremely easy to find k2_pow
+        difficulty: 0,              // impossible to find a proof
+        pow_difficulty: [0xFF; 32], // extremely easy to find pow nonce
     };
 
     for (nonces, threads) in itertools::iproduct!(
@@ -45,7 +44,13 @@ fn prover_bench(c: &mut Criterion) {
             ),
             &(nonces, threads),
             |b, &(nonces, threads)| {
-                let prover = Prover8_56::new(CHALLENGE, 0..nonces, params.clone()).unwrap();
+                let mut pow_prover = pow::MockProver::new();
+                pow_prover
+                    .expect_prove()
+                    .times(nonces as usize / 16)
+                    .returning(|_, _, _| Ok(0));
+                let prover =
+                    Prover8_56::new(CHALLENGE, 0..nonces, params.clone(), &pow_prover).unwrap();
                 b.iter(|| {
                     let f = black_box(|_, _| None);
                     match threads {
@@ -78,9 +83,18 @@ fn prover_bench(c: &mut Criterion) {
     }
 }
 
+#[cfg(not(windows))]
+fn config() -> Criterion {
+    Criterion::default().with_profiler(PProfProfiler::new(100, Output::Flamegraph(None)))
+}
+#[cfg(windows)]
+fn config() -> Criterion {
+    Criterion::default()
+}
+
 criterion_group!(
     name = benches;
-    config = Criterion::default().with_profiler(PProfProfiler::new(1000, Output::Flamegraph(None)));
+    config = config();
     targets=prover_bench,
 );
 

@@ -250,9 +250,6 @@ impl Scrypter {
             } else {
                 self.global_work_size
             };
-            log::trace!(
-                "initializing {index} -> {index_end} ({labels_to_init} labels, GWS: {gws})"
-            );
             self.kernel
                 .set_default_global_work_size(SpatialDims::One(gws));
 
@@ -508,12 +505,6 @@ mod tests {
         CpuInitializer::new(ScryptParams::new(N.ilog2() as u8 - 1, 0, 0))
             .initialize_to(&mut expected, &[0u8; 32], indices, None)
             .unwrap();
-
-        let mut post_data = std::fs::File::create("labels.bin").unwrap();
-        post_data.write_all(&labels).unwrap();
-
-        let mut expected_data = std::fs::File::create("expected.bin").unwrap();
-        expected_data.write_all(&expected).unwrap();
 
         assert_eq!(expected.len(), labels.len());
         assert_eq!(expected, labels);

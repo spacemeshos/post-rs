@@ -22,18 +22,58 @@ jobs:
     name: Test Suite
     needs:
       - check
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-20.04
+            toolchain: stable
+          - os: [self-hosted, linux, arm64]
+            rustflags: --cfg=aes_armv8
+            toolchain: nightly # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
+          - os: [self-hosted, macos, arm64]
+            rustflags: --cfg=aes_armv8
+            toolchain: nightly # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
+          - os: macos-latest
+            toolchain: stable
+          - os: windows-2019
+            toolchain: stable
+
     steps:
-      - name: Install dependencies for testing openCL
-        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+      - if: matrix.os == 'ubuntu-20.04'
+        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
+        name: Install dependencies for testing openCL
+      - if: matrix.os == 'windows-2019'
+        name: Install dependencies for linking openCL
+        run: |
+          choco install -y wget unzip opencl-intel-cpu-runtime
+          wget https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v2023.04.17/OpenCL-SDK-v2023.04.17-Win-x64.zip
+          unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features
+
+      - name: Test post crate
+        run: cargo test --all-features --release
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+          # https://github.com/tevador/RandomX/issues/262
+          # https://github.com/tari-project/randomx-rs/issues/48
+          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
+
       - name: Test scrypt-ocl crate
-        run: cargo test -p scrypt-ocl --all-features -- --test-threads=1
+        if: matrix.os != 'windows-2019'
+        run: cargo test -p scrypt-ocl --all-features --release -- --test-threads=1
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+
       - name: Test ffi crate
-        run: cargo test -p post-cbindings --all-features -- --test-threads=1
+        run: cargo test -p post-cbindings --all-features --release -- --test-threads=1
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
 
   fmt:
     name: Rustfmt
@@ -117,7 +157,7 @@ jobs:
             artifact-name: macos
             toolchain: stable
 
-          - os: windows-latest
+          - os: windows-2019
             dylib: post.dll
             staticlib: post.lib
             artifact-name: windows
@@ -126,7 +166,7 @@ jobs:
       - if: matrix.os == 'ubuntu-20.04'
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
         name: Install opencl
-      - if: matrix.os == 'windows-latest'
+      - if: matrix.os == 'windows-2019'
         name: Install opencl
         run: vcpkg install opencl
       - uses: actions/checkout@v3
@@ -137,10 +177,9 @@ jobs:
         with:
           key: ${{ join( matrix.os, '-' ) }}
 
-      - if: matrix.os == 'windows-latest'
+      - if: matrix.os == 'windows-2019'
         name: Download OpenCL.lib
         run: |
-          pwd
           choco install -y wget unzip
           wget https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v2023.04.17/OpenCL-SDK-v2023.04.17-Win-x64.zip
           unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
@@ -152,12 +191,15 @@ jobs:
         run: cargo build -p post-cbindings --profile release-clib
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
+          # https://github.com/tevador/RandomX/issues/262
+          # https://github.com/tari-project/randomx-rs/issues/48
+          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
           name: libpost-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
           path: |
-            ffi/prover.h
+            ffi/post.h
             target/release-clib/${{ matrix.dylib }}
             target/release-clib/${{ matrix.staticlib }}
           if-no-files-found: error
@@ -171,7 +213,7 @@ jobs:
         with:
           name: profiler-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
           path: |
-            target/release/profiler${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+            target/release/profiler${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
 
   release:

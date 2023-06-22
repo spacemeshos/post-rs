@@ -5,43 +5,38 @@ use aes::Aes128;
 pub(crate) struct AesCipher {
     pub(crate) aes: Aes128,
     pub(crate) nonce_group: u32,
-    pub(crate) k2_pow: u64,
+    pub(crate) pow: u64,
 }
 
 impl AesCipher {
     /// Create new AES cipher for the given challenge and nonce.
-    /// AES key = blake3(challenge, nonce_group, k2_pow)
-    pub(crate) fn new(challenge: &[u8; 32], nonce_group: u32, k2_pow: u64) -> Self {
+    /// AES key = blake3(challenge, nonce_group, pow)
+    pub(crate) fn new(challenge: &[u8; 32], nonce_group: u32, pow: u64) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(challenge);
         hasher.update(&nonce_group.to_le_bytes());
-        hasher.update(&k2_pow.to_le_bytes());
+        hasher.update(&pow.to_le_bytes());
         Self {
             aes: Aes128::new(GenericArray::from_slice(
                 &hasher.finalize().as_bytes()[..16],
             )),
             nonce_group,
-            k2_pow,
+            pow,
         }
     }
 
-    pub(crate) fn new_lazy(
-        challenge: &[u8; 32],
-        nonce: u32,
-        nonce_group: u32,
-        k2_pow: u64,
-    ) -> Self {
+    pub(crate) fn new_lazy(challenge: &[u8; 32], nonce: u32, nonce_group: u32, pow: u64) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(challenge);
         hasher.update(&nonce_group.to_le_bytes());
-        hasher.update(&k2_pow.to_le_bytes());
+        hasher.update(&pow.to_le_bytes());
         hasher.update(&nonce.to_le_bytes());
         Self {
             aes: Aes128::new(GenericArray::from_slice(
                 &hasher.finalize().as_bytes()[..16],
             )),
             nonce_group,
-            k2_pow,
+            pow,
         }
     }
 }

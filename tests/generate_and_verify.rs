@@ -1,8 +1,9 @@
 use post::{
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
+    pow::randomx::RandomXFlag,
     prove::generate_proof,
-    verification::{verify, VerifyingParams},
+    verification::{Verifier, VerifyingParams},
 };
 use scrypt_jane::scrypt::ScryptParams;
 use tempfile::tempdir;
@@ -20,6 +21,7 @@ fn test_generate_and_verify() {
         k3: 10,
         k2_pow_difficulty: u64::MAX / 8,
         pow_scrypt: ScryptParams::new(1, 0, 0),
+        pow_difficulty: [0xFF; 32],
         scrypt: ScryptParams::new(0, 0, 0),
     };
 
@@ -35,8 +37,9 @@ fn test_generate_and_verify() {
         )
         .unwrap();
 
+    let pow_flags = RandomXFlag::get_recommended_flags();
     // Generate a proof
-    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1).unwrap();
+    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags).unwrap();
 
     // Verify the proof
     let metadata = ProofMetadata {
@@ -46,22 +49,25 @@ fn test_generate_and_verify() {
         num_units: metadata.num_units,
         labels_per_unit: metadata.labels_per_unit,
     };
-    let valid = verify(
-        &proof,
-        &metadata,
-        VerifyingParams::new(&metadata, &cfg).unwrap(),
-    );
-    assert_eq!(Ok(()), valid, "proof is not valid");
+    let verifier = Verifier::new(pow_flags).unwrap();
+    verifier
+        .verify(
+            &proof,
+            &metadata,
+            VerifyingParams::new(&metadata, &cfg).unwrap(),
+        )
+        .expect("proof should be valid");
 
     // Check that the proof is invalid if we modify one index
     let mut invalid_proof = proof;
-    invalid_proof.k2_pow = invalid_proof.k2_pow - 1;
-    let valid = verify(
-        &invalid_proof,
-        &metadata,
-        VerifyingParams::new(&metadata, &cfg).unwrap(),
-    );
-    assert!(valid.is_err(), "proof should be invalid");
+    invalid_proof.pow -= 1;
+    verifier
+        .verify(
+            &invalid_proof,
+            &metadata,
+            VerifyingParams::new(&metadata, &cfg).unwrap(),
+        )
+        .expect_err("proof should be invalid");
 }
 
 #[test]
@@ -79,6 +85,7 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         k3: 30,
         k2_pow_difficulty: u64::MAX,
         pow_scrypt: ScryptParams::new(0, 0, 0),
+        pow_difficulty: [0xFF; 32],
         scrypt: ScryptParams::new(0, 0, 0),
     };
 
@@ -94,8 +101,9 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         )
         .unwrap();
 
+    let pow_flags = RandomXFlag::get_recommended_flags();
     // Generate a proof
-    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1).unwrap();
+    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags).unwrap();
 
     // Verify the proof
     let metadata = ProofMetadata {
@@ -105,20 +113,23 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         num_units: metadata.num_units,
         labels_per_unit: metadata.labels_per_unit,
     };
-    let valid = verify(
-        &proof,
-        &metadata,
-        VerifyingParams::new(&metadata, &cfg).unwrap(),
-    );
-    assert_eq!(Ok(()), valid, "proof is not valid");
+    let verifier = Verifier::new(pow_flags).unwrap();
+    verifier
+        .verify(
+            &proof,
+            &metadata,
+            VerifyingParams::new(&metadata, &cfg).unwrap(),
+        )
+        .expect("proof should be valid");
 
     // Check that the proof is invalid if we modify one index
     let mut invalid_proof = proof;
     invalid_proof.indices.to_mut()[0] += 1;
-    let valid = verify(
-        &invalid_proof,
-        &metadata,
-        VerifyingParams::new(&metadata, &cfg).unwrap(),
-    );
-    assert!(valid.is_err(), "proof should be invalid");
+    verifier
+        .verify(
+            &invalid_proof,
+            &metadata,
+            VerifyingParams::new(&metadata, &cfg).unwrap(),
+        )
+        .expect_err("proof should be invalid");
 }
