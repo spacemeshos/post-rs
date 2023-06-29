@@ -31,10 +31,10 @@ jobs:
             toolchain: stable
           - os: [self-hosted, linux, arm64]
             rustflags: --cfg=aes_armv8
-            toolchain: nightly # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
+            toolchain: nightly-2023-06-27 # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
           - os: [self-hosted, macos, arm64]
             rustflags: --cfg=aes_armv8
-            toolchain: nightly # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
+            toolchain: nightly-2023-06-27 # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
           - os: macos-latest
             toolchain: stable
           - os: windows-2019
@@ -90,9 +90,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@master
         with:
           components: clippy
+          toolchain: nightly-2023-06-27
       - uses: Swatinem/rust-cache@v2
       - name: Annotate commit with clippy warnings
         uses: actions-rs/clippy-check@v1
@@ -142,14 +143,14 @@ jobs:
             staticlib: libpost.a
             rustflags: --cfg=aes_armv8
             artifact-name: linux-arm64
-            toolchain: nightly # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
+            toolchain: nightly-2023-06-27 # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
 
           - os: [self-hosted, macos, arm64]
             dylib: libpost.dylib
             staticlib: libpost.a
             rustflags: --cfg=aes_armv8
             artifact-name: macos-m1
-            toolchain: nightly # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
+            toolchain: nightly-2023-06-27 # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
 
           - os: macos-latest
             dylib: libpost.dylib
