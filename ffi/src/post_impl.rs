@@ -80,6 +80,7 @@ fn _generate_proof(
     threads: usize,
     pow_flags: RandomXFlag,
 ) -> Result<Box<Proof>, Box<dyn Error>> {
+    log::info!("Generating proof with config: {cfg:?}, nonces: {nonces}, threads: {threads}, pow_flags: {pow_flags:?}");
     let datadir = unsafe { CStr::from_ptr(datadir) };
     let datadir = Path::new(
         datadir

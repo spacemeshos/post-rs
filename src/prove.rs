@@ -58,8 +58,15 @@ impl ProvingParams {
     pub fn new(metadata: &PostMetadata, cfg: &Config) -> eyre::Result<Self> {
         let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
         let mut pow_difficulty = [0u8; 32];
-        let difficulty_scaled = U256::from_big_endian(&cfg.pow_difficulty) / metadata.num_units;
+        let pow_diff_u256 = U256::from_big_endian(&cfg.pow_difficulty);
+        let difficulty_scaled = pow_diff_u256 / metadata.num_units;
         difficulty_scaled.to_big_endian(&mut pow_difficulty);
+        log::info!(
+            "Scaling pow difficulty {:X?} / {} -> {:X?}",
+            cfg.pow_difficulty,
+            metadata.num_units,
+            pow_difficulty
+        );
         Ok(Self {
             difficulty: proving_difficulty(cfg.k1, num_labels)?,
             pow_difficulty,
@@ -260,9 +267,10 @@ pub fn generate_proof(
     threads: usize,
     pow_flags: RandomXFlag,
 ) -> eyre::Result<Proof<'static>> {
+    log::info!("Loading metadata from {datadir:?}");
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
     let params = ProvingParams::new(&metadata, &cfg)?;
-    log::info!("generating proof with PoW flags: {pow_flags:?} and params: {params:?}");
+    log::info!("generating proof with PoW flags: {pow_flags:?}, params: {params:?}, cfg: {cfg:?}, metadata: {metadata:?}");
     let pow_prover = pow::randomx::PoW::new(pow_flags)?;
 
     let mut start_nonce = 0;
@@ -408,7 +416,7 @@ mod tests {
             k1: 32,
             k2: 32,
             k3: 10,
-            pow_difficulty: [0x0F; 32],
+            pow_difficulty: [0xFF; 32],
             scrypt: ScryptParams::new(2, 0, 0),
         };
         let metadata = PostMetadata {
@@ -434,6 +442,20 @@ mod tests {
             )
             .unwrap();
             assert!(params.pow_difficulty < cfg.pow_difficulty);
+        }
+        {
+            let params = ProvingParams::new(
+                &PostMetadata {
+                    num_units: 2,
+                    ..metadata
+                },
+                &cfg,
+            )
+            .unwrap();
+            assert_eq!(
+                [&[0x7F], [0xFF; 31].as_slice()].concat().as_slice(),
+                params.pow_difficulty.as_slice()
+            );
         }
     }
 
