@@ -1,5 +1,7 @@
 use std::{
+    cmp::min,
     error::Error,
+    io::{BufReader, BufWriter, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     time::{self, Duration},
 };
@@ -9,6 +11,7 @@ use post::{
     pow,
     prove::{Prover, Prover8_56, ProvingParams},
 };
+use rand::RngCore;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 use serde::Serialize;
 
@@ -52,20 +55,53 @@ struct PerfResult {
     speed_gib_s: f64,
 }
 
-// Create a file with given size
-fn file_data(path: &Path, size: u64) -> Result<std::fs::File, std::io::Error> {
+// Prepare file for benchmarking, possibly appending random data to it if needed.
+fn prepare_data_file(path: &Path, size: u64) -> eyre::Result<()> {
+    let file_exists = path.exists();
+
     let file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .open(path)?;
-    file.set_len(size)?;
-    Ok(file)
+
+    let file_size = file.metadata()?.len();
+    if file_size < size {
+        let mut remaining_to_write = size - file_size;
+        let mut f: BufWriter<std::fs::File> = BufWriter::new(file);
+        f.seek(SeekFrom::End(0))?;
+        let can_write = !file_exists
+            || inquire::Confirm::new(&format!(
+                "Will append random {remaining_to_write}B to file, are you sure?"
+            ))
+            .with_default(false)
+            .prompt()?;
+
+        eyre::ensure!(
+            can_write,
+            "File is too small and refused to write random data"
+        );
+
+        let mut rng = rand::thread_rng();
+        let mut buf = vec![0; 1024 * 1024];
+
+        while remaining_to_write > 0 {
+            let to_write = min(buf.len() as u64, remaining_to_write);
+            let mut buf = &mut buf[..to_write as usize];
+            rng.fill_bytes(&mut buf);
+            f.write_all(&buf)?;
+            remaining_to_write -= to_write;
+        }
+    }
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     let args = Args::parse();
+
+    let total_size = args.data_size * 1024 * 1024 * 1024;
+    prepare_data_file(&args.data_file, total_size)?;
 
     let challenge = b"hello world, challenge me!!!!!!!";
     let batch_size = 1024 * 1024;
@@ -74,7 +110,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         pow_difficulty: [0xFF; 32],
     };
 
-    let total_size = args.data_size * 1024 * 1024 * 1024;
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build()
@@ -87,12 +122,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let start = time::Instant::now();
     let mut iterations = 0;
-    loop {
-        if start.elapsed() >= Duration::from_secs(args.duration) {
-            break;
-        }
-        let file = file_data(&args.data_file, total_size)?;
-        let reader = post::reader::read_from(file, batch_size, total_size);
+    while start.elapsed() < Duration::from_secs(args.duration) {
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .open(&args.data_file)?;
+
+        let reader = post::reader::read_from(BufReader::new(file), batch_size, total_size);
         pool.install(|| {
             reader.par_bridge().for_each(|batch| {
                 prover.prove(&batch.data, batch.pos, consume);
