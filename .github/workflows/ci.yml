@@ -173,7 +173,7 @@ jobs:
             toolchain: stable
     steps:
       - if: matrix.os == 'ubuntu-20.04'
-        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
+        run: sudo apt-get install -y mesa-opencl-icd ocl-icd-opencl-dev
         name: Install opencl
       - if: matrix.os == 'windows-2019'
         name: Install opencl
