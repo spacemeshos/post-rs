@@ -211,7 +211,7 @@ mod tests {
         ScryptParams,
     };
 
-    use crate::initialization::InitializerWrapper;
+    use crate::initialization::{Initializer, InitializerWrapper};
 
     use super::{InitializeResult, CPU_PROVIDER_ID};
 
@@ -260,26 +260,23 @@ mod tests {
 
     #[test]
     fn initialization_failure() {
-        let indices = 0..=70;
-
         let mut init_mock = Box::new(MockInitialize::new());
         init_mock
             .expect_initialize_to()
             .once()
             .returning(|_, _, _, _| Err("error".into()));
 
-        let initializer = Box::new(InitializerWrapper {
+        let mut initializer = Box::new(InitializerWrapper {
             inner: init_mock,
             commitment: [0u8; 32],
             vrf_difficulty: None,
         });
 
-        let mut labels = vec![0u8; 71 * 16];
-        let result: InitializeResult = super::initialize(
-            &*initializer as *const InitializerWrapper as _,
-            *indices.start(),
-            *indices.end(),
-            labels.as_mut_ptr(),
+        let result = super::initialize(
+            initializer.as_mut() as *mut InitializerWrapper as *mut Initializer,
+            0,
+            99,
+            null_mut(),
             null_mut(),
         );
         assert_eq!(InitializeResult::InitializeError, result);
