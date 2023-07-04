@@ -87,9 +87,9 @@ fn prepare_data_file(path: &Path, size: u64) -> eyre::Result<()> {
 
         while remaining_to_write > 0 {
             let to_write = min(buf.len() as u64, remaining_to_write);
-            let mut buf = &mut buf[..to_write as usize];
-            rng.fill_bytes(&mut buf);
-            f.write_all(&buf)?;
+            let buf = &mut buf[..to_write as usize];
+            rng.fill_bytes(buf);
+            f.write_all(buf)?;
             remaining_to_write -= to_write;
         }
     }
@@ -112,8 +112,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
-        .build()
-        .unwrap();
+        .build()?;
     let mut pow_prover = pow::MockProver::new();
     pow_prover.expect_prove().returning(|_, _, _| Ok(0));
     let prover = Prover8_56::new(challenge, 0..args.nonces, params, &pow_prover)?;
@@ -142,7 +141,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         time_s: elapsed.as_secs_f64(),
         speed_gib_s: iterations as f64 * args.data_size as f64 / elapsed.as_secs_f64(),
     };
-    println!("{}", serde_json::to_string_pretty(&result).unwrap());
+    println!("{}", serde_json::to_string_pretty(&result)?);
 
     Ok(())
 }
