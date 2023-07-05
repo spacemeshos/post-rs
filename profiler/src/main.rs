@@ -1,6 +1,10 @@
+mod util;
+
 use std::{
     cmp::min,
+    env::temp_dir,
     error::Error,
+    fs::OpenOptions,
     io::{BufReader, BufWriter, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     time::{self, Duration},
@@ -22,9 +26,9 @@ use serde::Serialize;
 struct Args {
     /// File to read data from.
     /// It doesn't need to contain properly initialized POS data.
-    /// Will create a new file if it doesn't exist.
-    #[arg(long, default_value = "/tmp/data.bin")]
-    data_file: PathBuf,
+    /// Will create a new file in temporary directory if it doesn't exist.
+    #[arg(long)]
+    data_file: Option<PathBuf>,
 
     /// The size of POST data to bench over in GiB
     #[arg(long, default_value_t = 1)]
@@ -57,30 +61,13 @@ struct PerfResult {
 
 // Prepare file for benchmarking, possibly appending random data to it if needed.
 fn prepare_data_file(path: &Path, size: u64) -> eyre::Result<()> {
-    let file_exists = path.exists();
-
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(path)?;
+    let file = OpenOptions::new().write(true).create(true).open(path)?;
 
     let file_size = file.metadata()?.len();
     if file_size < size {
         let mut remaining_to_write = size - file_size;
         let mut f: BufWriter<std::fs::File> = BufWriter::new(file);
         f.seek(SeekFrom::End(0))?;
-        let can_write = !file_exists
-            || inquire::Confirm::new(&format!(
-                "Will append random {remaining_to_write}B to file, are you sure?"
-            ))
-            .with_default(false)
-            .prompt()?;
-
-        eyre::ensure!(
-            can_write,
-            "File is too small and refused to write random data"
-        );
 
         let mut rng = rand::thread_rng();
         let mut buf = vec![0; 1024 * 1024];
@@ -100,46 +87,46 @@ fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     let args = Args::parse();
 
-    let total_size = args.data_size * 1024 * 1024 * 1024;
-    prepare_data_file(&args.data_file, total_size)?;
-
     let challenge = b"hello world, challenge me!!!!!!!";
     let batch_size = 1024 * 1024;
+    let total_size = args.data_size * 1024 * 1024 * 1024;
     let params = ProvingParams {
         difficulty: 0, // impossible to find a proof
         pow_difficulty: [0xFF; 32],
     };
 
+    let file_path = args
+        .data_file
+        .unwrap_or_else(|| temp_dir().join("profiler_data.bin"));
+    prepare_data_file(&file_path, total_size)?;
+
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build()?;
+
     let mut pow_prover = pow::MockProver::new();
     pow_prover.expect_prove().returning(|_, _, _| Ok(0));
     let prover = Prover8_56::new(challenge, 0..args.nonces, params, &pow_prover)?;
 
-    let consume = |_, _| None;
+    let mut total_time = time::Duration::from_secs(0);
+    let mut processed = 0;
 
-    let start = time::Instant::now();
-    let mut iterations = 0;
-    while start.elapsed() < Duration::from_secs(args.duration) {
-        let file = std::fs::OpenOptions::new()
-            .read(true)
-            .open(&args.data_file)?;
-
+    while total_time < Duration::from_secs(args.duration) {
+        let file = util::open_without_cache(&file_path)?;
         let reader = post::reader::read_from(BufReader::new(file), batch_size, total_size);
+        let start = time::Instant::now();
         pool.install(|| {
             reader.par_bridge().for_each(|batch| {
-                prover.prove(&batch.data, batch.pos, consume);
+                prover.prove(&batch.data, batch.pos, |_, _| None);
             })
         });
-
-        iterations += 1;
+        total_time += start.elapsed();
+        processed += args.data_size;
     }
-    let elapsed = start.elapsed();
 
     let result = PerfResult {
-        time_s: elapsed.as_secs_f64(),
-        speed_gib_s: iterations as f64 * args.data_size as f64 / elapsed.as_secs_f64(),
+        time_s: total_time.as_secs_f64(),
+        speed_gib_s: processed as f64 / total_time.as_secs_f64(),
     };
     println!("{}", serde_json::to_string_pretty(&result)?);
 
