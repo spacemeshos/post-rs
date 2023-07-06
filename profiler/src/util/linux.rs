@@ -1,4 +1,4 @@
-use std::{error::Error, fs::File, fs::OpenOptions, os::fd::AsRawFd, path::Path};
+use std::{error::Error, fs::File, os::fd::AsRawFd, path::Path};
 
 pub(crate) fn open_without_cache(path: &Path) -> Result<File, Box<dyn Error>> {
     let file = File::open(path)?;
