@@ -21,15 +21,9 @@ pub enum InitializeResult {
     InitializeOk = 0,
     InitializeOkNonceNotFound = 1,
     InitializeInvalidLabelsRange = 2,
-    InitializeOclError = 3,
+    InitializeError = 3,
     InitializeInvalidArgument = 4,
     InitializeFailedToGetProviders = 5,
-}
-
-impl From<scrypt_ocl::ocl::Error> for InitializeResult {
-    fn from(_: scrypt_ocl::ocl::Error) -> Self {
-        InitializeResult::InitializeOclError
-    }
 }
 
 #[repr(C)]
@@ -124,15 +118,18 @@ pub extern "C" fn initialize(
     };
 
     let mut labels = unsafe { std::slice::from_raw_parts_mut(out_buffer, len) };
-    let vrf_nonce = initializer
-        .inner
-        .initialize_to(
-            &mut labels,
-            &initializer.commitment,
-            start..end,
-            initializer.vrf_difficulty,
-        )
-        .unwrap();
+    let vrf_nonce = match initializer.inner.initialize_to(
+        &mut labels,
+        &initializer.commitment,
+        start..end,
+        initializer.vrf_difficulty,
+    ) {
+        Ok(nonce) => nonce,
+        Err(e) => {
+            log::error!("Error initializing labels: {e:?}");
+            return InitializeResult::InitializeError;
+        }
+    };
 
     if !out_nonce.is_null() {
         if let Some(nonce) = vrf_nonce {
@@ -210,9 +207,11 @@ mod tests {
     use std::ptr::null_mut;
 
     use post::{
-        initialize::{CpuInitializer, Initialize},
+        initialize::{CpuInitializer, Initialize, MockInitialize},
         ScryptParams,
     };
+
+    use crate::initialization::{Initializer, InitializerWrapper};
 
     use super::{InitializeResult, CPU_PROVIDER_ID};
 
@@ -257,6 +256,30 @@ mod tests {
         assert_eq!(expected, labels);
 
         super::free_initializer(initializer);
+    }
+
+    #[test]
+    fn initialization_failure() {
+        let mut init_mock = Box::new(MockInitialize::new());
+        init_mock
+            .expect_initialize_to()
+            .once()
+            .returning(|_, _, _, _| Err("error".into()));
+
+        let mut initializer = Box::new(InitializerWrapper {
+            inner: init_mock,
+            commitment: [0u8; 32],
+            vrf_difficulty: None,
+        });
+
+        let result = super::initialize(
+            initializer.as_mut() as *mut InitializerWrapper as *mut Initializer,
+            0,
+            99,
+            null_mut(),
+            null_mut(),
+        );
+        assert_eq!(InitializeResult::InitializeError, result);
     }
 
     #[test]
