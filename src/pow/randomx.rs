@@ -44,13 +44,17 @@ impl PoW {
 }
 
 impl Prover for PoW {
-    fn prove(
+    fn prove<'a>(
         &self,
         nonce_group: u8,
         challenge: &[u8; 8],
         difficulty: &[u8; 32],
+        miner_id: Option<&'a [u8; 32]>,
     ) -> Result<u64, Error> {
-        let pow_input = [[0u8; 7].as_slice(), [nonce_group].as_slice(), challenge].concat();
+        let mut pow_input = [[0u8; 7].as_slice(), [nonce_group].as_slice(), challenge].concat();
+        if let Some(miner_id) = miner_id {
+            pow_input.extend_from_slice(miner_id.as_ref());
+        }
 
         let (pow_nonce, _) = (0..2u64.pow(56))
             .into_par_iter()
@@ -75,19 +79,25 @@ impl Prover for PoW {
 }
 
 impl PowVerifier for PoW {
-    fn verify(
+    fn verify<'a>(
         &self,
         pow: u64,
         nonce_group: u8,
         challenge: &[u8; 8],
         difficulty: &[u8; 32],
+        miner_id: Option<&'a [u8; 32]>,
     ) -> Result<(), Error> {
-        let pow_input = [
+        let mut pow_input = [
             &pow.to_le_bytes()[0..7],
             [nonce_group].as_slice(),
             challenge,
         ]
         .concat();
+
+        if let Some(miner_id) = miner_id {
+            pow_input.extend_from_slice(miner_id.as_ref());
+        }
+
         let vm = self.get_vm()?;
         let hash = vm.calculate_hash(pow_input.as_slice())?;
 
@@ -114,15 +124,41 @@ mod tests {
             0xff, 0xff, 0xff, 0xff,
         ];
         let prover = PoW::new(RandomXFlag::get_recommended_flags()).unwrap();
-        let pow = prover.prove(nonce, challenge, difficulty).unwrap();
-        prover.verify(pow, nonce, challenge, difficulty).unwrap();
+        let pow = prover.prove(nonce, challenge, difficulty, None).unwrap();
+        prover
+            .verify(pow, nonce, challenge, difficulty, None)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_pow_miner_id_matters() {
+        let nonce = 7;
+        let challenge = b"hello!!!";
+        let difficulty = &[
+            0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0xff,
+        ];
+        let prover = PoW::new(RandomXFlag::get_recommended_flags()).unwrap();
+
+        let pow = prover
+            .prove(nonce, challenge, difficulty, Some(&[1; 32]))
+            .unwrap();
+        prover
+            .verify(pow, nonce, challenge, difficulty, None)
+            .unwrap_err();
+
+        let pow = prover.prove(nonce, challenge, difficulty, None).unwrap();
+        prover
+            .verify(pow, nonce, challenge, difficulty, Some(&[1; 32]))
+            .unwrap_err();
     }
 
     #[test]
     fn reject_invalid_pow() {
         let prover = PoW::new(RandomXFlag::get_recommended_flags()).unwrap();
         // difficulty 0 is impossible to be met
-        assert!(prover.verify(0, 0, b"challeng", &[0; 32]).is_err());
+        assert!(prover.verify(0, 0, b"challeng", &[0; 32], None).is_err());
     }
 
     #[test]

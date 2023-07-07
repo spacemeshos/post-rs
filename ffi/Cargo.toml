@@ -15,3 +15,6 @@ scrypt-ocl = { path = "../scrypt-ocl" }
 
 [build-dependencies]
 cbindgen = "*"
+
+[dev-dependencies]
+tempfile = "3.6.0"
