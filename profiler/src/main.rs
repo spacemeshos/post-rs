@@ -26,7 +26,12 @@ use serde::Serialize;
 struct Args {
     /// File to read data from.
     /// It doesn't need to contain properly initialized POS data.
-    /// Will create a new file in temporary directory if it doesn't exist.
+    ///
+    /// Will create a new file in temporary directory if not provided or it doesn't exist.
+    ///
+    /// WARNING: the contents of the file might be overwritten.
+    ///
+    /// NOTE: On MacOS, the file MUST NOT be in chache already or the benchmark will give wrong results.
     #[arg(long)]
     data_file: Option<PathBuf>,
 
@@ -62,6 +67,14 @@ struct PerfResult {
 // Prepare file for benchmarking, possibly appending random data to it if needed.
 fn prepare_data_file(path: &Path, size: u64) -> eyre::Result<()> {
     let file = OpenOptions::new().write(true).create(true).open(path)?;
+
+    // Disable caching on Mac
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::fd::AsRawFd;
+        let ret = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_NOCACHE, 1 as libc::c_int) };
+        eyre::ensure!(ret == 0, format!("fcntl(F_NOCACHE) failed: {ret}"));
+    }
 
     let file_size = file.metadata()?.len();
     if file_size < size {

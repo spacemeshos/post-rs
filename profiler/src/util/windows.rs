@@ -1,17 +1,19 @@
-use std::{error::Error, ffi::CString, fs::File, path::Path};
+use std::{ffi::CString, fs::File, path::Path};
+
+use eyre::Context;
 
 use windows::{
     core::PCSTR,
     Win32::{
-        Foundation::{CloseHandle, FALSE, GENERIC_READ, HANDLE},
+        Foundation::{CloseHandle, GENERIC_READ, HANDLE},
         Storage::FileSystem::{
             CreateFileA, FILE_FLAG_NO_BUFFERING, FILE_SHARE_READ, OPEN_EXISTING,
         },
     },
 };
 
-pub(crate) fn open_without_cache(path: &Path) -> Result<File, Box<dyn Error>> {
-    let p = CString::new(path.to_str().ok_or("invalid path")?)?;
+pub(crate) fn open_without_cache(path: &Path) -> eyre::Result<File> {
+    let p = CString::new(path.to_str().ok_or(eyre::eyre!("invalid path"))?)?;
     let handle = unsafe {
         CreateFileA(
             PCSTR(p.as_ptr() as _),
@@ -22,12 +24,12 @@ pub(crate) fn open_without_cache(path: &Path) -> Result<File, Box<dyn Error>> {
             FILE_FLAG_NO_BUFFERING, // <- drops cache
             HANDLE(0),
         )
-    }?;
-
-    if unsafe { CloseHandle(handle) } == FALSE {
-        return Err("failed to close file handle".into());
     }
+    .wrap_err("opening file to drop cache")?;
 
-    let f = File::open(path)?;
-    Ok(f)
+    unsafe { CloseHandle(handle) }
+        .ok()
+        .wrap_err("closing handle")?;
+
+    File::open(path).wrap_err("opening file")
 }
