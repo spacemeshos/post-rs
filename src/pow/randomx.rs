@@ -44,12 +44,12 @@ impl PoW {
 }
 
 impl Prover for PoW {
-    fn prove<'a>(
+    fn prove(
         &self,
         nonce_group: u8,
         challenge: &[u8; 8],
         difficulty: &[u8; 32],
-        miner_id: Option<&'a [u8; 32]>,
+        miner_id: Option<&[u8; 32]>,
     ) -> Result<u64, Error> {
         let mut pow_input = [[0u8; 7].as_slice(), [nonce_group].as_slice(), challenge].concat();
         if let Some(miner_id) = miner_id {
@@ -79,13 +79,13 @@ impl Prover for PoW {
 }
 
 impl PowVerifier for PoW {
-    fn verify<'a>(
+    fn verify(
         &self,
         pow: u64,
         nonce_group: u8,
         challenge: &[u8; 8],
         difficulty: &[u8; 32],
-        miner_id: Option<&'a [u8; 32]>,
+        miner_id: Option<&[u8; 32]>,
     ) -> Result<(), Error> {
         let mut pow_input = [
             &pow.to_le_bytes()[0..7],

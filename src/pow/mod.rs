@@ -20,6 +20,7 @@ pub enum Error {
     Internal(Box<dyn std::error::Error + Send + Sync>),
 }
 
+#[allow(clippy::needless_lifetimes)] // lifetime is needed for automock
 #[automock]
 pub trait Prover {
     fn prove<'a>(
@@ -31,6 +32,7 @@ pub trait Prover {
     ) -> Result<u64, Error>;
 }
 
+#[allow(clippy::needless_lifetimes)] // lifetime is needed for automock
 #[automock]
 pub trait PowVerifier {
     fn verify<'a>(

@@ -27,8 +27,8 @@ pub struct Proof {
     pow_creator: ArrayU8,
 }
 
-impl From<prove::Proof<'_, '_>> for Proof {
-    fn from(proof: prove::Proof<'_, '_>) -> Self {
+impl From<prove::Proof<'_>> for Proof {
+    fn from(proof: prove::Proof) -> Self {
         let mut indices = ManuallyDrop::new(proof.indices.into_owned());
         let (ptr, len, cap) = (indices.as_mut_ptr(), indices.len(), indices.capacity());
 
@@ -51,10 +51,10 @@ impl From<prove::Proof<'_, '_>> for Proof {
     }
 }
 
-impl TryInto<prove::Proof<'_, '_>> for Proof {
+impl TryInto<prove::Proof<'_>> for Proof {
     type Error = Box<dyn Error>;
 
-    fn try_into(self) -> Result<prove::Proof<'static, 'static>, Self::Error> {
+    fn try_into(self) -> Result<prove::Proof<'static>, Self::Error> {
         let indices = unsafe { slice::from_raw_parts(self.indices.ptr, self.indices.len) };
         let pow_creator = if self.pow_creator.ptr.is_null() {
             None
@@ -352,7 +352,7 @@ mod tests {
         assert!(!verifier.is_null());
 
         let challenge = b"hello world, challenge me!!!!!!!";
-        let miner_id = &[77u8; 32];
+        let miner_id = [77u8; 32];
 
         // Create proof without miner ID
         let data_dir_cstr = std::ffi::CString::new(datadir.path().to_str().unwrap()).unwrap();

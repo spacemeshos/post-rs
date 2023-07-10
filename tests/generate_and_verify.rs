@@ -15,7 +15,7 @@ fn test_generate_and_verify() {
     let labels_per_unit = 256 * 16;
     let datadir = tempdir().unwrap();
 
-    let miner_id = Some(&[7u8; 32]);
+    let miner_id = Some([7u8; 32]);
 
     let cfg = post::config::Config {
         k1: 23,

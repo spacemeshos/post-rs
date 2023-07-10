@@ -32,20 +32,20 @@ const AES_BATCH: usize = 8; // will use encrypt8 asm method
 const CHUNK_SIZE: usize = BLOCK_SIZE * AES_BATCH;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Proof<'a, 'b> {
+pub struct Proof<'a> {
     pub nonce: u32,
     pub indices: Cow<'a, [u8]>,
     pub pow: u64,
-    pub pow_creator: Option<&'b [u8; 32]>,
+    pub pow_creator: Option<[u8; 32]>,
 }
 
-impl<'a> Proof<'static, 'a> {
+impl Proof<'static> {
     pub fn new(
         nonce: u32,
         indices: &[u64],
         num_labels: u64,
         pow: u64,
-        pow_creator: Option<&'a [u8; 32]>,
+        pow_creator: Option<[u8; 32]>,
     ) -> Self {
         Self {
             nonce,
@@ -262,15 +262,15 @@ impl Prover for Prover8_56 {
 }
 
 /// Generate a proof that data is still held, given the challenge.
-pub fn generate_proof<'a>(
+pub fn generate_proof(
     datadir: &Path,
     challenge: &[u8; 32],
     cfg: Config,
     nonces: usize,
     threads: usize,
     pow_flags: RandomXFlag,
-    miner_id: Option<&'a [u8; 32]>,
-) -> eyre::Result<Proof<'static, 'a>> {
+    miner_id: Option<[u8; 32]>,
+) -> eyre::Result<Proof<'static>> {
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
     let params = ProvingParams::new(&metadata, &cfg)?;
     log::info!("generating proof with PoW flags: {pow_flags:?} and params: {params:?}");
@@ -293,7 +293,7 @@ pub fn generate_proof<'a>(
                 start_nonce..end_nonce,
                 params.clone(),
                 &pow_prover,
-                miner_id,
+                miner_id.as_ref(),
             )
             .wrap_err("creating prover")
         })?;

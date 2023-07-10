@@ -143,7 +143,7 @@ impl Verifier {
                 .map_err(|_| Error::NonceGroupOutOfBounds(nonce_group))?,
             &challenge[..8].try_into().unwrap(),
             &params.pow_difficulty,
-            proof.pow_creator,
+            proof.pow_creator.as_ref(),
         )?;
 
         // Verify the number of indices against K2
