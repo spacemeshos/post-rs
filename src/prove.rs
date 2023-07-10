@@ -386,7 +386,7 @@ mod tests {
         assert!(Prover8_56::new(&[0; 32], 16..32, params.clone(), &pow_prover, None).is_ok());
 
         assert!(Prover8_56::new(&[0; 32], 0..0, params.clone(), &pow_prover, None).is_err());
-        assert!(Prover8_56::new(&[0; 32], 1..16, params.clone(), &pow_prover, None).is_err());
+        assert!(Prover8_56::new(&[0; 32], 1..16, params, &pow_prover, None).is_err());
     }
 
     #[test]

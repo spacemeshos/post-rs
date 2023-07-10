@@ -1,5 +1,11 @@
+mod util;
+
 use std::{
+    cmp::min,
+    env::temp_dir,
     error::Error,
+    fs::OpenOptions,
+    io::{BufReader, BufWriter, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     time::{self, Duration},
 };
@@ -9,6 +15,7 @@ use post::{
     pow,
     prove::{Prover, Prover8_56, ProvingParams},
 };
+use rand::RngCore;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 use serde::Serialize;
 
@@ -19,9 +26,14 @@ use serde::Serialize;
 struct Args {
     /// File to read data from.
     /// It doesn't need to contain properly initialized POS data.
-    /// Will create a new file if it doesn't exist.
-    #[arg(long, default_value = "/tmp/data.bin")]
-    data_file: PathBuf,
+    ///
+    /// Will create a new file in temporary directory if not provided or it doesn't exist.
+    ///
+    /// WARNING: the contents of the file might be overwritten.
+    ///
+    /// NOTE: On MacOS, the file MUST NOT be in chache already or the benchmark will give wrong results.
+    #[arg(long)]
+    data_file: Option<PathBuf>,
 
     /// The size of POST data to bench over in GiB
     #[arg(long, default_value_t = 1)]
@@ -52,15 +64,36 @@ struct PerfResult {
     speed_gib_s: f64,
 }
 
-// Create a file with given size
-fn file_data(path: &Path, size: u64) -> Result<std::fs::File, std::io::Error> {
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .open(path)?;
-    file.set_len(size)?;
-    Ok(file)
+// Prepare file for benchmarking, possibly appending random data to it if needed.
+fn prepare_data_file(path: &Path, size: u64) -> eyre::Result<()> {
+    let file = OpenOptions::new().write(true).create(true).open(path)?;
+
+    // Disable caching on Mac
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::fd::AsRawFd;
+        let ret = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_NOCACHE, 1 as libc::c_int) };
+        eyre::ensure!(ret == 0, format!("fcntl(F_NOCACHE) failed: {ret}"));
+    }
+
+    let file_size = file.metadata()?.len();
+    if file_size < size {
+        let mut remaining_to_write = size - file_size;
+        let mut f: BufWriter<std::fs::File> = BufWriter::new(file);
+        f.seek(SeekFrom::End(0))?;
+
+        let mut rng = rand::thread_rng();
+        let mut buf = vec![0; 1024 * 1024];
+
+        while remaining_to_write > 0 {
+            let to_write = min(buf.len() as u64, remaining_to_write);
+            let buf = &mut buf[..to_write as usize];
+            rng.fill_bytes(buf);
+            f.write_all(buf)?;
+            remaining_to_write -= to_write;
+        }
+    }
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -69,45 +102,46 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let challenge = b"hello world, challenge me!!!!!!!";
     let batch_size = 1024 * 1024;
+    let total_size = args.data_size * 1024 * 1024 * 1024;
     let params = ProvingParams {
         difficulty: 0, // impossible to find a proof
         pow_difficulty: [0xFF; 32],
     };
 
-    let total_size = args.data_size * 1024 * 1024 * 1024;
+    let file_path = args
+        .data_file
+        .unwrap_or_else(|| temp_dir().join("profiler_data.bin"));
+    prepare_data_file(&file_path, total_size)?;
+
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
-        .build()
-        .unwrap();
+        .build()?;
+
     let mut pow_prover = pow::MockProver::new();
     pow_prover.expect_prove().returning(|_, _, _, _| Ok(0));
     let prover = Prover8_56::new(challenge, 0..args.nonces, params, &pow_prover, None)?;
 
-    let consume = |_, _| None;
+    let mut total_time = time::Duration::from_secs(0);
+    let mut processed = 0;
 
-    let start = time::Instant::now();
-    let mut iterations = 0;
-    loop {
-        if start.elapsed() >= Duration::from_secs(args.duration) {
-            break;
-        }
-        let file = file_data(&args.data_file, total_size)?;
-        let reader = post::reader::read_from(file, batch_size, total_size);
+    while total_time < Duration::from_secs(args.duration) {
+        let file = util::open_without_cache(&file_path)?;
+        let reader = post::reader::read_from(BufReader::new(file), batch_size, total_size);
+        let start = time::Instant::now();
         pool.install(|| {
             reader.par_bridge().for_each(|batch| {
-                prover.prove(&batch.data, batch.pos, consume);
+                prover.prove(&batch.data, batch.pos, |_, _| None);
             })
         });
-
-        iterations += 1;
+        total_time += start.elapsed();
+        processed += args.data_size;
     }
-    let elapsed = start.elapsed();
 
     let result = PerfResult {
-        time_s: elapsed.as_secs_f64(),
-        speed_gib_s: iterations as f64 * args.data_size as f64 / elapsed.as_secs_f64(),
+        time_s: total_time.as_secs_f64(),
+        speed_gib_s: processed as f64 / total_time.as_secs_f64(),
     };
-    println!("{}", serde_json::to_string_pretty(&result).unwrap());
+    println!("{}", serde_json::to_string_pretty(&result)?);
 
     Ok(())
 }

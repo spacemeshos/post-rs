@@ -9,6 +9,8 @@ use thiserror::Error;
 
 pub use ocl;
 
+mod filtering;
+
 #[derive(Debug)]
 struct Scrypter {
     kernel: Kernel,
@@ -77,10 +79,20 @@ pub fn get_providers(device_types: Option<DeviceType>) -> Result<Vec<Provider>, 
     let list_core = ocl::core::get_platform_ids()?;
     let platforms = Platform::list_from_core(list_core);
 
+    let platform_filter = filtering::create_platform_filter();
+    let device_filter = filtering::create_device_filter();
+
+    let platforms_filtered = platforms
+        .into_iter()
+        .filter(|p| p.name().map(|n| platform_filter(&n)).unwrap_or(false));
+
     let mut providers = Vec::new();
-    for platform in platforms {
+    for platform in platforms_filtered {
         let devices = Device::list(platform, device_types)?;
-        for device in devices {
+        for device in devices
+            .into_iter()
+            .filter(|d| d.name().map(|n| device_filter(&n)).unwrap_or(false))
+        {
             providers.push(Provider {
                 platform,
                 device,
