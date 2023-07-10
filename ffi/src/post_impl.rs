@@ -56,17 +56,11 @@ impl TryInto<prove::Proof<'_>> for Proof {
 
     fn try_into(self) -> Result<prove::Proof<'static>, Self::Error> {
         let indices = unsafe { slice::from_raw_parts(self.indices.ptr, self.indices.len) };
-        let pow_creator = if self.pow_creator.ptr.is_null() {
-            None
-        } else {
-            if self.pow_creator.len != 32 {
-                return Err(
-                    format!("Invalid pow_creator length ({})", self.pow_creator.len).into(),
-                );
+        let pow_creator = match (self.pow_creator.ptr, self.pow_creator.len) {
+            (ptr, 32) if !ptr.is_null() => {
+                Some(unsafe { slice::from_raw_parts(ptr, 32) }.try_into()?)
             }
-            let pow_creator_slice =
-                unsafe { slice::from_raw_parts(self.pow_creator.ptr, self.pow_creator.len) };
-            Some(pow_creator_slice.try_into().unwrap())
+            _ => None,
         };
         Ok(post::prove::Proof {
             nonce: self.nonce,
@@ -147,7 +141,7 @@ fn _generate_proof(
         None
     } else {
         let miner_id = unsafe { std::slice::from_raw_parts(miner_id, 32) };
-        Some(miner_id.try_into().unwrap())
+        Some(miner_id.try_into()?)
     };
 
     let proof = prove::generate_proof(
