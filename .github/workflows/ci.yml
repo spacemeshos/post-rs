@@ -69,11 +69,17 @@ jobs:
         run: cargo test -p scrypt-ocl --all-features --release -- --test-threads=1
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
+          # https://github.com/tevador/RandomX/issues/262
+          # https://github.com/tari-project/randomx-rs/issues/48
+          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
 
       - name: Test ffi crate
         run: cargo test -p post-cbindings --all-features --release -- --test-threads=1
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
+          # https://github.com/tevador/RandomX/issues/262
+          # https://github.com/tari-project/randomx-rs/issues/48
+          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
 
   fmt:
     name: Rustfmt
