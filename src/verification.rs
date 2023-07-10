@@ -143,6 +143,7 @@ impl Verifier {
                 .map_err(|_| Error::NonceGroupOutOfBounds(nonce_group))?,
             &challenge[..8].try_into().unwrap(),
             &params.pow_difficulty,
+            proof.pow_creator.as_ref(),
         )?;
 
         // Verify the number of indices against K2
@@ -281,13 +282,14 @@ mod tests {
         let mut pow_verifier = Box::new(MockPowVerifier::new());
         pow_verifier
             .expect_verify()
-            .returning(|_, _, _, _| Err(crate::pow::Error::InvalidPoW));
+            .returning(|_, _, _, _, _| Err(crate::pow::Error::InvalidPoW));
         let verifier = Verifier::new(pow_verifier);
         let result = verifier.verify(
             &Proof {
                 nonce: 0,
                 indices: Cow::from(vec![1, 2, 3]),
                 pow: 0,
+                pow_creator: None,
             },
             &fake_metadata,
             params,
@@ -313,13 +315,16 @@ mod tests {
             labels_per_unit: 2048,
         };
         let mut pow_verifier = Box::new(MockPowVerifier::new());
-        pow_verifier.expect_verify().returning(|_, _, _, _| Ok(()));
+        pow_verifier
+            .expect_verify()
+            .returning(|_, _, _, _, _| Ok(()));
         let verifier = Verifier::new(pow_verifier);
         {
             let empty_proof = Proof {
                 nonce: 0,
                 indices: Cow::from(vec![]),
                 pow: 0,
+                pow_creator: None,
             };
             let result = verifier.verify(&empty_proof, &fake_metadata, params);
             assert!(matches!(
@@ -335,6 +340,7 @@ mod tests {
                 nonce: 256 * 16,
                 indices: Cow::from(vec![]),
                 pow: 0,
+                pow_creator: None,
             };
             let res = verifier.verify(&nonce_out_of_bounds_proof, &fake_metadata, params);
             assert!(matches!(res, Err(Error::NonceGroupOutOfBounds(256))));
@@ -344,6 +350,7 @@ mod tests {
                 nonce: 0,
                 indices: Cow::from(vec![1, 2, 3]),
                 pow: 0,
+                pow_creator: None,
             };
             let result = verifier.verify(&proof_with_not_enough_indices, &fake_metadata, params);
             assert!(matches!(

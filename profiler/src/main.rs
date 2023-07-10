@@ -118,8 +118,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build()?;
 
     let mut pow_prover = pow::MockProver::new();
-    pow_prover.expect_prove().returning(|_, _, _| Ok(0));
-    let prover = Prover8_56::new(challenge, 0..args.nonces, params, &pow_prover)?;
+    pow_prover.expect_prove().returning(|_, _, _, _| Ok(0));
+    let prover = Prover8_56::new(challenge, 0..args.nonces, params, &pow_prover, None)?;
 
     let mut total_time = time::Duration::from_secs(0);
     let mut processed = 0;

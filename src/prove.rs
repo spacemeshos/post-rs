@@ -36,14 +36,22 @@ pub struct Proof<'a> {
     pub nonce: u32,
     pub indices: Cow<'a, [u8]>,
     pub pow: u64,
+    pub pow_creator: Option<[u8; 32]>,
 }
 
-impl Proof<'_> {
-    pub fn new(nonce: u32, indices: &[u64], num_labels: u64, pow: u64) -> Self {
+impl Proof<'static> {
+    pub fn new(
+        nonce: u32,
+        indices: &[u64],
+        num_labels: u64,
+        pow: u64,
+        pow_creator: Option<[u8; 32]>,
+    ) -> Self {
         Self {
             nonce,
             indices: Cow::Owned(compress_indices(indices, required_bits(num_labels))),
             pow,
+            pow_creator,
         }
     }
 }
@@ -109,6 +117,7 @@ impl Prover8_56 {
         nonces: Range<u32>,
         params: ProvingParams,
         pow_prover: &P,
+        miner_id: Option<&[u8; 32]>,
     ) -> eyre::Result<Self> {
         // TODO consider to relax it to allow any range of nonces
         eyre::ensure!(
@@ -127,6 +136,7 @@ impl Prover8_56 {
                     nonce_group.try_into()?,
                     challenge[..8].try_into().unwrap(),
                     &params.pow_difficulty,
+                    miner_id,
                 )?;
                 log::debug!("proof of work: {pow}");
 
@@ -259,6 +269,7 @@ pub fn generate_proof(
     nonces: usize,
     threads: usize,
     pow_flags: RandomXFlag,
+    miner_id: Option<[u8; 32]>,
 ) -> eyre::Result<Proof<'static>> {
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
     let params = ProvingParams::new(&metadata, &cfg)?;
@@ -282,6 +293,7 @@ pub fn generate_proof(
                 start_nonce..end_nonce,
                 params.clone(),
                 &pow_prover,
+                miner_id.as_ref(),
             )
             .wrap_err("creating prover")
         })?;
@@ -310,7 +322,7 @@ pub fn generate_proof(
             let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
             let pow = prover.get_pow(nonce).unwrap();
             log::info!("Found proof for nonce: {nonce}, pow: {pow} with {indices:?} indices");
-            return Ok(Proof::new(nonce, &indices, num_labels, pow));
+            return Ok(Proof::new(nonce, &indices, num_labels, pow, miner_id));
         }
 
         (start_nonce, end_nonce) = (end_nonce, end_nonce + nonces as u32);
@@ -321,7 +333,7 @@ pub fn generate_proof(
 mod tests {
     use super::*;
     use crate::{compression::decompress_indexes, difficulty::proving_difficulty};
-    use mockall::predicate::eq;
+    use mockall::predicate::{always, eq};
     use rand::{thread_rng, RngCore};
     use scrypt_jane::scrypt::ScryptParams;
     use std::{collections::HashMap, iter::repeat};
@@ -330,7 +342,7 @@ mod tests {
     fn creating_proof() {
         let indices = vec![0, 1, 2, 3, 4, 5, 6, 7, 8];
         let keep_bits = 4;
-        let proof = Proof::new(7, &indices, 9, 77);
+        let proof = Proof::new(7, &indices, 9, 77, None);
         assert_eq!(7, proof.nonce);
         assert_eq!(77, proof.pow);
         assert_eq!(
@@ -361,20 +373,20 @@ mod tests {
 
         pow_prover
             .expect_prove()
-            .with(eq(0), eq([0; 8]), eq(cfg.pow_difficulty))
+            .with(eq(0), eq([0; 8]), eq(cfg.pow_difficulty), always())
             .once()
-            .returning(|_, _, _| Ok(0));
-        assert!(Prover8_56::new(&[0; 32], 0..16, params.clone(), &pow_prover).is_ok());
+            .returning(|_, _, _, _| Ok(0));
+        assert!(Prover8_56::new(&[0; 32], 0..16, params.clone(), &pow_prover, None).is_ok());
 
         pow_prover
             .expect_prove()
-            .with(eq(1), eq([0; 8]), eq(cfg.pow_difficulty))
+            .with(eq(1), eq([0; 8]), eq(cfg.pow_difficulty), always())
             .once()
-            .returning(|_, _, _| Ok(0));
-        assert!(Prover8_56::new(&[0; 32], 16..32, params.clone(), &pow_prover).is_ok());
+            .returning(|_, _, _, _| Ok(0));
+        assert!(Prover8_56::new(&[0; 32], 16..32, params.clone(), &pow_prover, None).is_ok());
 
-        assert!(Prover8_56::new(&[0; 32], 0..0, params.clone(), &pow_prover).is_err());
-        assert!(Prover8_56::new(&[0; 32], 1..16, params, &pow_prover).is_err());
+        assert!(Prover8_56::new(&[0; 32], 0..0, params.clone(), &pow_prover, None).is_err());
+        assert!(Prover8_56::new(&[0; 32], 1..16, params, &pow_prover, None).is_err());
     }
 
     #[test]
@@ -396,9 +408,9 @@ mod tests {
         pow_prover
             .expect_prove()
             .once()
-            .returning(|_, _, _| Err(pow::Error::PoWNotFound));
+            .returning(|_, _, _, _| Err(pow::Error::PoWNotFound));
         let params = ProvingParams::new(&meta, &cfg).unwrap();
-        assert!(Prover8_56::new(&[0; 32], 0..16, params, &pow_prover).is_err());
+        assert!(Prover8_56::new(&[0; 32], 0..16, params, &pow_prover, None).is_err());
     }
 
     /// Test that PoW threshold is scaled with num_units.
@@ -446,13 +458,14 @@ mod tests {
             pow_difficulty: [0xFF; 32],
         };
         let mut pow_prover = pow::MockProver::new();
-        pow_prover.expect_prove().returning(|_, _, _| Ok(0));
+        pow_prover.expect_prove().returning(|_, _, _, _| Ok(0));
 
         let prover = Prover8_56::new(
             challenge,
             0..Prover8_56::NONCES_PER_AES,
             params,
             &pow_prover,
+            None,
         )
         .unwrap();
         let res = prover.prove(&[0u8; 8 * LABEL_SIZE], 0, |nonce, index| {
@@ -489,7 +502,7 @@ mod tests {
             pow_difficulty: [0xFF; 32],
         };
         let mut pow_prover = pow::MockProver::new();
-        pow_prover.expect_prove().returning(|_, _, _| Ok(0));
+        pow_prover.expect_prove().returning(|_, _, _, _| Ok(0));
 
         let indexes = loop {
             let mut indicies = HashMap::<u32, Vec<u64>>::new();
@@ -499,6 +512,7 @@ mod tests {
                 start_nonce..end_nonce,
                 params.clone(),
                 &pow_prover,
+                None,
             )
             .unwrap();
 
@@ -552,7 +566,10 @@ mod tests {
             pow_difficulty: [0xFF; 32],
         };
         let mut pow_prover = pow::MockProver::new();
-        pow_prover.expect_prove().once().returning(|_, _, _| Ok(0));
+        pow_prover
+            .expect_prove()
+            .once()
+            .returning(|_, _, _, _| Ok(0));
         let data = repeat(0..=11) // it's important for range len to not be a multiple of AES block
             .flatten()
             .take(num_labels * LABEL_SIZE)
@@ -563,6 +580,7 @@ mod tests {
             0..Prover8_56::NONCES_PER_AES,
             params,
             &pow_prover,
+            None,
         )
         .unwrap();
 

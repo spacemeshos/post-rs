@@ -15,6 +15,8 @@ fn test_generate_and_verify() {
     let labels_per_unit = 256 * 16;
     let datadir = tempdir().unwrap();
 
+    let miner_id = Some([7u8; 32]);
+
     let cfg = post::config::Config {
         k1: 23,
         k2: 32,
@@ -37,7 +39,7 @@ fn test_generate_and_verify() {
 
     let pow_flags = RandomXFlag::get_recommended_flags();
     // Generate a proof
-    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags).unwrap();
+    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags, miner_id).unwrap();
 
     // Verify the proof
     let metadata = ProofMetadata {
@@ -99,7 +101,7 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
 
     let pow_flags = RandomXFlag::get_recommended_flags();
     // Generate a proof
-    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags).unwrap();
+    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags, None).unwrap();
 
     // Verify the proof
     let metadata = ProofMetadata {

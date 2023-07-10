@@ -48,9 +48,10 @@ fn prover_bench(c: &mut Criterion) {
                 pow_prover
                     .expect_prove()
                     .times(nonces as usize / 16)
-                    .returning(|_, _, _| Ok(0));
+                    .returning(|_, _, _, _| Ok(0));
                 let prover =
-                    Prover8_56::new(CHALLENGE, 0..nonces, params.clone(), &pow_prover).unwrap();
+                    Prover8_56::new(CHALLENGE, 0..nonces, params.clone(), &pow_prover, None)
+                        .unwrap();
                 b.iter(|| {
                     let f = black_box(|_, _| None);
                     match threads {
