@@ -19,6 +19,8 @@ pub enum VerificationError {
     Io(#[from] std::io::Error),
     #[error("unknown error: {0}")]
     Unknown(#[from] eyre::Error),
+    #[error("failed to initialize: {0}")]
+    InitError(String),
 }
 
 pub fn verify_files(
@@ -41,9 +43,8 @@ pub fn verify_files(
 
         let file = std::fs::File::open(file_path)?;
         let reader = std::io::BufReader::new(file);
-        let labels_count = metadata.labels_in_file(idx);
 
-        verify(reader, labels_count, idx, fraction, &metadata, scrypt)?;
+        verify(reader, idx, fraction, &metadata, scrypt)?;
     }
 
     Ok(())
@@ -51,7 +52,6 @@ pub fn verify_files(
 
 fn verify<R: Read + Seek + Send>(
     mut labels: R,
-    labels_count: usize,
     file_idx: usize,
     fraction: f64,
     metadata: &metadata::PostMetadata,
@@ -59,8 +59,10 @@ fn verify<R: Read + Seek + Send>(
 ) -> Result<(), VerificationError> {
     let commitment = calc_commitment(&metadata.node_id, &metadata.commitment_atx_id);
 
+    let labels_count = metadata.labels_in_file(file_idx);
     let labels_offset = file_idx as u64 * metadata.max_file_size / 16;
     let labels_to_verify = (labels_count as f64 * (fraction / 100.0)) as usize;
+    log::info!("verifying {labels_to_verify} labels");
 
     let mut rng = rand::thread_rng();
     (0..labels_count as u64)
@@ -75,9 +77,9 @@ fn verify<R: Read + Seek + Send>(
         .par_bridge()
         .map(|index_and_label| -> Result<(), VerificationError> {
             let (index, label) = index_and_label?;
-
             let mut expected_label = [0u8; 16];
             let label_index = index + labels_offset;
+
             CpuInitializer::new(scrypt_params)
                 .initialize_to(
                     &mut expected_label.as_mut_slice(),
@@ -85,7 +87,7 @@ fn verify<R: Read + Seek + Send>(
                     label_index..label_index + 1,
                     None,
                 )
-                .expect("initializing label");
+                .map_err(|e| VerificationError::InitError(format!("{e:?}")))?;
 
             if label != expected_label {
                 return Err(VerificationError::InvalidLabel {

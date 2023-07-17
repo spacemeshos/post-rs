@@ -35,10 +35,17 @@ impl PostMetadata {
     }
 
     pub fn labels_in_file(&self, idx: usize) -> usize {
+        assert_eq!(0, self.max_file_size % 16);
         let labels_in_files = self.max_file_size as usize / 16;
-        let labels_in_last_file = self.total_labels() as usize % labels_in_files;
         match idx {
-            idx if idx == self.num_files() - 1 => labels_in_last_file,
+            idx if idx == self.num_files() - 1 => {
+                let remainder = self.total_labels() as usize % labels_in_files;
+                if remainder > 0 {
+                    remainder
+                } else {
+                    labels_in_files
+                }
+            }
             idx if idx < self.num_files() - 1 => labels_in_files,
             _ => 0,
         }
@@ -72,10 +79,10 @@ mod tests {
         let m = PostMetadata {
             labels_per_unit: 1,
             num_units: 1,
-            max_file_size: 1,
+            max_file_size: 16,
             ..Default::default()
         };
-        assert_eq!(m.num_files(), 16);
+        assert_eq!(m.num_files(), 1);
 
         let m = PostMetadata {
             labels_per_unit: 100,
@@ -91,10 +98,10 @@ mod tests {
         let m = PostMetadata {
             labels_per_unit: 1,
             num_units: 1,
-            max_file_size: 1,
+            max_file_size: 16,
             ..Default::default()
         };
-        assert_eq!(m.labels_in_file(0), 1);
-        assert_eq!(m.labels_in_file(1), 1);
+        assert_eq!(1, m.labels_in_file(0));
+        assert_eq!(0, m.labels_in_file(1));
     }
 }
