@@ -28,10 +28,12 @@ pub fn verify_files(
     to_file: Option<usize>,   // inclusive
     scrypt: ScryptParams,
 ) -> Result<(), VerificationError> {
+    log::info!("verifying POS data in {}", datadir.display());
     let metadata = metadata::load(datadir)?;
 
     let from_file = from_file.unwrap_or(0);
     let to_file = to_file.unwrap_or(metadata.num_files() - 1);
+    log::info!("verifying POS files {from_file} -> {to_file}");
 
     for idx in from_file..=to_file {
         let file_path = datadir.join(format!("postdata_{}.bin", idx));
