@@ -72,7 +72,13 @@ impl Display for Provider {
 }
 
 pub fn get_providers_count(device_types: Option<DeviceType>) -> usize {
-    get_providers(device_types).map_or(0, |p| p.len())
+    get_providers(device_types).map_or_else(
+        |e| {
+            log::error!("failed to get providers: {e}");
+            0
+        },
+        |p| p.len(),
+    )
 }
 
 pub fn get_providers(device_types: Option<DeviceType>) -> Result<Vec<Provider>, ScryptError> {
@@ -143,7 +149,7 @@ impl Scrypter {
             DeviceInfoResult::MaxComputeUnits
         );
         let max_wg_size = device.max_wg_size()?;
-        log::debug!(
+        log::info!(
             "device memory: {} MB, max_mem_alloc_size: {} MB, max_compute_units: {max_compute_units}, max_wg_size: {max_wg_size}",
             device_memory / 1024 / 1024,
             max_mem_alloc_size / 1024 / 1024,
@@ -177,7 +183,7 @@ impl Scrypter {
         );
         let kernel_wg_size = kernel.wg_info(device, KernelWorkGroupInfo::WorkGroupSize)?;
 
-        log::debug!("preferred_wg_size_multiple: {preferred_wg_size_mult}, kernel_wg_size: {kernel_wg_size}");
+        log::info!("preferred_wg_size_multiple: {preferred_wg_size_mult}, kernel_wg_size: {kernel_wg_size}");
 
         let max_global_work_size_based_on_total_mem =
             ((device_memory - INPUT_SIZE as u64) / kernel_memory as u64) as usize;
@@ -190,11 +196,11 @@ impl Scrypter {
         let local_work_size = preferred_wg_size_mult;
         // Round down to nearest multiple of local_work_size
         let global_work_size = (max_global_work_size / local_work_size) * local_work_size;
-        log::debug!(
+        log::info!(
             "Using: global_work_size: {global_work_size}, local_work_size: {local_work_size}"
         );
 
-        log::trace!("Allocating buffer for input: {INPUT_SIZE} bytes");
+        log::info!("Allocating buffer for input: {INPUT_SIZE} bytes");
         let input = Buffer::<u32>::builder()
             .len(INPUT_SIZE / 4)
             .flags(MemFlags::new().read_only())
@@ -202,7 +208,7 @@ impl Scrypter {
             .build()?;
 
         let output_size = global_work_size * ENTIRE_LABEL_SIZE;
-        log::trace!("Allocating buffer for output: {output_size} bytes");
+        log::info!("Allocating buffer for output: {output_size} bytes");
         let output = Buffer::<u8>::builder()
             .len(output_size)
             .flags(MemFlags::new().write_only())
@@ -210,7 +216,7 @@ impl Scrypter {
             .build()?;
 
         let lookup_size = global_work_size * kernel_lookup_mem_size;
-        log::trace!("Allocating buffer for lookup: {lookup_size} bytes");
+        log::info!("Allocating buffer for lookup: {lookup_size} bytes");
         let lookup_memory = Buffer::<u32>::builder()
             .len(lookup_size / 4)
             .flags(MemFlags::new().host_no_access())
@@ -312,6 +318,11 @@ impl OpenClInitializer {
     ) -> Result<Self, ScryptError> {
         let providers = get_providers(device_types)?;
         let provider = if let Some(id) = provider_id {
+            log::info!(
+                "selecting {} provider from {} available",
+                id.0,
+                providers.len()
+            );
             providers
                 .get(id.0 as usize)
                 .ok_or(ScryptError::InvalidProviderId(id))?
@@ -320,7 +331,7 @@ impl OpenClInitializer {
         };
         let platform = provider.platform;
         let device = provider.device;
-        log::trace!("Using provider: {provider}");
+        log::info!("Using provider: {provider}");
 
         let scrypter = Scrypter::new(platform, device, n)?;
 

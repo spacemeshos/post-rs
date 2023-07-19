@@ -58,13 +58,16 @@ pub extern "C" fn get_providers_count() -> usize {
 #[no_mangle]
 pub extern "C" fn get_providers(out: *mut Provider, out_len: usize) -> InitializeResult {
     if out.is_null() {
+        log::error!("out is null");
         return InitializeResult::InitializeInvalidArgument;
     }
 
-    let providers = if let Ok(p) = scrypt_ocl::get_providers(Some(DeviceType::GPU)) {
-        p
-    } else {
-        return InitializeResult::InitializeFailedToGetProviders;
+    let providers = match scrypt_ocl::get_providers(Some(DeviceType::GPU)) {
+        Ok(providers) => providers,
+        Err(e) => {
+            log::error!("failed to get providers: {e}");
+            return InitializeResult::InitializeFailedToGetProviders;
+        }
     };
 
     let out = unsafe { std::slice::from_raw_parts_mut(out, out_len) };
@@ -109,15 +112,18 @@ pub extern "C" fn initialize(
 ) -> InitializeResult {
     // Convert end to exclusive
     if end == u64::MAX {
+        log::error!("end must be < u64::MAX");
         return InitializeResult::InitializeInvalidLabelsRange;
     }
     let end = end + 1;
 
     let initializer = unsafe { &mut *(initializer as *mut InitializerWrapper) };
-    let len = if let Ok(len) = usize::try_from(end - start) {
-        len * 16
-    } else {
-        return InitializeResult::InitializeInvalidLabelsRange;
+    let len = match usize::try_from(end - start) {
+        Ok(len) => len * 16,
+        Err(e) => {
+            log::error!("failed to calculate number of labels to initialize: {e}");
+            return InitializeResult::InitializeInvalidLabelsRange;
+        }
     };
 
     let mut labels = unsafe { std::slice::from_raw_parts_mut(out_buffer, len) };
@@ -129,7 +135,7 @@ pub extern "C" fn initialize(
     ) {
         Ok(nonce) => nonce,
         Err(e) => {
-            log::error!("Error initializing labels: {e:?}");
+            log::error!("error initializing labels: {e:?}");
             return InitializeResult::InitializeError;
         }
     };
@@ -154,7 +160,7 @@ pub extern "C" fn new_initializer(
     match _new_initializer(provider_id, n, commitment, vrf_difficulty) {
         Ok(initializer) => Box::into_raw(initializer) as _,
         Err(e) => {
-            log::error!("Error creating initializer: {e:?}");
+            log::error!("error creating initializer: {e:?}");
             std::ptr::null_mut()
         }
     }
