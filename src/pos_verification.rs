@@ -2,6 +2,7 @@
 
 use std::{io::Read, io::Seek, path::Path};
 
+use itertools::Itertools;
 use rand::seq::IteratorRandom;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 use scrypt_jane::scrypt::ScryptParams;
@@ -68,6 +69,7 @@ fn verify<R: Read + Seek + Send>(
     (0..labels_count as u64)
         .choose_multiple(&mut rng, labels_to_verify)
         .into_iter()
+        .sorted()
         .map(|index| -> Result<_, VerificationError> {
             let mut label = [0u8; 16];
             labels.seek(std::io::SeekFrom::Start(index * 16))?;
