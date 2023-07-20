@@ -2,9 +2,12 @@ use std::{error::Error, ffi::c_char, fmt::Debug};
 
 use post::{
     initialize::{CpuInitializer, Initialize},
+    pos_verification::VerificationError,
     ScryptParams,
 };
 use scrypt_ocl::{ocl::DeviceType, OpenClInitializer, ProviderId};
+
+use crate::post_impl::VerifyResult;
 
 pub enum Initializer {}
 
@@ -208,23 +211,70 @@ pub extern "C" fn free_initializer(initializer: *mut Initializer) {
     unsafe { drop(Box::from_raw(initializer as *mut InitializerWrapper)) };
 }
 
+#[no_mangle]
+pub extern "C" fn verify_pos(
+    datadir: *const c_char,
+    from_file: *const u32,
+    to_file: *const u32,
+    fraction: f64,
+    scrypt: ScryptParams,
+) -> VerifyResult {
+    let datadir = unsafe { std::ffi::CStr::from_ptr(datadir) };
+    let datadir = match datadir.to_str() {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("invalid datadir: {e}");
+            return VerifyResult::Failed;
+        }
+    };
+    let from_file = unsafe { from_file.as_ref() }.map(|f| *f as usize);
+    let to_file = unsafe { to_file.as_ref() }.map(|f| *f as usize);
+
+    match post::pos_verification::verify_files(
+        std::path::Path::new(datadir),
+        fraction,
+        from_file,
+        to_file,
+        scrypt,
+    ) {
+        Ok(_) => VerifyResult::Ok,
+        Err(VerificationError::InvalidLabel { idx, offset }) => {
+            log::info!(
+                "POS data is invalid: {}",
+                VerificationError::InvalidLabel { idx, offset }
+            );
+            VerifyResult::Invalid
+        }
+        Err(e) => {
+            log::error!("Error verifying POS data: {e:?}");
+            VerifyResult::Failed
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::ptr::null_mut;
+    use std::{
+        ffi::CString,
+        ptr::{null, null_mut},
+    };
 
     use post::{
         initialize::{CpuInitializer, Initialize, MockInitialize},
         ScryptParams,
     };
+    use tempfile::tempdir;
 
-    use crate::initialization::{Initializer, InitializerWrapper};
+    use crate::{
+        initialization::{Initializer, InitializerWrapper},
+        post_impl::VerifyResult,
+    };
 
-    use super::{InitializeResult, CPU_PROVIDER_ID};
+    use super::{verify_pos, InitializeResult, CPU_PROVIDER_ID};
 
     #[test]
     fn cant_initialize_more_than_2_64_labels() {
-        let initializer =
-            super::new_initializer(CPU_PROVIDER_ID, 32, [0u8; 32].as_ptr(), std::ptr::null());
+        let initializer = super::new_initializer(CPU_PROVIDER_ID, 32, [0u8; 32].as_ptr(), null());
 
         let mut labels = Vec::new();
         let result = super::initialize(initializer, 0, u64::MAX, labels.as_mut_ptr(), null_mut());
@@ -235,8 +285,7 @@ mod tests {
     fn initialization() {
         let indices = 0..=70;
 
-        let initializer =
-            super::new_initializer(CPU_PROVIDER_ID, 32, [0u8; 32].as_ptr(), std::ptr::null());
+        let initializer = super::new_initializer(CPU_PROVIDER_ID, 32, [0u8; 32].as_ptr(), null());
 
         let mut labels = vec![0u8; 71 * 16];
         let result = super::initialize(
@@ -290,15 +339,14 @@ mod tests {
 
     #[test]
     fn cpu_provider_is_always_available() {
-        let initializer =
-            super::new_initializer(CPU_PROVIDER_ID, 32, [0u8; 32].as_ptr(), std::ptr::null());
+        let initializer = super::new_initializer(CPU_PROVIDER_ID, 32, [0u8; 32].as_ptr(), null());
         assert!(!initializer.is_null());
         super::free_initializer(initializer);
     }
 
     #[test]
     fn free_gpu_initializer() {
-        let initializer = super::new_initializer(0, 32, [0u8; 32].as_ptr(), std::ptr::null());
+        let initializer = super::new_initializer(0, 32, [0u8; 32].as_ptr(), null());
         if !initializer.is_null() {
             super::free_initializer(initializer);
         }
@@ -366,5 +414,38 @@ mod tests {
             InitializeResult::InitializeOk,
             super::get_providers(providers.as_mut_ptr(), count)
         );
+    }
+
+    #[test]
+    fn initialize_and_verify() {
+        // Initialize some data
+        let datadir = tempdir().unwrap();
+
+        let cfg = post::config::Config {
+            k1: 23,
+            k2: 32,
+            k3: 10,
+            pow_difficulty: [0xFF; 32],
+            scrypt: ScryptParams::new(0, 0, 0),
+        };
+
+        CpuInitializer::new(cfg.scrypt)
+            .initialize(datadir.path(), &[0u8; 32], &[0u8; 32], 256, 31, 700, None)
+            .unwrap();
+
+        // Verify the data
+        let datapath = CString::new(datadir.path().to_str().unwrap()).unwrap();
+        let result = verify_pos(datapath.as_ptr(), null(), null(), 100.0, cfg.scrypt);
+        assert_eq!(VerifyResult::Ok, result);
+
+        // verify with wrong scrypt params
+        let wrong_scrypt = ScryptParams::new(2, 0, 0);
+        let result = verify_pos(datapath.as_ptr(), null(), null(), 100.0, wrong_scrypt);
+        assert_eq!(VerifyResult::Invalid, result);
+
+        // verify with non-existent path
+        let path = CString::new("non-existent-path").unwrap();
+        let result = verify_pos(path.as_ptr(), null(), null(), 100.0, cfg.scrypt);
+        assert_eq!(VerifyResult::Failed, result);
     }
 }

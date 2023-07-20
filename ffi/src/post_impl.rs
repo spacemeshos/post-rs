@@ -157,6 +157,7 @@ pub enum VerifyResult {
     Invalid,
     InvalidArgument,
     FailedToCreateVerifier,
+    Failed,
 }
 
 /// Get the recommended RandomX flags

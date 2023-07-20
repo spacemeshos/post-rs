@@ -4,6 +4,7 @@ pub mod config;
 mod difficulty;
 pub mod initialize;
 pub mod metadata;
+pub mod pos_verification;
 pub mod pow;
 pub mod prove;
 mod random_values_gen;
