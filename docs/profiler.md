@@ -117,4 +117,4 @@ Yes, you can, but please be warned that if you're using the whole 12hours then y
 
 Place that in your node config under `smeshing` key. Please note that the values are just an example and you need to use your own values. This is a `json` file so please make sure that it's formatted properly.
 
-If you're using `smapp` then please put it to the node custom config file named `node-config.7c8cef2b` in Spacemesh app directory.
+If you're using `smapp` then please put it to the node custom config file named `node-config.7c8cef2b.json` in Spacemesh app directory.
