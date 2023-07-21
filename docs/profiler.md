@@ -80,10 +80,7 @@ With 10 threads we can see that speed increased by 8 times. It is important to o
 Based on these outputs you need to decide what is the best configuration for your hardware. Please note that the speed of the proof generation is not the only factor.
 
 ## Is that all that is happening during the proof generation?
-Actually no, there is one more item which is that for each group of 16 nonces there is computation required. That exists to prevent a certain kind of exploit where an adversary with cheap processing power can replace some storage with much more computation, we’ve introduced a small amount of additional computation to the PoST proving process making this attack too expensive to carry out.
-There are plans to delegate that computation to other servers and pay a small fee for that. You can sometimes find it referred as `k2pow`.
-
-For every 64 nonces one `k2pow` computation is required. A low-end CPU with a hash rate of 500 in [RandomX benchmark](https://xmrig.com/benchmark) should require 2mins30seconds per 1 SU (1 Space Unit in mainnet is 64GiB). It scales linearly with the hash rate. Please consult single and multicore results from the benchmark.
+Additionally for every group of 16 nonces there is an additional computation - often referred to as `k2pow` - required. It serves as mitigation against some possible attacks by dishonest smeshers.
 
 Plaese add that time to the final time needed to generate a proof.
 
