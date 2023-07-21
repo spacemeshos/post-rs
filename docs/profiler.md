@@ -96,3 +96,17 @@ The general rule of thumb is that you want to match your disk speed with that be
 
 ### Do I need to finish the proof asap?
 No, you need to be in time, on the mainnet that time is 12hours. As long as you're on time you're good.
+
+
+## How to use the values
+
+```
+"smeshing-proving-opts": {
+  "smeshing-opts-proving-nonces": 144,
+  "smeshing-opts-proving-threads": 0
+},
+```
+
+Place that in your node config. Please note that the values are just an example and you need to use your own values.
+
+If you're using `smapp` then please put it to the node custom config file named `node-config.7c8cef2b` in Spacemesh app directory.
