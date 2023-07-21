@@ -24,7 +24,7 @@ The duration of the benchmark can be set with `--duration` and defaults to 10 se
 
 There are two parameters that can influence the proofing speed and can be optimized for go-spacemesh: `--threads` and `--nonces`.
 The general rule of thumb is the more threads the faster, but because different processors may have different behaviours when all threads are under load. Please check different values for `--threads` to find the optimal one.
-The more nonces are used with `--nonces` in ONE data pass, the bigger the chance to find a valid proof. The downside of using more `--nonces` is a heavier load on the CPU.
+The more nonces are used with `--nonces` in ONE data pass, the bigger the chance to find a valid proof. The downside of using more `--nonces` is a heavier load on the CPU. It's important to note that nonces must be multiply of 16.
 
 To simplify the estimation of nonces please use the following formula:
 in google sheets format
