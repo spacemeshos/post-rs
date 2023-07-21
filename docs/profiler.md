@@ -79,9 +79,16 @@ With 10 threads we can see that speed increased by 8 times. But again it's impor
 
 Based on these outputs you need to decide what is the best configuration for your hardware. Please note that the speed of the proof generation is not the only factor.
 
+## Is that all that is happening during the proof generation?
+Actually no, there is one more item which is that for each group of 16 nonces there is computation required. That exists to prevent a certain kind of exploit where an adversary with cheap processing power can replace some storage with much more computation, we’ve introduced a small amount of additional computation to the PoST proving process making this attack too expensive to carry out.
+There are plans to delegate that computation to other servers and pay a small fee for that. You can sometimes find it referred as `k2pow`.
 
+But for now you can assume that for EACH group of 64nonces once per proof process the computation required
+For a low-end CPU with hash rate of 500 in [RandomX benchmark](https://xmrig.com/benchmark) that it should take 2mins30seconds per 1Space Unit (1 Space Unit in mainnet is 64GiB). It scales linearly with the hash rate. Please consult single and multicore results from the benchmark.
 
-## Tips & Hints
+Plaese add that time to the final time needed to generate a proof.
+
+# Tips & Hints
 
 ### How to see that CPU is my limiting factor?
 If `speed_gib_s` is slowing down with more noces, then CPU is most likely the limiting factor. Try to add more threads IF needed
@@ -96,6 +103,9 @@ The general rule of thumb is that you want to match your disk speed with that be
 
 ### Do I need to finish the proof asap?
 No, you need to be in time, on the mainnet that time is 12hours. As long as you're on time you're good.
+
+### Can I really use whole 12hours?
+Yes, you can, but please be warned that if you're using the whole 12hours then you're risking that you will not be able to submit the proof in time. Not submitting a proof means skipping an epoch (2 weeks on the mainnet). Please leave some buffer for ocasional slowdowns on your side.
 
 
 ## How to use the values
