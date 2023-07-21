@@ -6,23 +6,23 @@ Creating a proof in spacemesh depends on few major factors:
 * Disk speed
 * Amount of storage initialized
 
-The major task of the profiler tool is to estimate how fast can be the proof created for a given CPU speed and disk speed.
+The primary goal of the profiler tool is to estimate how fast a PoST proof can be created for a given CPU and disk speed.
 
 The best way to get the profiler tool is to get it from the [releases page](https://github.com/spacemeshos/post-rs/releases).
 
-It's very important to remember that the proof time itself does not need to be optimized against, we just need to generate valid proof in time which on the mainnet is 12h.
+It's important to understand that the proving time itself does not need to be optimized. It's enough to generate proof in a specified time window, which on the mainnet is 12h.
 
 ## How to run profiler tool
 
-One of the most important part is to set correct path to data file using `--data-file` flag. It's important to set it so the benchmark will use the proper disk(s). Plaese be warned that the contents of that file MIGHT be overwritten.
+For accurate results set the path with `--data-file` to the same disk that will be used by the node, otherwise the results of the benchmark might not reflect the actual performance of the node. Please be warned that the contents of that file MIGHT be overwritten.
 
-By default profiler uses 1GiB sample data you can change that using `--data-size` flag. One can experiment with different sizes to check for the bottlenecks in the hardware.
+By default the profiler uses 1GiB sample data. This can be changed with the `--data-size` flag. Different sizes can be used to check for bottlenecks of the hardware.
 
-It's also important to give specific `--duration`, that defaults to 10 seconds. The longer the duration the more accurate the results will be.
+The duration of the benchmark can be set with `--duration` and defaults to 10 seconds. A longer duration will yield more accurate results.
 
-Proving options. There are two important parameters that then are used by go-spacemesh directly during the proof generation. `--threads` and `--nonces`.
-The general rule of thumb is the more threads the faster, but because different processors may have different behaviours when all threads are under load please check different values for `--threads` to find the optimal one.
-`--nonces` The more nonces one does in ONE data pass, the bigger chance to find a proof. The downside is the more `--nonces` the more work CPU will need to do.
+There are two parameters that can influence the proofing speed and can be optimized for go-spacemesh: `--threads` and `--nonces`.
+The general rule of thumb is the more threads the faster, but because different processors may have different behaviours when all threads are under load. Please check different values for `--threads` to find the optimal one.
+The more nonces are used with `--nonces` in ONE data pass, the bigger the chance to find a valid proof. The downside of using more `--nonces` is a heavier load on the CPU.
 
 To simplify the estimation of nonces please use the following formula:
 in google sheets format
@@ -34,9 +34,9 @@ in wolfram alpha format
 1-(1-(1-CDF[BinomialDistribution[10^9, 26/10^9],36]))^{put nonces here}
 ```
 
-That formula will output a probability of finding proof in one data pass. Proving part is written in a way that it will do multiple data passes IF needed.
+This formula gives the probability of finding a valid proof in one data pass. The node will perform multiple passes if needed.
 
-Please note that in genreal proof speed should almost linearly scale up with the amount of cores (assuming that they're equally fast), but in the same time it will linearlly scale down with the amount of nonces in groups of 16 (32 nonces should be twice as slow as 16)
+Please note that proving speed linearly scales with the number of cores used (assuming that they're equally fast), but inversely scales with the number of nonces in groups of 16 (32 nonces should be twice as slow as 16). This effect might not manifest itself until a high number of nonces is used. The reason is that in most setups the hard disk speed will be the limiting factor if a low number of nonces is used.
 
 ## How to interpret the results
 
@@ -54,7 +54,7 @@ Here we see the following
 * 64 nonces were used
 
 The benchmark took 12.09 seconds to complete and the speed was 0.41GiB/s.
-But from previous formula we know that the probability of finding a proof with 64 nonces is 79.39%. Therefore there is 20% chance that we will need to read the data again. Therefore the actual time can be significanly longer.
+From the formula above we know that the probability of finding a proof with 64 nonces is 79.39%. Therefore there is a ~20% chance that at least two passes are necessary (and a ~ 0.20^x chance that more than x passes are necessary).
 ```
 ./profiler --data-size 1 --threads=1 --data-file data.bin --nonces=128
 {
@@ -75,7 +75,7 @@ With 128 nonces there is 95.75% chance to find a proof in one data pass.
 }
 ```
 
-With 10 threads we can see that speed increased by 8 times. But again it's important to remember that we don't necessarily need to optimize for the speed, we need to optimize for the probability of finding a proof in time. There are 12 hours to find and submit proof.
+With 10 threads we can see that speed increased by 8 times. It is important to optimize for the probability of finding a proof in time rather than optimizing for the speed. On mainnet nodes have a 12 hour window to find and submit a proof.
 
 Based on these outputs you need to decide what is the best configuration for your hardware. Please note that the speed of the proof generation is not the only factor.
 
@@ -83,8 +83,7 @@ Based on these outputs you need to decide what is the best configuration for you
 Actually no, there is one more item which is that for each group of 16 nonces there is computation required. That exists to prevent a certain kind of exploit where an adversary with cheap processing power can replace some storage with much more computation, we’ve introduced a small amount of additional computation to the PoST proving process making this attack too expensive to carry out.
 There are plans to delegate that computation to other servers and pay a small fee for that. You can sometimes find it referred as `k2pow`.
 
-But for now you can assume that for EACH group of 64nonces once per proof process the computation required
-For a low-end CPU with hash rate of 500 in [RandomX benchmark](https://xmrig.com/benchmark) that it should take 2mins30seconds per 1Space Unit (1 Space Unit in mainnet is 64GiB). It scales linearly with the hash rate. Please consult single and multicore results from the benchmark.
+For every 64 nonces one `k2pow` computation is required. A low-end CPU with a hash rate of 500 in [RandomX benchmark](https://xmrig.com/benchmark) should require 2mins30seconds per 1 SU (1 Space Unit in mainnet is 64GiB). It scales linearly with the hash rate. Please consult single and multicore results from the benchmark.
 
 Plaese add that time to the final time needed to generate a proof.
 
@@ -99,13 +98,13 @@ If `speed_gib_s` is not slowing down with more nonces, then disk is most likely 
 ### How do I find the sweet spot?
 That depends, if you want to generate proof as fast as possible because you cannot have your computer working for 12hours then make it work as hard as possible regardless of anything else.
 
-The general rule of thumb is that you want to match your disk speed with that benchmark. If your disk will be faster then CPU will be working on 100% and disk will NOT be fully utilized, if your CPU is way faster than HDD then CPU may be waiting for the data from the disk.
+The general rule of thumb is that you want to match your disk speed with that benchmark. If your disk will be faster then CPU will be working on 100% and disk will NOT be fully utilized, if your CPU is faster than your HDD then the CPU will be waiting for the data from the disk.
 
 ### Do I need to finish the proof asap?
-No, you need to be in time, on the mainnet that time is 12hours. As long as you're on time you're good.
+No, the proof needs to be done within a time window. On the mainnet that time window is 12hours. As long as you're able to generate a proof with high probability within this time, you are good.
 
 ### Can I really use whole 12hours?
-Yes, you can, but please be warned that if you're using the whole 12hours then you're risking that you will not be able to submit the proof in time. Not submitting a proof means skipping an epoch (2 weeks on the mainnet). Please leave some buffer for ocasional slowdowns on your side.
+Yes, you can, but please be warned that if you're using the whole 12hours then you're risking that you will not be able to submit the proof in time. Not submitting a proof means skipping an epoch (2 weeks on the mainnet). Please leave some buffer for occasional slowdowns on your side.
 
 
 ## How to use the values
