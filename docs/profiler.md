@@ -6,7 +6,9 @@ Creating a proof in spacemesh depends on few major factors:
 * Disk speed
 * Amount of storage initialized
 
-The primary goal of the profiler tool is to estimate how fast a PoST proof can be created for a given CPU and disk speed.
+The primary goal of the profiler tool is to:
+* estimate how much storage one can safely initalize (to be able to generate a proof later)
+* configure proving (nonces and threads) optimally for the best use of the resources
 
 The best way to get the profiler tool is to get it from the [releases page](https://github.com/spacemeshos/post-rs/releases).
 
