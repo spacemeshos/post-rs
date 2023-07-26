@@ -86,7 +86,7 @@ Additionally for every group of 16 nonces there is an additional computation - o
 
 On the mainnet, each set of 64 nonces requires one `k2pow` computation. In the case of a low-end CPU with a hash rate of 500 in the [RandomX benchmark](https://xmrig.com/benchmark), approximately 2 minutes and 30 seconds are needed to process 1 SU (a Space Unit on the mainnet equates to 64GiB). This processing time scales up linearly with the hash rate. You may want to check out the single and multicore results from the benchmark for more details.
 
-Please add that time to the final time needed to generate a proof.
+Please add your estimate (number of SU x the result of the RandomX benchmark) to the total time needed to generate a proof.
 
 # Tips & Hints
 
