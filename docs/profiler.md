@@ -84,7 +84,9 @@ Based on these outputs you need to decide what is the best configuration for you
 ## Is that all that is happening during the proof generation?
 Additionally for every group of 16 nonces there is an additional computation - often referred to as `k2pow` - required. It serves as mitigation against some possible attacks by dishonest smeshers.
 
-Plaese add that time to the final time needed to generate a proof.
+On the mainnet, each set of 64 nonces requires one `k2pow` computation. In the case of a low-end CPU with a hash rate of 500 in the [RandomX benchmark](https://xmrig.com/benchmark), approximately 2 minutes and 30 seconds are needed to process 1 SU (a Space Unit on the mainnet equates to 64GiB). This processing time scales up linearly with the hash rate. You may want to check out the single and multicore results from the benchmark for more details.
+
+Please add that time to the final time needed to generate a proof.
 
 # Tips & Hints
 
