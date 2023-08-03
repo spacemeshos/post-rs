@@ -140,6 +140,7 @@ impl std::fmt::Display for RandomXMode {
 fn parse_nonces(arg: &str) -> eyre::Result<u32> {
     let nonces = arg.parse()?;
     eyre::ensure!(nonces % 16 == 0, "nonces must be multiple of 16");
+    eyre::ensure!(nonces / 16 <= 256, format!("max nonces is {}", 256 * 16));
     Ok(nonces)
 }
 
@@ -259,8 +260,8 @@ struct PowPerfResult {
 /// Bench K2 Proof of Work
 fn pow(args: PowArgs) -> eyre::Result<()> {
     eprintln!(
-        "Benchmarking PoW for 1 space unit (the result will be scaled automatically to {} units).",
-        args.num_units,
+        "Benchmarking PoW for 1 space unit and 16 nonces (the result will be scaled automatically to {} units and {} nonces).",
+        args.num_units, args.nonces,
     );
 
     let randomx_flags = match args.randomx_mode {
@@ -285,7 +286,7 @@ fn pow(args: PowArgs) -> eyre::Result<()> {
     pool.install(|| -> eyre::Result<()> {
         for i in 0..args.iterations {
             let start = time::Instant::now();
-            prover.prove(i as u8, &[0; 8], &args.difficulty, None)?;
+            prover.prove(7, &i.to_le_bytes(), &args.difficulty, None)?;
             let duration = start.elapsed();
             eprintln!(
                 "[{i}]: {duration:.2?} (scaled: {:.2?})",
