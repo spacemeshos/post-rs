@@ -6,11 +6,10 @@ use std::{
     fs::OpenOptions,
     io::{BufReader, BufWriter, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    str::FromStr,
     time::{self, Duration},
 };
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use eyre::Context;
 use post::{
     pow::{self, randomx, Prover as PowProver},
@@ -93,10 +92,10 @@ struct PowArgs {
 
     /// Number of nonces to attempt in single pass over POS data.
     ///
+    /// Each group of 16 nonces requires a separate PoW. Must be a multiple of 16.
+    ///
     /// Higher value gives a better chance to find a proof within less passes over the POS data,
     /// but also slows down the process.
-    ///
-    /// Must be a multiple of 16.
     #[arg(short, long, default_value_t = 64, value_parser(parse_nonces))]
     nonces: u32,
 
@@ -105,6 +104,9 @@ struct PowArgs {
     num_units: u32,
 
     /// PoW difficulty, a network parameter
+    ///
+    /// It's a base parameter for 1 space unit. The actual difficulty for PoW is scaled by
+    /// the number of initialized space units (the more the harder).
     #[arg(
         short,
         long,
@@ -113,22 +115,32 @@ struct PowArgs {
     )]
     difficulty: [u8; 32],
 
-    /// RandomX flags. By default uses the recommended flags with fast mode enabled (FLAG_FULL_MEM).
+    /// Modes of operation for RandomX.
     ///
-    /// Possible values:
-    /// [ FLAG_DEFAULT | FLAG_LARGE_PAGES | FLAG_HARD_AES | FLAG_FULL_MEM | FLAG_JIT | FLAG_SECURE | FLAG_ARGON2_SSSE3 | FLAG_ARGON2_AVX2 | FLAG_ARGON2]
-    #[arg(long, default_value_t = randomx::RandomXFlag::get_recommended_flags() | randomx::RandomXFlag::FLAG_FULL_MEM, value_parser(parse_randomx_flags))]
-    randomx_flags: randomx::RandomXFlag,
+    /// They are interchangeable as they give the same results but have different
+    /// purpose and memory requirements.
+    #[arg(long, default_value_t = RandomXMode::Fast)]
+    randomx_mode: RandomXMode,
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum)]
+enum RandomXMode {
+    /// Fast mode for proving. Requires 2080 MiB of memory.
+    Fast,
+    /// Light mode for verification. Requires only 256 MiB of memory, but runs significantly slower
+    Light,
+}
+
+impl std::fmt::Display for RandomXMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.to_possible_value().unwrap().get_name().fmt(f)
+    }
 }
 
 fn parse_nonces(arg: &str) -> eyre::Result<u32> {
     let nonces = arg.parse()?;
     eyre::ensure!(nonces % 16 == 0, "nonces must be multiple of 16");
     Ok(nonces)
-}
-
-fn parse_randomx_flags(args: &str) -> eyre::Result<randomx::RandomXFlag> {
-    randomx::RandomXFlag::from_str(args).map_err(|e| eyre::eyre!("invalid RandomX flags: {e}"))
 }
 
 fn parse_difficulty(arg: &str) -> eyre::Result<[u8; 32]> {
@@ -247,14 +259,21 @@ struct PowPerfResult {
 /// Bench K2 Proof of Work
 fn pow(args: PowArgs) -> eyre::Result<()> {
     eprintln!(
-        "Benchmarking PoW for 1 unit and 16 nonces (the result will be scaled automatically to {} unit(s) and {} nonces).",
-        args.num_units, args.nonces,
+        "Benchmarking PoW for 1 space unit (the result will be scaled automatically to {} units).",
+        args.num_units,
     );
-    eprintln!("RandomX flags: {}", args.randomx_flags);
+
+    let randomx_flags = match args.randomx_mode {
+        RandomXMode::Fast => {
+            randomx::RandomXFlag::get_recommended_flags() | randomx::RandomXFlag::FLAG_FULL_MEM
+        }
+        RandomXMode::Light => randomx::RandomXFlag::get_recommended_flags(),
+    };
+    eprintln!("RandomX flags: {}", randomx_flags);
 
     eprintln!("Initializing RandomX VMs...");
     let start = time::Instant::now();
-    let prover = randomx::PoW::new(args.randomx_flags)?;
+    let prover = randomx::PoW::new(randomx_flags)?;
     let randomx_vm_init_time = start.elapsed();
     eprintln!("Done initializing RandomX VMs in {randomx_vm_init_time:.2?}");
 
