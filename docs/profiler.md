@@ -84,9 +84,23 @@ Based on these outputs you need to decide what is the best configuration for you
 ## Is that all that is happening during the proof generation?
 Additionally for every group of 16 nonces there is an additional computation - often referred to as `k2pow` - required. It serves as mitigation against some possible attacks by dishonest smeshers.
 
-On the mainnet, each set of 64 nonces requires one `k2pow` computation. In the case of a low-end CPU with a hash rate of 500 in the [RandomX benchmark](https://xmrig.com/benchmark), approximately 2 minutes and 30 seconds are needed to process 1 SU (a Space Unit on the mainnet equates to 64GiB). This processing time scales up linearly with the hash rate. You may want to check out the single and multicore results from the benchmark for more details.
+On the mainnet, each set of 16 nonces requires one `k2pow` computation. In the case of a low-end CPU with a hash rate of 500 h/s in the [RandomX benchmark](https://xmrig.com/benchmark), approximately 2 minutes and 30 seconds are needed to create a PoWs for 4 SUs (a Space Unit on the mainnet equates to 64GiB) and 64 nonces (4xPoW). This processing time scales down linearly with the hash rate and it scales up linearily with the number of SUs. You may want to check out the single and multicore results from the benchmark for more details.
 
 Please add your estimate (number of SU x the result of the RandomX benchmark) to the total time needed to generate a proof.
+
+## Benchmarking K2 PoW
+The `profiler` allows benchmarking the speed of proof of work. The profiler always executes PoW for 1 SU to speed up measurement and automatically scales up the result by the requested number of units.
+
+To understand the inner mechanics of RandomX proof of work, take a look at its [specification](https://github.com/tevador/RandomX/blob/master/doc/specs.md).
+
+Refer to `profiler pow --help` to understand how to use the profiler to benchmark the K2 PoW. Most users will need to tweak three arguments:
+
+* `--threads`,
+* `--num-units`,
+* `--nonces`
+
+### Example
+`profiler pow --nonces 288 --num-units 16 --iterations 10 --threads 2 --randomx-mode fast`
 
 # Tips & Hints
 
