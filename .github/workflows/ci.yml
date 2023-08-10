@@ -215,6 +215,9 @@ jobs:
         run: cargo build -p profiler --release
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
+          # https://github.com/tevador/RandomX/issues/262
+          # https://github.com/tari-project/randomx-rs/issues/48
+          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
       - name: Archive profiler artifacts
         uses: actions/upload-artifact@v3
         with:
