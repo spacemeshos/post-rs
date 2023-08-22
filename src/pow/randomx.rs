@@ -1,6 +1,7 @@
 pub use randomx_rs::RandomXFlag;
 use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXVM};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use thread_local::ThreadLocal;
 
 use super::{Error, PowVerifier, Prover};
@@ -22,6 +23,7 @@ pub struct PoW {
 
 impl PoW {
     pub fn new(flags: RandomXFlag) -> Result<PoW, Error> {
+        log::debug!("initializing RandomX");
         let cache = RandomXCache::new(flags, RANDOMX_CACHE_KEY)?;
         let (cache, dataset) = if flags.contains(RandomXFlag::FLAG_FULL_MEM) {
             (None, Some(RandomXDataset::new(flags, cache, 0)?))
@@ -56,6 +58,7 @@ impl Prover for PoW {
             pow_input.extend_from_slice(miner_id.as_ref());
         }
 
+        let iterations = AtomicUsize::new(0);
         let (pow_nonce, _) = (0..2u64.pow(56))
             .into_par_iter()
             .map_init(
@@ -64,6 +67,7 @@ impl Prover for PoW {
                     if let Ok((vm, pow_input)) = state {
                         pow_input[0..7].copy_from_slice(&pow_nonce.to_le_bytes()[0..7]);
                         let hash = vm.calculate_hash(pow_input.as_slice()).ok()?;
+                        iterations.fetch_add(1, Ordering::Relaxed); // Increment the iteration counter atomically
                         Some((pow_nonce, hash))
                     } else {
                         None
@@ -73,6 +77,9 @@ impl Prover for PoW {
             .filter_map(|res| res)
             .find_any(|(_, hash)| hash.as_slice() < difficulty)
             .ok_or(Error::PoWNotFound)?;
+
+        let total_iterations = iterations.load(Ordering::Relaxed);
+        log::debug!("Took {total_iterations:?} PoW iterations to find a valid nonce");
 
         Ok(pow_nonce)
     }
