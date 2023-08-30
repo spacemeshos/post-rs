@@ -41,6 +41,7 @@ criterion = "0.4"
 tempfile = "3.3.0"
 rand = "0.8.5"
 proptest = "1.1.0"
+rstest = "0.18.2"
 
 [target.'cfg(not(windows))'.dev-dependencies]
 pprof = { version = "0.11.1", features = ["flamegraph", "criterion"] }

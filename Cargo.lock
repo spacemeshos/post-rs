@@ -1633,6 +1633,7 @@ dependencies = [
  "randomx-rs",
  "rayon",
  "regex",
+ "rstest 0.18.2",
  "scrypt-jane",
  "serde",
  "serde_json",
@@ -1937,6 +1938,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "436b050e76ed2903236f032a59761c1eb99e1b0aead2c257922771dab1fc8c78"
 
 [[package]]
+name = "relative-path"
+version = "1.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c707298afce11da2efef2f600116fa93ffa7a032b5d7b628aa17711ec81383ca"
+
+[[package]]
 name = "rgb"
 version = "0.8.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1953,7 +1960,19 @@ checksum = "de1bb486a691878cd320c2f0d319ba91eeaa2e894066d8b5f8f117c000e9d962"
 dependencies = [
  "futures 0.3.28",
  "futures-timer",
- "rstest_macros",
+ "rstest_macros 0.17.0",
+ "rustc_version",
+]
+
+[[package]]
+name = "rstest"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97eeab2f3c0a199bc4be135c36c924b6590b88c377d416494288c14f2db30199"
+dependencies = [
+ "futures 0.3.28",
+ "futures-timer",
+ "rstest_macros 0.18.2",
  "rustc_version",
 ]
 
@@ -1968,6 +1987,23 @@ dependencies = [
  "quote",
  "rustc_version",
  "syn 1.0.109",
+ "unicode-ident",
+]
+
+[[package]]
+name = "rstest_macros"
+version = "0.18.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d428f8247852f894ee1be110b375111b586d4fa431f6c46e64ba5a0dcccbe605"
+dependencies = [
+ "cfg-if",
+ "glob",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "relative-path",
+ "rustc_version",
+ "syn 2.0.23",
  "unicode-ident",
 ]
 
@@ -2077,7 +2113,7 @@ dependencies = [
  "ocl",
  "post-rs",
  "regex",
- "rstest",
+ "rstest 0.17.0",
  "thiserror",
 ]
 
