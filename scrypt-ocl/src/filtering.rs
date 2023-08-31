@@ -5,7 +5,7 @@ const DEVICES_BLACKLIST_ENV: &str = "POST_OCL_DEVICES_BLACKLIST";
 
 fn create_blacklist_filter(blacklist_re: Option<&str>) -> Box<dyn Fn(&str) -> bool> {
     let Some(blacklist_re) = blacklist_re else {
-        return Box::new(|_|  true );
+        return Box::new(|_| true);
     };
     match Regex::new(blacklist_re) {
         Ok(re) => {

@@ -4,6 +4,7 @@ use std::{
     path::Path,
 };
 
+use eyre::Context;
 use itertools::Itertools;
 use regex::Regex;
 
@@ -68,45 +69,52 @@ impl<T: Read> Iterator for BatchingReader<T> {
     }
 }
 
-pub(crate) fn pos_files(datadir: &Path) -> impl Iterator<Item = DirEntry> {
-    let file_re = Regex::new(r"postdata_(\d+)\.bin").unwrap();
-    datadir
+pub(crate) fn pos_files(datadir: &Path) -> eyre::Result<impl Iterator<Item = DirEntry>> {
+    let file_re = Regex::new(r"^postdata_(\d+)\.bin$").unwrap();
+    let files = datadir
         .read_dir()
-        .expect("read_dir call failed")
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            file_re
+        .wrap_err_with(|| format!("reading {} directory", datadir.display()))?
+        .filter_map(|entry| match entry {
+            Ok(entry) => file_re
                 .captures(entry.file_name().to_string_lossy().as_ref())
                 .and_then(|c| c.get(1).unwrap().as_str().parse::<u64>().ok())
-                .map(|id| (id, entry))
+                .map(|id| (id, entry)),
+            Err(err) => {
+                log::warn!("error reading directory entry: {err}");
+                None
+            }
         })
         .sorted_by_key(|(id, _)| *id)
-        .map(|(_, entry)| entry)
+        .map(|(_, entry)| entry);
+
+    Ok(files)
 }
 
 pub(crate) fn read_data(
     datadir: &Path,
     batch_size: usize,
     file_size: u64,
-) -> impl Iterator<Item = Batch> {
+) -> eyre::Result<impl Iterator<Item = Batch>> {
     let mut readers = Vec::<BatchingReader<File>>::new();
-    let mut files = pos_files(datadir).enumerate().peekable();
+    let mut files = pos_files(datadir)?.enumerate().peekable();
 
     while let Some((id, entry)) = files.next() {
         let pos = id as u64 * file_size;
-        let file = File::open(entry.path()).unwrap();
+        let path = entry.path();
+        let file = File::open(&path)?;
         let pos_file_size = file.metadata().unwrap().len();
 
         // If there are more files, check if the size of the file is correct
         if files.peek().is_some() && pos_file_size != file_size {
             log::warn!(
-                "invalid POS file, expected size: {file_size} vs actual size: {pos_file_size}"
+                "invalid POS file {}, expected size: {file_size} vs actual size: {pos_file_size}",
+                path.display(),
             );
         }
         readers.push(BatchingReader::new(file, pos, batch_size, file_size));
     }
 
-    readers.into_iter().flatten()
+    Ok(readers.into_iter().flatten())
 }
 
 pub fn read_from<R: Read>(
@@ -168,7 +176,7 @@ mod tests {
         let mut result = Vec::new();
         let mut next_expected_index = 0;
         let file_size = 4u64;
-        for batch in read_data(tmp_dir.path(), file_size as usize, file_size) {
+        for batch in read_data(tmp_dir.path(), file_size as usize, file_size).unwrap() {
             assert_eq!(next_expected_index, batch.pos);
             result.extend(batch.data);
             next_expected_index += file_size;
@@ -177,14 +185,18 @@ mod tests {
         assert_eq!(b"2Hell1Welc", result.as_slice());
     }
 
-    #[test]
-    fn skip_non_pos_files() {
+    #[rstest::rstest]
+    #[case("other.bin")]
+    #[case("_postadata_0.bin")]
+    #[case("postadata_0.bin_")]
+    #[case("postadata_0_.bin")]
+    fn skip_non_pos_files(#[case] filename: &'static str) {
         let tmp_dir = tempdir().unwrap();
-        let file_path = tmp_dir.path().join("other.bin");
+        let file_path = tmp_dir.path().join(filename);
         let mut tmp_file = File::create(file_path).unwrap();
         write!(tmp_file, "some data").unwrap();
 
-        assert!(read_data(tmp_dir.path(), 4, 4).next().is_none());
+        assert!(read_data(tmp_dir.path(), 4, 4).unwrap().next().is_none());
     }
 
     #[test]
@@ -195,9 +207,9 @@ mod tests {
             File::create(tmp_dir.path().join(format!("postdata_{i}.bin"))).unwrap();
         }
 
-        assert_eq!(total_files, pos_files(tmp_dir.path()).count());
+        assert_eq!(total_files, pos_files(tmp_dir.path()).unwrap().count());
 
-        for (i, file) in pos_files(tmp_dir.path()).enumerate() {
+        for (i, file) in pos_files(tmp_dir.path()).unwrap().enumerate() {
             assert_eq!(
                 format!("postdata_{i}.bin"),
                 file.file_name().to_string_lossy()

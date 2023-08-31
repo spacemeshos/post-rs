@@ -298,24 +298,23 @@ pub fn generate_proof(
             .wrap_err("creating prover")
         })?;
 
+        let data_reader = read_data(datadir, 1024 * 1024, metadata.max_file_size)?;
         let result = pool.install(|| {
-            read_data(datadir, 1024 * 1024, metadata.max_file_size)
-                .par_bridge()
-                .find_map_any(|batch| {
-                    prover.prove(
-                        &batch.data,
-                        batch.pos / BLOCK_SIZE as u64,
-                        |nonce, index| {
-                            let mut indexes = indexes.lock().unwrap();
-                            let vec = indexes.entry(nonce).or_default();
-                            vec.push(index);
-                            if vec.len() >= cfg.k2 as usize {
-                                return Some(std::mem::take(vec));
-                            }
-                            None
-                        },
-                    )
-                })
+            data_reader.par_bridge().find_map_any(|batch| {
+                prover.prove(
+                    &batch.data,
+                    batch.pos / BLOCK_SIZE as u64,
+                    |nonce, index| {
+                        let mut indexes = indexes.lock().unwrap();
+                        let vec = indexes.entry(nonce).or_default();
+                        vec.push(index);
+                        if vec.len() >= cfg.k2 as usize {
+                            return Some(std::mem::take(vec));
+                        }
+                        None
+                    },
+                )
+            })
         });
 
         if let Some((nonce, indices)) = result {

@@ -292,7 +292,7 @@ mod tests {
 
         let read_files = |path: &Path| -> Vec<u8> {
             let mut data = Vec::new();
-            for entry in reader::pos_files(path) {
+            for entry in reader::pos_files(path).unwrap() {
                 let mut file = std::fs::File::open(entry.path()).unwrap();
                 file.read_to_end(&mut data).unwrap();
             }
