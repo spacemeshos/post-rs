@@ -1110,7 +1110,7 @@ dependencies = [
 
 [[package]]
 name = "initializer"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "base64 0.21.3",
  "clap 4.4.1",
@@ -1533,7 +1533,7 @@ dependencies = [
 
 [[package]]
 name = "post-cbindings"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "cbindgen",
  "log",
@@ -1544,7 +1544,7 @@ dependencies = [
 
 [[package]]
 name = "post-rs"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "aes",
  "bitvec",
@@ -1673,7 +1673,7 @@ dependencies = [
 
 [[package]]
 name = "profiler"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "clap 4.4.1",
  "env_logger",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "scrypt-ocl"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "log",
  "ocl",
