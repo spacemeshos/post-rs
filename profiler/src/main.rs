@@ -227,7 +227,7 @@ fn proving(args: ProvingArgs) -> eyre::Result<()> {
 
     while total_time < Duration::from_secs(args.duration) {
         let file = util::open_without_cache(&file_path)?;
-        let reader = post::reader::read_from(BufReader::new(file), batch_size, total_size);
+        let reader = post::reader::read_from(BufReader::new(file), batch_size, total_size, None);
         let start = time::Instant::now();
         pool.install(|| {
             reader.par_bridge().for_each(|batch| {

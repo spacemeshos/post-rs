@@ -23,16 +23,24 @@ where
     pos: u64,
     batch_size: usize,
     total_size: u64,
+    identifier: Option<String>,
 }
 
 impl<T: Read> BatchingReader<T> {
-    pub fn new(reader: T, pos: u64, batch_size: usize, total_size: u64) -> BatchingReader<T> {
+    pub fn new(
+        reader: T,
+        pos: u64,
+        batch_size: usize,
+        total_size: u64,
+        identifier: Option<String>,
+    ) -> BatchingReader<T> {
         BatchingReader::<T> {
             reader,
             starting_pos: pos,
             pos,
             batch_size,
             total_size,
+            identifier,
         }
     }
 }
@@ -43,6 +51,12 @@ impl<T: Read> Iterator for BatchingReader<T> {
     fn next(&mut self) -> Option<Self::Item> {
         // FIXME(poszu) avoid reallocating the vector
         let pos_in_file = self.pos - self.starting_pos;
+
+        if pos_in_file == 0 {
+            if let Some(id) = &self.identifier {
+                log::info!("Reading file: {}", id);
+            }
+        }
         if pos_in_file >= self.total_size {
             return None;
         }
@@ -111,7 +125,11 @@ pub(crate) fn read_data(
                 path.display(),
             );
         }
-        readers.push(BatchingReader::new(file, pos, batch_size, file_size));
+
+        let identifier = Some(entry.file_name().to_string_lossy().into_owned());
+        readers.push(BatchingReader::new(
+            file, pos, batch_size, file_size, identifier,
+        ));
     }
 
     Ok(readers.into_iter().flatten())
@@ -121,8 +139,9 @@ pub fn read_from<R: Read>(
     reader: R,
     batch_size: usize,
     max_size: u64,
+    identifier: Option<String>,
 ) -> impl Iterator<Item = Batch> {
-    BatchingReader::new(reader, 0, batch_size, max_size)
+    BatchingReader::new(reader, 0, batch_size, max_size, identifier)
 }
 
 #[cfg(test)]
@@ -138,7 +157,7 @@ mod tests {
     fn batching_reader() {
         let data = (0..40).collect::<Vec<u8>>();
         let file = Cursor::new(data);
-        let mut reader = BatchingReader::new(file, 0, 16, 40);
+        let mut reader = BatchingReader::new(file, 0, 16, 40, None);
         assert_eq!(
             Some(Batch {
                 data: (0..16).collect(),

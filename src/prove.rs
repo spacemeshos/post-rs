@@ -14,7 +14,7 @@ use eyre::Context;
 use primitive_types::U256;
 use randomx_rs::RandomXFlag;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
-use std::{borrow::Cow, collections::HashMap, ops::Range, path::Path, sync::Mutex};
+use std::{borrow::Cow, collections::HashMap, ops::Range, path::Path, sync::Mutex, time::Instant};
 
 use crate::{
     cipher::AesCipher,
@@ -284,9 +284,11 @@ pub fn generate_proof(
         .build()
         .wrap_err("building thread pool")?;
 
+    let total_time = Instant::now();
     loop {
         let indexes = Mutex::new(HashMap::<u32, Vec<u64>>::new());
 
+        let pow_time = Instant::now();
         let prover = pool.install(|| {
             Prover8_56::new(
                 challenge,
@@ -298,7 +300,12 @@ pub fn generate_proof(
             .wrap_err("creating prover")
         })?;
 
+        let pow_mins = pow_time.elapsed().as_secs() / 60;
+        log::info!("Finished k2pow in {} minutes", pow_mins);
+
+        let read_time = Instant::now();
         let data_reader = read_data(datadir, 1024 * 1024, metadata.max_file_size)?;
+        log::info!("Started reading POST data");
         let result = pool.install(|| {
             data_reader.par_bridge().find_map_any(|batch| {
                 prover.prove(
@@ -317,10 +324,16 @@ pub fn generate_proof(
             })
         });
 
+        let read_mins = read_time.elapsed().as_secs() / 60;
+        log::info!("Finished reading POST data in {} minutes", read_mins);
+
         if let Some((nonce, indices)) = result {
             let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
             let pow = prover.get_pow(nonce).unwrap();
-            log::info!("Found proof for nonce: {nonce}, pow: {pow} with {indices:?} indices");
+
+            let total_minutes = total_time.elapsed().as_secs() / 60;
+
+            log::info!("Found proof for nonce: {nonce}, pow: {pow} with {indices:?} indices. Proof took {total_minutes} minutes");
             return Ok(Proof::new(nonce, &indices, num_labels, pow, miner_id));
         }
 
