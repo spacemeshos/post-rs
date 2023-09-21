@@ -13,7 +13,12 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
+      - uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --all-features
@@ -42,6 +47,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
@@ -86,6 +93,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -95,7 +104,12 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
+      - uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@master
         with:
           components: clippy
@@ -111,6 +125,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -177,6 +193,8 @@ jobs:
         name: Install opencl
         run: vcpkg install opencl
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
