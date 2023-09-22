@@ -240,6 +240,20 @@ jobs:
             target/release/profiler${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
 
+      - uses: arduino/setup-protoc@v2
+      - name: Build service
+        run: cargo build -p service --release
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
+      - name: Archive service artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: service-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
+          path: |
+            target/release/service${{ matrix.os == 'windows-2019' && '.exe' || '' }}
+          if-no-files-found: error
+
   release:
     name: Publish release
     if: github.event_name == 'push' && github.ref_type == 'tag'
