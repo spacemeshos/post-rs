@@ -1,10 +1,16 @@
+mod tls_config;
+
+use std::fs::read_to_string;
 use std::pin::Pin;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use clap::Parser;
+use eyre::Context;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::sleep;
 use tokio_stream::{Stream, StreamExt};
+use tonic::transport::{Certificate, Identity, ServerTlsConfig};
 use tonic::{transport::Server, Request, Response, Status};
 
 use spacemesh_v1::post_service_server::{PostService, PostServiceServer};
@@ -71,22 +77,49 @@ impl PostService for TestPostService {
     }
 }
 
+/// Post Service test server
+#[derive(Parser, Debug)]
+#[command(version, about)]
+struct Cli {
+    #[command(flatten, next_help_heading = "TLS configuration")]
+    tls: Option<tls_config::Tls>,
+}
+
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
+    let args = Cli::parse();
+
     let env = env_logger::Env::default().filter_or("RUST_LOG", "info");
     env_logger::init_from_env(env);
 
-    let addr = "[::1]:50051".parse()?;
+    let server = Server::builder();
+    let mut server = if let Some(tls) = args.tls {
+        log::info!(
+            "configuring TLS: CA cert: {}, cert: {}, key: {}",
+            tls.ca_cert.display(),
+            tls.cert.display(),
+            tls.key.display(),
+        );
+        let ca_cert = read_to_string(tls.ca_cert)?;
+        let cert = read_to_string(tls.cert)?;
+        let key = read_to_string(tls.key)?;
+
+        let tls = ServerTlsConfig::new()
+            .identity(Identity::from_pem(cert, key))
+            .client_ca_root(Certificate::from_pem(ca_cert));
+
+        server.tls_config(tls).wrap_err("setting up mTLS")?
+    } else {
+        log::info!("not configuring TLS");
+        server
+    };
 
     let mut test_node = TestPostService::new();
-
     let mut reg = test_node.wait_for_connection();
 
-    let _handle = tokio::spawn(
-        Server::builder()
-            .add_service(PostServiceServer::new(test_node))
-            .serve(addr),
-    );
+    let router = server.add_service(PostServiceServer::new(test_node));
+
+    let _handle = tokio::spawn(router.serve("[::1]:50051".parse()?));
 
     loop {
         // wait for the connection to be established

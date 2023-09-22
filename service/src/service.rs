@@ -1,3 +1,5 @@
+//! Post Service
+
 use std::path::PathBuf;
 
 use eyre::Context;
@@ -38,10 +40,9 @@ impl PostService {
     ) -> eyre::Result<Self> {
         let metadata =
             post::metadata::load(&datadir).wrap_err("loading metadata. Is POST initialized?")?;
-        let id = metadata.node_id;
 
         Ok(Self {
-            id,
+            id: metadata.node_id,
             proof_generation: None,
             datadir,
             cfg,

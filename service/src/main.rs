@@ -1,7 +1,9 @@
 mod client;
 mod service;
+mod tls_config;
 
 use std::{
+    fs::read_to_string,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Duration,
@@ -10,18 +12,19 @@ use std::{
 use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
 use post::pow::randomx::RandomXFlag;
+use tonic::transport::{Certificate, Identity};
 
 /// Post Service
 #[derive(Parser, Debug)]
 #[command(version, about)]
 struct Cli {
-    /// Directory of POST data
+    /// directory of POST data
     #[arg(short, long)]
     dir: PathBuf,
-    /// Node address to connect to
+    /// address to connect to
     #[arg(short, long)]
     address: String,
-    /// Time to wait before reconnecting to the node
+    /// time to wait before reconnecting to the node
     #[arg(long, default_value = "5", value_parser = |secs: &str| secs.parse().map(Duration::from_secs))]
     reconnect_interval_s: Duration,
 
@@ -30,53 +33,73 @@ struct Cli {
 
     #[command(flatten, next_help_heading = "POST settings")]
     post_settings: PostSettings,
+
+    #[command(flatten, next_help_heading = "TLS configuration")]
+    tls: Option<tls_config::Tls>,
 }
 
 #[derive(Args, Debug)]
 /// POST configuration - network parameters
 struct PostConfig {
-    /// K1 specifies the difficulty for a label to be a candidate for a proof.
+    /// K1 specifies the difficulty for a label to be a candidate for a proof
     #[arg(long, default_value = "26")]
     k1: u32,
-    /// K2 is the number of labels below the required difficulty required for a proof.
+    /// K2 is the number of labels below the required difficulty required for a proof
     #[arg(long, default_value = "37")]
     k2: u32,
-    /// K3 is the size of the subset of proof indices that is validated.
+    /// K3 is the size of the subset of proof indices that is validated
     #[arg(long, default_value = "37")]
     k3: u32,
-    /// Difficulty for the nonce proof of work (aka "k2pow").
+    /// difficulty for the nonce proof of work (aka "k2pow")
     #[arg(
         long,
         default_value = "000dfb23b0979b4b000000000000000000000000000000000000000000000000",
         value_parser(parse_difficulty)
     )]
     pow_difficulty: [u8; 32],
-    /// Scrypt parameters for initialization
+    /// scrypt parameters for initialization
     #[command(flatten)]
     scrypt: ScryptParams,
 }
 
+/// Scrypt parameters for initialization
 #[derive(Args, Debug)]
 struct ScryptParams {
-    /// Scrypt N parameter
+    /// scrypt N parameter
     #[arg(short, default_value_t = 8192)]
     n: usize,
-    /// Scrypt R parameter
+    /// scrypt R parameter
     #[arg(short, default_value_t = 1)]
     r: usize,
-    /// Scrypt P parameter
+    /// scrypt P parameter
     #[arg(short, default_value_t = 1)]
     p: usize,
 }
 
+/// TLS configuration
+///
+/// Either all fields must be specified or none
+#[derive(Args, Debug, Clone)]
+#[group(required = false)]
+pub(crate) struct Tls {
+    /// server CA certificate
+    #[arg(long, required = false)]
+    ca_cert: PathBuf,
+    /// client certificate
+    #[arg(long, required = false)]
+    client_cert: PathBuf,
+    /// client key
+    #[arg(long, required = false)]
+    client_key: PathBuf,
+}
 #[derive(Args, Debug)]
 /// POST proof generation settings
 struct PostSettings {
-    /// Number of threads to use.
+    /// number of threads to use
     /// '0' means use all available threads
     #[arg(long, default_value_t = 1)]
     threads: usize,
-    /// Number of nonces to attempt in single pass over POS data.
+    /// number of nonces to attempt in single pass over POS data
     ///
     /// Each group of 16 nonces requires a separate PoW. Must be a multiple of 16.
     ///
@@ -84,14 +107,15 @@ struct PostSettings {
     /// but also slows down the process.
     #[arg(long, default_value_t = 128, value_parser(parse_nonces))]
     nonces: usize,
-    /// Modes of operation for RandomX.
-    ///
-    /// They are interchangeable as they give the same results but have different
-    /// purpose and memory requirements.
+    /// modes of operation for RandomX
     #[arg(long, default_value_t = RandomXMode::Fast)]
     randomx_mode: RandomXMode,
 }
 
+/// RandomX modes of operation
+///
+/// They are interchangeable as they give the same results but have different
+/// purpose and memory requirements.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum)]
 enum RandomXMode {
     /// Fast mode for proving. Requires 2080 MiB of memory.
@@ -155,11 +179,31 @@ async fn main() -> eyre::Result<()> {
     )
     .wrap_err("creating Post Service")?;
 
+    let cert = if let Some(tls) = args.tls {
+        log::info!(
+            "configuring TLS: server CA cert: {}, client cert: {}, client key: {}",
+            tls.ca_cert.display(),
+            tls.cert.display(),
+            tls.key.display(),
+        );
+        let server_ca_cert = read_to_string(tls.ca_cert)?;
+        let cert = read_to_string(tls.cert)?;
+        let key = read_to_string(tls.key)?;
+        Some((
+            Certificate::from_pem(server_ca_cert),
+            Identity::from_pem(cert, key),
+        ))
+    } else {
+        log::info!("not configuring TLS");
+        None
+    };
+
     let client = client::ServiceClient::new(
         args.address,
         args.reconnect_interval_s,
+        cert,
         Arc::new(Mutex::new(service)),
-    );
+    )?;
 
     client.run().await
 }

@@ -1,3 +1,4 @@
+//! Post Service
 use std::{
     io::{Read, Seek},
     path::PathBuf,
