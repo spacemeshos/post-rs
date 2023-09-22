@@ -2,14 +2,19 @@ use std::path::PathBuf;
 
 use eyre::Context;
 use post::{metadata::ProofMetadata, pow::randomx::RandomXFlag, prove::Proof};
-use tokio::sync::{mpsc, oneshot};
+
+pub(crate) enum ProofGenState {
+    InProgress,
+    Finished {
+        proof: Proof<'static>,
+        metadata: ProofMetadata,
+    },
+}
 
 #[derive(Debug)]
-pub(crate) enum Command {
-    GenProof {
-        challenge: [u8; 32],
-        response: oneshot::Sender<eyre::Result<Option<(Proof<'static>, ProofMetadata)>>>,
-    },
+struct ProofGenProcess {
+    handle: std::thread::JoinHandle<eyre::Result<Proof<'static>>>,
+    challenge: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -20,13 +25,11 @@ pub(crate) struct PostService {
     nonces: usize,
     threads: usize,
     pow_flags: RandomXFlag,
-    rx: mpsc::Receiver<Command>,
-    proof_generation: Option<tokio::task::JoinHandle<eyre::Result<Proof<'static>>>>,
+    proof_generation: Option<ProofGenProcess>,
 }
 
 impl PostService {
     pub(crate) fn new(
-        rx: mpsc::Receiver<Command>,
         datadir: PathBuf,
         cfg: post::config::Config,
         nonces: usize,
@@ -39,7 +42,6 @@ impl PostService {
 
         Ok(Self {
             id,
-            rx,
             proof_generation: None,
             datadir,
             cfg,
@@ -49,72 +51,74 @@ impl PostService {
         })
     }
 
-    pub(crate) async fn run(mut self) -> eyre::Result<()> {
-        log::info!("starting PostService");
-        while let Some(cmd) = self.rx.recv().await {
-            log::info!("got {cmd:?}");
-            match cmd {
-                Command::GenProof {
-                    challenge,
-                    response,
-                } => {
-                    log::info!("got GenProof command");
-                    match &mut self.proof_generation {
-                        Some(handle) => {
-                            if handle.is_finished() {
-                                log::info!("proof generation is finished");
-                                let result = handle.await?;
-                                self.proof_generation = None;
-                                match result {
-                                    Ok(proof) => {
-                                        let metadata = post::metadata::load(&self.datadir).unwrap();
+    pub(crate) fn gen_proof(&mut self, challenge: Vec<u8>) -> eyre::Result<ProofGenState> {
+        if let Some(process) = &mut self.proof_generation {
+            eyre::ensure!(
+                process.challenge == challenge,
+                 "proof generation is in progress for a different challenge (current: {:X?}, requested: {:X?})", process.challenge, challenge,
+                );
 
-                                        _ = response.send(Ok(Some((
-                                            proof,
-                                            ProofMetadata {
-                                                challenge,
-                                                node_id: metadata.node_id,
-                                                commitment_atx_id: metadata.commitment_atx_id,
-                                                num_units: metadata.num_units,
-                                                labels_per_unit: metadata.labels_per_unit,
-                                            },
-                                        ))));
-                                    }
-                                    Err(e) => {
-                                        _ = response.send(Err(e));
-                                    }
-                                }
-                            } else {
-                                log::info!("proof generation in progress");
-                                _ = response.send(Ok(None));
-                            }
-                        }
-                        None => {
-                            log::info!("starting proof generation");
-                            let pow_flags = self.pow_flags;
-                            let cfg = self.cfg;
-                            let datadir = self.datadir.clone();
-                            let node_id = self.id;
-                            let nonces = self.nonces;
-                            let threads = self.threads;
-                            self.proof_generation = Some(tokio::task::spawn_blocking(move || {
-                                post::prove::generate_proof(
-                                    &datadir,
-                                    &challenge,
-                                    cfg,
-                                    nonces,
-                                    threads,
-                                    pow_flags,
-                                    Some(node_id),
-                                )
-                            }));
-                            // in progress
-                            _ = response.send(Ok(None));
-                        }
+            if process.handle.is_finished() {
+                log::info!("proof generation is finished");
+                let result = match self.proof_generation.take().unwrap().handle.join() {
+                    Ok(result) => result,
+                    Err(err) => {
+                        std::panic::resume_unwind(err);
+                    }
+                };
+
+                match result {
+                    Ok(proof) => {
+                        let metadata = post::metadata::load(&self.datadir)
+                            .wrap_err("loading POST metadata")?;
+
+                        return Ok(ProofGenState::Finished {
+                            proof,
+                            metadata: ProofMetadata {
+                                challenge: challenge
+                                    .try_into()
+                                    .map_err(|_| eyre::eyre!("invalid challenge format"))?,
+                                node_id: metadata.node_id,
+                                commitment_atx_id: metadata.commitment_atx_id,
+                                num_units: metadata.num_units,
+                                labels_per_unit: metadata.labels_per_unit,
+                            },
+                        });
+                    }
+                    Err(e) => {
+                        return Err(e);
                     }
                 }
+            } else {
+                log::info!("proof generation in progress");
+                return Ok(ProofGenState::InProgress);
             }
         }
-        Ok(())
+
+        log::info!("starting proof generation for challenge {:X?}", challenge);
+        let pow_flags = self.pow_flags;
+        let cfg = self.cfg;
+        let datadir = self.datadir.clone();
+        let miner_id = Some(self.id);
+        let nonces = self.nonces;
+        let threads = self.threads;
+        self.proof_generation = Some(ProofGenProcess {
+            challenge: challenge.clone(),
+            handle: std::thread::spawn(move || {
+                post::prove::generate_proof(
+                    &datadir,
+                    &challenge
+                        .try_into()
+                        .map_err(|_| eyre::eyre!("invalid challenge format"))?,
+                    cfg,
+                    nonces,
+                    threads,
+                    pow_flags,
+                    miner_id,
+                )
+            }),
+        });
+
+        Ok(ProofGenState::InProgress)
     }
 }
