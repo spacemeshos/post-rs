@@ -1,3 +1,9 @@
+//! Post Service GRPC client
+//!
+//! This module implements a GRPC client for the Post Service.
+//! It connects to the node and registers itself as a Post Service.
+//! It then waits for requests from the node and forwards them to the Post Service.
+
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -7,7 +13,11 @@ use spacemesh_v1::{node_request, service_response};
 use spacemesh_v1::{GenProofResponse, GenProofStatus, Proof, ProofMetadata, ServiceResponse};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
+use tonic::transport::Certificate;
 use tonic::transport::Channel;
+use tonic::transport::ClientTlsConfig;
+use tonic::transport::Endpoint;
+use tonic::transport::Identity;
 use tonic::Request;
 
 use crate::service::ProofGenState;
@@ -17,7 +27,7 @@ pub mod spacemesh_v1 {
 }
 
 pub(crate) struct ServiceClient {
-    address: String,
+    endpoint: Endpoint,
     reconnect_interval: Duration,
     service: Arc<Mutex<crate::service::PostService>>,
 }
@@ -26,19 +36,31 @@ impl ServiceClient {
     pub(crate) fn new(
         address: String,
         reconnect_interval: Duration,
+        cert: Option<(Certificate, Identity)>,
         service: Arc<Mutex<crate::service::PostService>>,
-    ) -> Self {
-        Self {
-            address,
+    ) -> eyre::Result<Self> {
+        let endpoint = Channel::builder(address.parse()?);
+        let endpoint = match cert {
+            Some((cert, identity)) => endpoint.tls_config(
+                ClientTlsConfig::new()
+                    .domain_name("localhost")
+                    .ca_certificate(cert)
+                    .identity(identity),
+            )?,
+            None => endpoint,
+        };
+
+        Ok(Self {
+            endpoint,
             reconnect_interval,
             service,
-        }
+        })
     }
 
     pub(crate) async fn run(self) -> eyre::Result<()> {
         loop {
             let client = loop {
-                match PostServiceClient::connect(self.address.clone()).await {
+                match PostServiceClient::connect(self.endpoint.clone()).await {
                     Ok(client) => break client,
                     Err(e) => {
                         log::info!("could not connect to the node: {e:?}");
@@ -48,6 +70,7 @@ impl ServiceClient {
             };
             let res = run(client, self.service.clone()).await;
             log::info!("client exited: {res:?}");
+            sleep(self.reconnect_interval).await;
         }
     }
 }

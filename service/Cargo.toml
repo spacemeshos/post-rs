@@ -3,14 +3,14 @@ name = "service"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]] # Bin to run the HelloWorld gRPC server
+[[bin]]
 name = "test-server"
 path = "src/test_server.rs"
 
 [dependencies]
 post-rs = { path = "../" }
 prost = "0.12.1"
-tonic = "0.10.0"
+tonic = { version = "0.10.0", features = ["tls"] }
 tokio = { version = "1.0", features = [
     "rt-multi-thread",
     "macros",
