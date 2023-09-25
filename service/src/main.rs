@@ -2,12 +2,7 @@ mod client;
 mod service;
 mod tls_config;
 
-use std::{
-    fs::read_to_string,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{fs::read_to_string, path::PathBuf, time::Duration};
 
 use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
@@ -198,12 +193,8 @@ async fn main() -> eyre::Result<()> {
         None
     };
 
-    let client = client::ServiceClient::new(
-        args.address,
-        args.reconnect_interval_s,
-        cert,
-        Arc::new(Mutex::new(service)),
-    )?;
+    let client =
+        client::ServiceClient::new(args.address, args.reconnect_interval_s, cert, service)?;
 
     client.run().await
 }

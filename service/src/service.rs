@@ -96,7 +96,11 @@ impl PostService {
             }
         }
 
-        log::info!("starting proof generation for challenge {:X?}", challenge);
+        let ch: [u8; 32] = challenge
+            .as_slice()
+            .try_into()
+            .map_err(|_| eyre::eyre!("invalid challenge format"))?;
+        log::info!("starting proof generation for challenge {ch:X?}");
         let pow_flags = self.pow_flags;
         let cfg = self.cfg;
         let datadir = self.datadir.clone();
@@ -104,18 +108,10 @@ impl PostService {
         let nonces = self.nonces;
         let threads = self.threads;
         self.proof_generation = Some(ProofGenProcess {
-            challenge: challenge.clone(),
+            challenge,
             handle: std::thread::spawn(move || {
                 post::prove::generate_proof(
-                    &datadir,
-                    &challenge
-                        .try_into()
-                        .map_err(|_| eyre::eyre!("invalid challenge format"))?,
-                    cfg,
-                    nonces,
-                    threads,
-                    pow_flags,
-                    miner_id,
+                    &datadir, &ch, cfg, nonces, threads, pow_flags, miner_id,
                 )
             }),
         });

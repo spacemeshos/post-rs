@@ -138,7 +138,7 @@ async fn main() -> eyre::Result<()> {
                 })
                 .await
             {
-                log::error!("post service disconnected: {:?}", e);
+                log::error!("post service disconnected: {e:?}");
                 break;
             }
 
