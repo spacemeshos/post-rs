@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use eyre::Context;
 use post::{metadata::ProofMetadata, pow::randomx::RandomXFlag, prove::Proof};
 
-pub(crate) enum ProofGenState {
+pub enum ProofGenState {
     InProgress,
     Finished {
         proof: Proof<'static>,
@@ -20,7 +20,7 @@ struct ProofGenProcess {
 }
 
 #[derive(Debug)]
-pub(crate) struct PostService {
+pub struct PostService {
     id: [u8; 32],
     datadir: PathBuf,
     cfg: post::config::Config,
@@ -31,7 +31,7 @@ pub(crate) struct PostService {
 }
 
 impl PostService {
-    pub(crate) fn new(
+    pub fn new(
         datadir: PathBuf,
         cfg: post::config::Config,
         nonces: usize,
@@ -51,8 +51,10 @@ impl PostService {
             pow_flags,
         })
     }
+}
 
-    pub(crate) fn gen_proof(&mut self, challenge: Vec<u8>) -> eyre::Result<ProofGenState> {
+impl crate::client::PostService for PostService {
+    fn gen_proof(&mut self, challenge: Vec<u8>) -> eyre::Result<ProofGenState> {
         if let Some(process) = &mut self.proof_generation {
             eyre::ensure!(
                 process.challenge == challenge,

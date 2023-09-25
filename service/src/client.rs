@@ -24,18 +24,23 @@ pub mod spacemesh_v1 {
     tonic::include_proto!("spacemesh.v1");
 }
 
-pub(crate) struct ServiceClient {
+pub struct ServiceClient<S: PostService> {
     endpoint: Endpoint,
     reconnect_interval: Duration,
-    service: crate::service::PostService,
+    service: S,
 }
 
-impl ServiceClient {
-    pub(crate) fn new(
+#[mockall::automock]
+pub trait PostService {
+    fn gen_proof(&mut self, challenge: Vec<u8>) -> eyre::Result<ProofGenState>;
+}
+
+impl<S: PostService> ServiceClient<S> {
+    pub fn new(
         address: String,
         reconnect_interval: Duration,
         cert: Option<(Certificate, Identity)>,
-        service: crate::service::PostService,
+        service: S,
     ) -> eyre::Result<Self> {
         let endpoint = Channel::builder(address.parse()?);
         let endpoint = match cert {
@@ -55,9 +60,10 @@ impl ServiceClient {
         })
     }
 
-    pub(crate) async fn run(mut self) -> eyre::Result<()> {
+    pub async fn run(mut self) -> eyre::Result<()> {
         loop {
             let client = loop {
+                log::debug!("connecting to the node on {}", self.endpoint.uri());
                 match PostServiceClient::connect(self.endpoint.clone()).await {
                     Ok(client) => break client,
                     Err(e) => {

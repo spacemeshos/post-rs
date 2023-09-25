@@ -1,13 +1,11 @@
-mod client;
-mod service;
-mod tls_config;
-
 use std::{fs::read_to_string, path::PathBuf, time::Duration};
 
 use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
-use post::pow::randomx::RandomXFlag;
 use tonic::transport::{Certificate, Identity};
+
+use post::pow::randomx::RandomXFlag;
+use post_service::{client, tls_config::Tls};
 
 /// Post Service
 #[derive(Parser, Debug)]
@@ -30,7 +28,7 @@ struct Cli {
     post_settings: PostSettings,
 
     #[command(flatten, next_help_heading = "TLS configuration")]
-    tls: Option<tls_config::Tls>,
+    tls: Option<Tls>,
 }
 
 #[derive(Args, Debug)]
@@ -71,22 +69,6 @@ struct ScryptParams {
     p: usize,
 }
 
-/// TLS configuration
-///
-/// Either all fields must be specified or none
-#[derive(Args, Debug, Clone)]
-#[group(required = false)]
-pub(crate) struct Tls {
-    /// server CA certificate
-    #[arg(long, required = false)]
-    ca_cert: PathBuf,
-    /// client certificate
-    #[arg(long, required = false)]
-    client_cert: PathBuf,
-    /// client key
-    #[arg(long, required = false)]
-    client_key: PathBuf,
-}
 #[derive(Args, Debug)]
 /// POST proof generation settings
 struct PostSettings {
@@ -155,7 +137,7 @@ async fn main() -> eyre::Result<()> {
     let env = env_logger::Env::default().filter_or("RUST_LOG", "info");
     env_logger::init_from_env(env);
 
-    let service = service::PostService::new(
+    let service = post_service::service::PostService::new(
         args.dir,
         post::config::Config {
             k1: args.post_config.k1,

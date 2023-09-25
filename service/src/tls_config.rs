@@ -7,12 +7,12 @@ use clap::Args;
 /// Either all fields must be specified or none
 #[derive(Args, Debug, Clone)]
 #[group(required = false)]
-pub(crate) struct Tls {
+pub struct Tls {
     /// CA certificate
     #[arg(long, required = false)]
-    pub(crate) ca_cert: PathBuf,
+    pub ca_cert: PathBuf,
     #[arg(long, required = false)]
-    pub(crate) cert: PathBuf,
+    pub cert: PathBuf,
     #[arg(long, required = false)]
-    pub(crate) key: PathBuf,
+    pub key: PathBuf,
 }

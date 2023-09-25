@@ -2476,6 +2476,7 @@ dependencies = [
  "eyre",
  "hex",
  "log",
+ "mockall",
  "post-rs",
  "prost",
  "tokio",
