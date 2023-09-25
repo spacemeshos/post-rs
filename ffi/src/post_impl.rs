@@ -5,6 +5,7 @@ use std::{
     ffi::{c_char, c_uchar, CStr},
     mem::ManuallyDrop,
     path::Path,
+    sync::atomic::AtomicBool,
 };
 
 pub use post::config::Config;
@@ -144,8 +145,9 @@ fn _generate_proof(
         Some(miner_id.try_into()?)
     };
 
+    let stop = AtomicBool::new(false);
     let proof = prove::generate_proof(
-        datadir, challenge, cfg, nonces, threads, pow_flags, miner_id,
+        datadir, challenge, cfg, nonces, threads, pow_flags, miner_id, stop,
     )?;
     Ok(Box::new(Proof::from(proof)))
 }

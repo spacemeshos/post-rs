@@ -1,6 +1,9 @@
 //! Post Service
 
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use eyre::Context;
 use post::{metadata::ProofMetadata, pow::randomx::RandomXFlag, prove::Proof};
@@ -28,6 +31,8 @@ pub struct PostService {
     threads: usize,
     pow_flags: RandomXFlag,
     proof_generation: Option<ProofGenProcess>,
+
+    stop: Arc<AtomicBool>,
 }
 
 impl PostService {
@@ -49,6 +54,7 @@ impl PostService {
             nonces,
             threads,
             pow_flags,
+            stop: Arc::new(AtomicBool::new(false)),
         })
     }
 }
@@ -109,15 +115,49 @@ impl crate::client::PostService for PostService {
         let miner_id = Some(self.id);
         let nonces = self.nonces;
         let threads = self.threads;
+        let stop = self.stop.clone();
         self.proof_generation = Some(ProofGenProcess {
             challenge,
             handle: std::thread::spawn(move || {
                 post::prove::generate_proof(
-                    &datadir, &ch, cfg, nonces, threads, pow_flags, miner_id,
+                    &datadir, &ch, cfg, nonces, threads, pow_flags, miner_id, stop,
                 )
             }),
         });
 
         Ok(ProofGenState::InProgress)
+    }
+}
+
+impl Drop for PostService {
+    fn drop(&mut self) {
+        log::info!("shutting down post service");
+        if let Some(process) = self.proof_generation.take() {
+            log::debug!("killing proof generation process");
+            self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            let _ = process.handle.join().unwrap();
+            log::debug!("proof generation process exited");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn needs_post_data() {
+        assert!(super::PostService::new(
+            std::path::PathBuf::from(""),
+            post::config::Config {
+                k1: 8,
+                k2: 4,
+                k3: 4,
+                pow_difficulty: [0xFF; 32],
+                scrypt: post::ScryptParams::new(0, 0, 0),
+            },
+            16,
+            1,
+            post::pow::randomx::RandomXFlag::get_recommended_flags(),
+        )
+        .is_err());
     }
 }

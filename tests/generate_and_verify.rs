@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use post::{
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
@@ -39,7 +41,18 @@ fn test_generate_and_verify() {
 
     let pow_flags = RandomXFlag::get_recommended_flags();
     // Generate a proof
-    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags, miner_id).unwrap();
+    let stop = AtomicBool::new(false);
+    let proof = generate_proof(
+        datadir.path(),
+        challenge,
+        cfg,
+        32,
+        1,
+        pow_flags,
+        miner_id,
+        stop,
+    )
+    .unwrap();
 
     // Verify the proof
     let metadata = ProofMetadata {
@@ -101,7 +114,9 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
 
     let pow_flags = RandomXFlag::get_recommended_flags();
     // Generate a proof
-    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags, None).unwrap();
+    let stop = AtomicBool::new(false);
+    let proof =
+        generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags, None, stop).unwrap();
 
     // Verify the proof
     let metadata = ProofMetadata {

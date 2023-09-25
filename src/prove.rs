@@ -14,7 +14,14 @@ use eyre::Context;
 use primitive_types::U256;
 use randomx_rs::RandomXFlag;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
-use std::{borrow::Cow, collections::HashMap, ops::Range, path::Path, sync::Mutex, time::Instant};
+use std::{
+    borrow::{Borrow, Cow},
+    collections::HashMap,
+    ops::Range,
+    path::Path,
+    sync::{atomic::AtomicBool, Mutex},
+    time::Instant,
+};
 
 use crate::{
     cipher::AesCipher,
@@ -262,7 +269,7 @@ impl Prover for Prover8_56 {
 }
 
 /// Generate a proof that data is still held, given the challenge.
-pub fn generate_proof(
+pub fn generate_proof<Stopper>(
     datadir: &Path,
     challenge: &[u8; 32],
     cfg: Config,
@@ -270,7 +277,12 @@ pub fn generate_proof(
     threads: usize,
     pow_flags: RandomXFlag,
     miner_id: Option<[u8; 32]>,
-) -> eyre::Result<Proof<'static>> {
+    stop: Stopper,
+) -> eyre::Result<Proof<'static>>
+where
+    Stopper: Borrow<AtomicBool>,
+{
+    let stop = stop.borrow();
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
     let params = ProvingParams::new(&metadata, &cfg)?;
     log::info!("generating proof with PoW flags: {pow_flags:?} and params: {params:?}");
@@ -286,6 +298,10 @@ pub fn generate_proof(
 
     let total_time = Instant::now();
     loop {
+        if stop.load(std::sync::atomic::Ordering::Relaxed) {
+            eyre::bail!("proof generation was stopped");
+        }
+
         let indexes = Mutex::new(HashMap::<u32, Vec<u64>>::new());
 
         let pow_time = Instant::now();
@@ -307,21 +323,24 @@ pub fn generate_proof(
         let data_reader = read_data(datadir, 1024 * 1024, metadata.max_file_size)?;
         log::info!("Started reading POST data");
         let result = pool.install(|| {
-            data_reader.par_bridge().find_map_any(|batch| {
-                prover.prove(
-                    &batch.data,
-                    batch.pos / BLOCK_SIZE as u64,
-                    |nonce, index| {
-                        let mut indexes = indexes.lock().unwrap();
-                        let vec = indexes.entry(nonce).or_default();
-                        vec.push(index);
-                        if vec.len() >= cfg.k2 as usize {
-                            return Some(std::mem::take(vec));
-                        }
-                        None
-                    },
-                )
-            })
+            data_reader
+                .par_bridge()
+                .take_any_while(|_| !stop.load(std::sync::atomic::Ordering::Relaxed))
+                .find_map_any(|batch| {
+                    prover.prove(
+                        &batch.data,
+                        batch.pos / BLOCK_SIZE as u64,
+                        |nonce, index| {
+                            let mut indexes = indexes.lock().unwrap();
+                            let vec = indexes.entry(nonce).or_default();
+                            vec.push(index);
+                            if vec.len() >= cfg.k2 as usize {
+                                return Some(std::mem::take(vec));
+                            }
+                            None
+                        },
+                    )
+                })
         });
 
         let read_mins = read_time.elapsed().as_secs() / 60;
