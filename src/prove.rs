@@ -269,6 +269,7 @@ impl Prover for Prover8_56 {
 }
 
 /// Generate a proof that data is still held, given the challenge.
+#[allow(clippy::too_many_arguments)]
 pub fn generate_proof<Stopper>(
     datadir: &Path,
     challenge: &[u8; 32],

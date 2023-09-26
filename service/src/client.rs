@@ -8,7 +8,9 @@ use std::time::Duration;
 
 pub(crate) use spacemesh_v1::post_service_client::PostServiceClient;
 use spacemesh_v1::{node_request, service_response};
-use spacemesh_v1::{GenProofResponse, GenProofStatus, Proof, ProofMetadata, ServiceResponse};
+use spacemesh_v1::{
+    GenProofRequest, GenProofResponse, GenProofStatus, Proof, ProofMetadata, ServiceResponse,
+};
 use tokio::sync::mpsc;
 use tokio::time::sleep;
 use tonic::transport::Certificate;
@@ -31,8 +33,29 @@ pub struct ServiceClient<S: PostService> {
 }
 
 #[mockall::automock]
+#[allow(clippy::needless_lifetimes)]
 pub trait PostService {
-    fn gen_proof(&mut self, challenge: Vec<u8>) -> eyre::Result<ProofGenState>;
+    fn gen_proof(&self, challenge: Vec<u8>) -> eyre::Result<ProofGenState>;
+
+    fn verify_proof<'a>(
+        &self,
+        proof: &post::prove::Proof<'a>,
+        metadata: &post::metadata::ProofMetadata,
+    ) -> eyre::Result<()>;
+}
+
+impl<T: PostService + ?Sized> PostService for std::sync::Arc<T> {
+    fn gen_proof(&self, challenge: Vec<u8>) -> eyre::Result<ProofGenState> {
+        self.as_ref().gen_proof(challenge)
+    }
+
+    fn verify_proof(
+        &self,
+        proof: &post::prove::Proof,
+        metadata: &post::metadata::ProofMetadata,
+    ) -> eyre::Result<()> {
+        self.as_ref().verify_proof(proof, metadata)
+    }
 }
 
 impl<S: PostService> ServiceClient<S> {
@@ -96,53 +119,7 @@ impl<S: PostService> ServiceClient<S> {
             log::debug!("Got request from node: {request:?}");
             match request.kind {
                 Some(node_request::Kind::GenProof(req)) => {
-                    let result = self.service.gen_proof(req.challenge);
-
-                    let resp = match result {
-                        Ok(ProofGenState::Finished { proof, metadata }) => {
-                            log::info!("proof generation finished");
-                            ServiceResponse {
-                                kind: Some(service_response::Kind::GenProof(GenProofResponse {
-                                    proof: Some(Proof {
-                                        nonce: proof.nonce,
-                                        indices: proof.indices.into_owned(),
-                                        pow: proof.pow,
-                                    }),
-                                    metadata: Some(ProofMetadata {
-                                        challenge: metadata.challenge.to_vec(),
-                                        node_id: Some(spacemesh_v1::SmesherId {
-                                            id: metadata.node_id.to_vec(),
-                                        }),
-                                        commitment_atx_id: Some(spacemesh_v1::ActivationId {
-                                            id: metadata.commitment_atx_id.to_vec(),
-                                        }),
-                                        num_units: metadata.num_units,
-                                        labels_per_unit: metadata.labels_per_unit,
-                                    }),
-                                    status: GenProofStatus::Ok as i32,
-                                })),
-                            }
-                        }
-                        Ok(ProofGenState::InProgress) => {
-                            log::info!("proof generation in progress");
-                            ServiceResponse {
-                                kind: Some(service_response::Kind::GenProof(GenProofResponse {
-                                    status: GenProofStatus::Ok as i32,
-                                    ..Default::default()
-                                })),
-                            }
-                        }
-                        Err(e) => {
-                            log::error!("failed to generate proof: {e:?}");
-                            ServiceResponse {
-                                kind: Some(service_response::Kind::GenProof(GenProofResponse {
-                                    status: GenProofStatus::Error as i32,
-                                    ..Default::default()
-                                })),
-                            }
-                        }
-                    };
-
+                    let resp = self.generate_and_verify_proof(req);
                     tx.send(resp).await?;
                 }
                 None => {
@@ -159,5 +136,63 @@ impl<S: PostService> ServiceClient<S> {
         }
 
         Ok(())
+    }
+
+    fn generate_and_verify_proof(&self, request: GenProofRequest) -> ServiceResponse {
+        let result = self.service.gen_proof(request.challenge);
+
+        match result {
+            Ok(ProofGenState::Finished { proof, metadata }) => {
+                log::info!("proof generation finished");
+                if let Err(err) = self.service.verify_proof(&proof, &metadata) {
+                    log::error!("generated proof is not valid: {err:?}");
+                    return ServiceResponse {
+                        kind: Some(service_response::Kind::GenProof(GenProofResponse {
+                            status: GenProofStatus::Error as i32,
+                            ..Default::default()
+                        })),
+                    };
+                }
+                ServiceResponse {
+                    kind: Some(service_response::Kind::GenProof(GenProofResponse {
+                        proof: Some(Proof {
+                            nonce: proof.nonce,
+                            indices: proof.indices.into_owned(),
+                            pow: proof.pow,
+                        }),
+                        metadata: Some(ProofMetadata {
+                            challenge: metadata.challenge.to_vec(),
+                            node_id: Some(spacemesh_v1::SmesherId {
+                                id: metadata.node_id.to_vec(),
+                            }),
+                            commitment_atx_id: Some(spacemesh_v1::ActivationId {
+                                id: metadata.commitment_atx_id.to_vec(),
+                            }),
+                            num_units: metadata.num_units,
+                            labels_per_unit: metadata.labels_per_unit,
+                        }),
+                        status: GenProofStatus::Ok as i32,
+                    })),
+                }
+            }
+            Ok(ProofGenState::InProgress) => {
+                log::info!("proof generation in progress");
+                ServiceResponse {
+                    kind: Some(service_response::Kind::GenProof(GenProofResponse {
+                        status: GenProofStatus::Ok as i32,
+                        ..Default::default()
+                    })),
+                }
+            }
+            Err(e) => {
+                log::error!("failed to generate proof: {e:?}");
+                ServiceResponse {
+                    kind: Some(service_response::Kind::GenProof(GenProofResponse {
+                        status: GenProofStatus::Error as i32,
+                        ..Default::default()
+                    })),
+                }
+            }
+        }
     }
 }

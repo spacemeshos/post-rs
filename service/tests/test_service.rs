@@ -2,8 +2,7 @@ use std::{thread::sleep, time::Duration};
 
 use post::{
     initialize::{CpuInitializer, Initialize},
-    pow::randomx::{PoW, RandomXFlag},
-    verification::{Verifier, VerifyingParams},
+    pow::randomx::RandomXFlag,
     ScryptParams,
 };
 use post_service::{client::PostService, service::ProofGenState};
@@ -37,7 +36,7 @@ fn test_generate_and_verify() {
     let pow_flags = RandomXFlag::get_recommended_flags();
 
     // Generate a proof
-    let mut service =
+    let service =
         post_service::service::PostService::new(datadir.into_path(), cfg, 16, 1, pow_flags)
             .unwrap();
 
@@ -51,13 +50,8 @@ fn test_generate_and_verify() {
     };
 
     // Verify the proof
-    let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
-    verifier
-        .verify(
-            &proof,
-            &metadata,
-            VerifyingParams::new(&metadata, &cfg).unwrap(),
-        )
+    service
+        .verify_proof(&proof, &metadata)
         .expect("proof should be valid");
 }
 
@@ -88,7 +82,7 @@ fn reject_invalid_challenge() {
         .unwrap();
 
     // Generate a proof
-    let mut service = post_service::service::PostService::new(
+    let service = post_service::service::PostService::new(
         datadir.into_path(),
         cfg,
         16,
@@ -126,7 +120,7 @@ fn cannot_run_parallel_proof_gens() {
         .unwrap();
 
     // Generate a proof
-    let mut service = post_service::service::PostService::new(
+    let service = post_service::service::PostService::new(
         datadir.into_path(),
         cfg,
         16,

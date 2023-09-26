@@ -2,11 +2,16 @@
 
 use std::{
     path::PathBuf,
-    sync::{atomic::AtomicBool, Arc},
+    sync::{atomic::AtomicBool, Arc, Mutex},
 };
 
 use eyre::Context;
-use post::{metadata::ProofMetadata, pow::randomx::RandomXFlag, prove::Proof};
+use post::{
+    metadata::ProofMetadata,
+    pow::randomx::{PoW, RandomXFlag},
+    prove::Proof,
+    verification::{Verifier, VerifyingParams},
+};
 
 pub enum ProofGenState {
     InProgress,
@@ -22,7 +27,6 @@ struct ProofGenProcess {
     challenge: Vec<u8>,
 }
 
-#[derive(Debug)]
 pub struct PostService {
     id: [u8; 32],
     datadir: PathBuf,
@@ -30,8 +34,9 @@ pub struct PostService {
     nonces: usize,
     threads: usize,
     pow_flags: RandomXFlag,
-    proof_generation: Option<ProofGenProcess>,
+    proof_generation: Mutex<Option<ProofGenProcess>>,
 
+    verifier: Verifier,
     stop: Arc<AtomicBool>,
 }
 
@@ -48,20 +53,22 @@ impl PostService {
 
         Ok(Self {
             id: metadata.node_id,
-            proof_generation: None,
+            proof_generation: Mutex::new(None),
             datadir,
             cfg,
             nonces,
             threads,
             pow_flags,
+            verifier: Verifier::new(Box::new(PoW::new(RandomXFlag::get_recommended_flags())?)),
             stop: Arc::new(AtomicBool::new(false)),
         })
     }
 }
 
 impl crate::client::PostService for PostService {
-    fn gen_proof(&mut self, challenge: Vec<u8>) -> eyre::Result<ProofGenState> {
-        if let Some(process) = &mut self.proof_generation {
+    fn gen_proof(&self, challenge: Vec<u8>) -> eyre::Result<ProofGenState> {
+        let mut proof_gen = self.proof_generation.lock().unwrap();
+        if let Some(process) = proof_gen.as_mut() {
             eyre::ensure!(
                 process.challenge == challenge,
                  "proof generation is in progress for a different challenge (current: {:X?}, requested: {:X?})", process.challenge, challenge,
@@ -69,7 +76,7 @@ impl crate::client::PostService for PostService {
 
             if process.handle.is_finished() {
                 log::info!("proof generation is finished");
-                let result = match self.proof_generation.take().unwrap().handle.join() {
+                let result = match proof_gen.take().unwrap().handle.join() {
                     Ok(result) => result,
                     Err(err) => {
                         std::panic::resume_unwind(err);
@@ -116,7 +123,7 @@ impl crate::client::PostService for PostService {
         let nonces = self.nonces;
         let threads = self.threads;
         let stop = self.stop.clone();
-        self.proof_generation = Some(ProofGenProcess {
+        *proof_gen = Some(ProofGenProcess {
             challenge,
             handle: std::thread::spawn(move || {
                 post::prove::generate_proof(
@@ -127,12 +134,18 @@ impl crate::client::PostService for PostService {
 
         Ok(ProofGenState::InProgress)
     }
+
+    fn verify_proof(&self, proof: &Proof, metadata: &ProofMetadata) -> eyre::Result<()> {
+        self.verifier
+            .verify(proof, metadata, VerifyingParams::new(metadata, &self.cfg)?)
+            .wrap_err("verifying proof")
+    }
 }
 
 impl Drop for PostService {
     fn drop(&mut self) {
         log::info!("shutting down post service");
-        if let Some(process) = self.proof_generation.take() {
+        if let Some(process) = self.proof_generation.lock().unwrap().take() {
             log::debug!("killing proof generation process");
             self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
             let _ = process.handle.join().unwrap();
