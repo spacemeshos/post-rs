@@ -13,6 +13,7 @@ use post::{
     verification::{Verifier, VerifyingParams},
 };
 
+#[derive(Debug)]
 pub enum ProofGenState {
     InProgress,
     Finished {
@@ -28,7 +29,6 @@ struct ProofGenProcess {
 }
 
 pub struct PostService {
-    id: [u8; 32],
     datadir: PathBuf,
     cfg: post::config::Config,
     nonces: usize,
@@ -48,11 +48,7 @@ impl PostService {
         threads: usize,
         pow_flags: RandomXFlag,
     ) -> eyre::Result<Self> {
-        let metadata =
-            post::metadata::load(&datadir).wrap_err("loading metadata. Is POST initialized?")?;
-
         Ok(Self {
-            id: metadata.node_id,
             proof_generation: Mutex::new(None),
             datadir,
             cfg,
@@ -111,6 +107,13 @@ impl crate::client::PostService for PostService {
             }
         }
 
+        let metadata = post::metadata::load(&self.datadir).wrap_err_with(|| {
+            format!(
+                "loading metadata from {}. Is POST initialized?",
+                self.datadir.as_path().display()
+            )
+        })?;
+
         let ch: [u8; 32] = challenge
             .as_slice()
             .try_into()
@@ -119,7 +122,6 @@ impl crate::client::PostService for PostService {
         let pow_flags = self.pow_flags;
         let cfg = self.cfg;
         let datadir = self.datadir.clone();
-        let miner_id = Some(self.id);
         let nonces = self.nonces;
         let threads = self.threads;
         let stop = self.stop.clone();
@@ -127,7 +129,14 @@ impl crate::client::PostService for PostService {
             challenge,
             handle: std::thread::spawn(move || {
                 post::prove::generate_proof(
-                    &datadir, &ch, cfg, nonces, threads, pow_flags, miner_id, stop,
+                    &datadir,
+                    &ch,
+                    cfg,
+                    nonces,
+                    threads,
+                    pow_flags,
+                    Some(metadata.node_id),
+                    stop,
                 )
             }),
         });
@@ -156,9 +165,11 @@ impl Drop for PostService {
 
 #[cfg(test)]
 mod tests {
+    use crate::client::PostService;
+
     #[test]
     fn needs_post_data() {
-        assert!(super::PostService::new(
+        let service = super::PostService::new(
             std::path::PathBuf::from(""),
             post::config::Config {
                 k1: 8,
@@ -171,6 +182,8 @@ mod tests {
             1,
             post::pow::randomx::RandomXFlag::get_recommended_flags(),
         )
-        .is_err());
+        .unwrap();
+
+        assert!(service.gen_proof(vec![0xCA; 32]).is_err());
     }
 }
