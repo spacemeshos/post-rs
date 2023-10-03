@@ -119,11 +119,8 @@ jobs:
           components: llvm-tools-preview
       - name: cargo install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: cargo generate-lockfile
-        if: hashFiles('Cargo.lock') == ''
-        run: cargo generate-lockfile
       - name: cargo llvm-cov
-        run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info --workspace --ignore-filename-regex "main.rs"
+        run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info --workspace --ignore-filename-regex "main.rs" -- --test-threads=1
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
         with:
