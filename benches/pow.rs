@@ -31,7 +31,11 @@ fn bench_pow(c: &mut Criterion) {
                 b.iter_batched(
                     rand::random,
                     |nonce| {
-                        pool.install(|| prover.prove(nonce, b"challeng", difficulty, None).unwrap())
+                        pool.install(|| {
+                            prover
+                                .prove(nonce, b"challeng", difficulty, &[7; 32])
+                                .unwrap()
+                        })
                     },
                     BatchSize::SmallInput,
                 )
@@ -48,7 +52,7 @@ fn verify_pow_light_stateless(c: &mut Criterion) {
             |pow| {
                 let prover = PoW::new(flags).unwrap();
                 prover
-                    .verify(pow, 7, b"challeng", &[0xFFu8; 32], None)
+                    .verify(pow, 7, b"challeng", &[0xFF; 32], &[7; 32])
                     .unwrap();
             },
             BatchSize::SmallInput,
@@ -65,7 +69,7 @@ fn verify_pow_light(c: &mut Criterion) {
             rand::random,
             |pow| {
                 prover
-                    .verify(pow, 7, b"challeng", &[0xFFu8; 32], None)
+                    .verify(pow, 7, b"challeng", &[0xFF; 32], &[7; 32])
                     .unwrap();
             },
             BatchSize::SmallInput,
@@ -82,7 +86,7 @@ fn verify_pow_fast(c: &mut Criterion) {
             rand::random,
             |pow| {
                 prover
-                    .verify(pow, 7, b"challeng", &[0xFFu8; 32], None)
+                    .verify(pow, 7, b"challeng", &[0xFF; 32], &[7; 32])
                     .unwrap();
             },
             BatchSize::SmallInput,
