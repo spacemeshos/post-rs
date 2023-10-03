@@ -137,6 +137,9 @@ async fn main() -> eyre::Result<()> {
     let env = env_logger::Env::default().filter_or("RUST_LOG", "info");
     env_logger::init_from_env(env);
 
+    log::info!("POST network parameters: {:?}", args.post_config);
+    log::info!("POST proving settings: {:?}", args.post_settings);
+
     let service = post_service::service::PostService::new(
         args.dir,
         post::config::Config {
@@ -156,9 +159,10 @@ async fn main() -> eyre::Result<()> {
     )
     .wrap_err("creating Post Service")?;
 
-    let cert = if let Some(tls) = args.tls {
+    let tls = if let Some(tls) = args.tls {
         log::info!(
-            "configuring TLS: server CA cert: {}, client cert: {}, client key: {}",
+            "configuring TLS: server: (CA cert: {}, domain: {}), client: (cert: {}, key: {})",
+            tls.domain,
             tls.ca_cert.display(),
             tls.cert.display(),
             tls.key.display(),
@@ -167,6 +171,7 @@ async fn main() -> eyre::Result<()> {
         let cert = read_to_string(tls.cert)?;
         let key = read_to_string(tls.key)?;
         Some((
+            tls.domain,
             Certificate::from_pem(server_ca_cert),
             Identity::from_pem(cert, key),
         ))
@@ -175,8 +180,7 @@ async fn main() -> eyre::Result<()> {
         None
     };
 
-    let client =
-        client::ServiceClient::new(args.address, args.reconnect_interval_s, cert, service)?;
+    let client = client::ServiceClient::new(args.address, args.reconnect_interval_s, tls, service)?;
 
     client.run().await
 }

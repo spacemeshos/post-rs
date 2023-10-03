@@ -62,14 +62,14 @@ impl<S: PostService> ServiceClient<S> {
     pub fn new(
         address: String,
         reconnect_interval: Duration,
-        cert: Option<(Certificate, Identity)>,
+        tls: Option<(String, Certificate, Identity)>,
         service: S,
     ) -> eyre::Result<Self> {
         let endpoint = Channel::builder(address.parse()?);
-        let endpoint = match cert {
-            Some((cert, identity)) => endpoint.tls_config(
+        let endpoint = match tls {
+            Some((domain, cert, identity)) => endpoint.tls_config(
                 ClientTlsConfig::new()
-                    .domain_name("localhost")
+                    .domain_name(domain)
                     .ca_certificate(cert)
                     .identity(identity),
             )?,

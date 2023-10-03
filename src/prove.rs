@@ -8,20 +8,19 @@
 //! ## k2 proof of work
 //! TODO: explain
 
+use std::borrow::{Borrow, Cow};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
+use std::{collections::HashMap, ops::Range, path::Path, time::Instant};
+
 use aes::cipher::block_padding::NoPadding;
 use aes::cipher::BlockEncrypt;
 use eyre::Context;
 use primitive_types::U256;
 use randomx_rs::RandomXFlag;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
-use std::{
-    borrow::{Borrow, Cow},
-    collections::HashMap,
-    ops::Range,
-    path::Path,
-    sync::{atomic::AtomicBool, Mutex},
-    time::Instant,
-};
 
 use crate::{
     cipher::AesCipher,
@@ -299,7 +298,7 @@ where
 
     let total_time = Instant::now();
     loop {
-        if stop.load(std::sync::atomic::Ordering::Relaxed) {
+        if stop.load(Ordering::Relaxed) {
             eyre::bail!("proof generation was stopped");
         }
 
@@ -326,7 +325,7 @@ where
         let result = pool.install(|| {
             data_reader
                 .par_bridge()
-                .take_any_while(|_| !stop.load(std::sync::atomic::Ordering::Relaxed))
+                .take_any_while(|_| !stop.load(Ordering::Relaxed))
                 .find_map_any(|batch| {
                     prover.prove(
                         &batch.data,

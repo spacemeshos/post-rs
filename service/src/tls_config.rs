@@ -15,4 +15,7 @@ pub struct Tls {
     pub cert: PathBuf,
     #[arg(long, required = false)]
     pub key: PathBuf,
+    /// domain name to verify the certificate of server against
+    #[arg(long, default_value = "localhost")]
+    pub domain: String,
 }
