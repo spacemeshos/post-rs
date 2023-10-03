@@ -77,3 +77,60 @@ pub extern "C" fn set_logging_callback(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use log::{Level, Log, Metadata, Record};
+
+    use super::ExternCLog;
+
+    #[test]
+    fn test_c_logger() {
+        extern "C" fn cb(record: &super::ExternCRecord) {
+            assert_eq!(record.level, Level::Info);
+            assert_eq!(
+                unsafe {
+                    std::str::from_utf8(std::slice::from_raw_parts(
+                        record.message.ptr as _,
+                        record.message.len,
+                    ))
+                },
+                Ok("Hello, world!")
+            );
+            assert_eq!(record.line, 77,);
+            assert_eq!(
+                unsafe {
+                    std::str::from_utf8(std::slice::from_raw_parts(
+                        record.file.ptr as _,
+                        record.file.len,
+                    ))
+                },
+                Ok("test.rs")
+            );
+            assert_eq!(
+                unsafe {
+                    std::str::from_utf8(std::slice::from_raw_parts(
+                        record.module_path.ptr as _,
+                        record.module_path.len,
+                    ))
+                },
+                Ok("test_module")
+            );
+        }
+
+        let logger = ExternCLog::new(Level::Info, cb);
+
+        assert!(logger.enabled(&Metadata::builder().level(Level::Info).build()));
+        assert!(!logger.enabled(&Metadata::builder().level(Level::Debug).build()));
+
+        logger.log(
+            &Record::builder()
+                .args(format_args!("Hello, world!"))
+                .level(Level::Info)
+                .file(Some("test.rs"))
+                .line(Some(77))
+                .module_path(Some("test_module"))
+                .build(),
+        );
+    }
+}
