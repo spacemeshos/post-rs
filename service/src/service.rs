@@ -107,13 +107,6 @@ impl crate::client::PostService for PostService {
             }
         }
 
-        let metadata = post::metadata::load(&self.datadir).wrap_err_with(|| {
-            format!(
-                "loading metadata from {}. Is POST initialized?",
-                self.datadir.as_path().display()
-            )
-        })?;
-
         let ch: [u8; 32] = challenge
             .as_slice()
             .try_into()
@@ -128,16 +121,7 @@ impl crate::client::PostService for PostService {
         *proof_gen = Some(ProofGenProcess {
             challenge,
             handle: std::thread::spawn(move || {
-                post::prove::generate_proof(
-                    &datadir,
-                    &ch,
-                    cfg,
-                    nonces,
-                    threads,
-                    pow_flags,
-                    Some(metadata.node_id),
-                    stop,
-                )
+                post::prove::generate_proof(&datadir, &ch, cfg, nonces, threads, pow_flags, stop)
             }),
         });
 
@@ -160,30 +144,5 @@ impl Drop for PostService {
             let _ = process.handle.join().unwrap();
             log::debug!("proof generation process exited");
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::client::PostService;
-
-    #[test]
-    fn needs_post_data() {
-        let service = super::PostService::new(
-            std::path::PathBuf::from(""),
-            post::config::Config {
-                k1: 8,
-                k2: 4,
-                k3: 4,
-                pow_difficulty: [0xFF; 32],
-                scrypt: post::ScryptParams::new(0, 0, 0),
-            },
-            16,
-            1,
-            post::pow::randomx::RandomXFlag::get_recommended_flags(),
-        )
-        .unwrap();
-
-        assert!(service.gen_proof(vec![0xCA; 32]).is_err());
     }
 }

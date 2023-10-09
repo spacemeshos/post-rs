@@ -172,7 +172,6 @@ async fn test_gen_proof_finished() {
                 nonce: 1,
                 indices: Cow::Owned(indices.to_vec()),
                 pow: 7,
-                pow_creator: None,
             },
             metadata: ProofMetadata {
                 node_id: *node_id,

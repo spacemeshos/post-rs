@@ -9,6 +9,5 @@ coverage:
         threshold: 1%
 
 ignore:
-  - "ffi"
   - "benches"
   - "tests"

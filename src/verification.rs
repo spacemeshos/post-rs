@@ -143,7 +143,7 @@ impl Verifier {
                 .map_err(|_| Error::NonceGroupOutOfBounds(nonce_group))?,
             &challenge[..8].try_into().unwrap(),
             &params.pow_difficulty,
-            proof.pow_creator.as_ref(),
+            &metadata.node_id,
         )?;
 
         // Verify the number of indices against K2
@@ -288,7 +288,6 @@ mod tests {
                 nonce: 0,
                 indices: Cow::from(vec![1, 2, 3]),
                 pow: 0,
-                pow_creator: None,
             },
             &fake_metadata,
             params,
@@ -323,7 +322,6 @@ mod tests {
                 nonce: 0,
                 indices: Cow::from(vec![]),
                 pow: 0,
-                pow_creator: None,
             };
             let result = verifier.verify(&empty_proof, &fake_metadata, params);
             assert!(matches!(
@@ -339,7 +337,6 @@ mod tests {
                 nonce: 256 * 16,
                 indices: Cow::from(vec![]),
                 pow: 0,
-                pow_creator: None,
             };
             let res = verifier.verify(&nonce_out_of_bounds_proof, &fake_metadata, params);
             assert!(matches!(res, Err(Error::NonceGroupOutOfBounds(256))));
@@ -349,7 +346,6 @@ mod tests {
                 nonce: 0,
                 indices: Cow::from(vec![1, 2, 3]),
                 pow: 0,
-                pow_creator: None,
             };
             let result = verifier.verify(&proof_with_not_enough_indices, &fake_metadata, params);
             assert!(matches!(

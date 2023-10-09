@@ -220,7 +220,7 @@ fn proving(args: ProvingArgs) -> eyre::Result<()> {
 
     let mut pow_prover = pow::MockProver::new();
     pow_prover.expect_prove().returning(|_, _, _, _| Ok(0));
-    let prover = Prover8_56::new(challenge, 0..args.nonces, params, &pow_prover, None)?;
+    let prover = Prover8_56::new(challenge, 0..args.nonces, params, &pow_prover, &[7; 32])?;
 
     let mut total_time = time::Duration::from_secs(0);
     let mut processed = 0;
@@ -286,7 +286,7 @@ fn pow(args: PowArgs) -> eyre::Result<()> {
     pool.install(|| -> eyre::Result<()> {
         for i in 0..args.iterations {
             let start = time::Instant::now();
-            prover.prove(7, &i.to_le_bytes(), &args.difficulty, None)?;
+            prover.prove(7, &i.to_le_bytes(), &args.difficulty, &[7; 32])?;
             let duration = start.elapsed();
             eprintln!(
                 "[{i}]: {duration:.2?} (scaled: {:.2?})",
