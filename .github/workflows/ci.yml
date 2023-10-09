@@ -124,6 +124,9 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     steps:
+      - uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install opencl
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
       - uses: actions/checkout@v3
