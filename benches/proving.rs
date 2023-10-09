@@ -50,8 +50,7 @@ fn prover_bench(c: &mut Criterion) {
                     .times(nonces as usize / 16)
                     .returning(|_, _, _, _| Ok(0));
                 let prover =
-                    Prover8_56::new(CHALLENGE, 0..nonces, params.clone(), &pow_prover, None)
-                        .unwrap();
+                    Prover8_56::new(CHALLENGE, 0..nonces, params, &pow_prover, &[7; 32]).unwrap();
                 b.iter(|| {
                     let f = black_box(|_, _| None);
                     match threads {

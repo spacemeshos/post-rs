@@ -24,7 +24,6 @@ pub struct Proof {
     nonce: u32,
     indices: ArrayU8,
     pow: u64,
-    pow_creator: ArrayU8,
 }
 
 impl From<prove::Proof<'_>> for Proof {
@@ -32,42 +31,23 @@ impl From<prove::Proof<'_>> for Proof {
         let mut indices = ManuallyDrop::new(proof.indices.into_owned());
         let (ptr, len, cap) = (indices.as_mut_ptr(), indices.len(), indices.capacity());
 
-        let pow_creator = proof
-            .pow_creator
-            .map(|creator| {
-                // make a copy of the creator
-                let mut creator = ManuallyDrop::new(creator.to_vec());
-                let (ptr, len, cap) = (creator.as_mut_ptr(), creator.len(), creator.capacity());
-                ArrayU8 { ptr, len, cap }
-            })
-            .unwrap_or_default();
-
         Self {
             nonce: proof.nonce,
             indices: ArrayU8 { ptr, len, cap },
             pow: proof.pow,
-            pow_creator,
         }
     }
 }
 
-impl TryInto<prove::Proof<'_>> for Proof {
-    type Error = Box<dyn Error>;
+impl From<Proof> for prove::Proof<'_> {
+    fn from(val: Proof) -> Self {
+        let indices = unsafe { slice::from_raw_parts(val.indices.ptr, val.indices.len) };
 
-    fn try_into(self) -> Result<prove::Proof<'static>, Self::Error> {
-        let indices = unsafe { slice::from_raw_parts(self.indices.ptr, self.indices.len) };
-        let pow_creator = match (self.pow_creator.ptr, self.pow_creator.len) {
-            (ptr, 32) if !ptr.is_null() => {
-                Some(unsafe { slice::from_raw_parts(ptr, 32) }.try_into()?)
-            }
-            _ => None,
-        };
-        Ok(post::prove::Proof {
-            nonce: self.nonce,
+        post::prove::Proof {
+            nonce: val.nonce,
             indices: Cow::from(indices),
-            pow: self.pow,
-            pow_creator,
-        })
+            pow: val.pow,
+        }
     }
 }
 
@@ -80,13 +60,6 @@ pub unsafe extern "C" fn free_proof(proof: *mut Proof) {
     if !proof.indices.ptr.is_null() {
         Vec::from_raw_parts(proof.indices.ptr, proof.indices.len, proof.indices.cap);
     }
-    if !proof.pow_creator.ptr.is_null() {
-        Vec::from_raw_parts(
-            proof.pow_creator.ptr,
-            proof.pow_creator.len,
-            proof.pow_creator.cap,
-        );
-    }
     // proof and vec will be deallocated on return
 }
 
@@ -95,7 +68,6 @@ pub unsafe extern "C" fn free_proof(proof: *mut Proof) {
 /// If an error occurs, prints it on stderr and returns null.
 /// # Safety
 /// `challenge` must be a 32-byte array.
-/// `miner_id` must be null or point to a 32-byte array.
 #[no_mangle]
 pub extern "C" fn generate_proof(
     datadir: *const c_char,
@@ -104,11 +76,8 @@ pub extern "C" fn generate_proof(
     nonces: usize,
     threads: usize,
     pow_flags: RandomXFlag,
-    miner_id: *const c_uchar,
 ) -> *mut Proof {
-    match _generate_proof(
-        datadir, challenge, cfg, nonces, threads, pow_flags, miner_id,
-    ) {
+    match _generate_proof(datadir, challenge, cfg, nonces, threads, pow_flags) {
         Ok(proof) => Box::into_raw(proof),
         Err(e) => {
             //TODO(poszu) communicate errors better
@@ -125,7 +94,6 @@ fn _generate_proof(
     nonces: usize,
     threads: usize,
     pow_flags: RandomXFlag,
-    miner_id: *const c_uchar,
 ) -> Result<Box<Proof>, Box<dyn Error>> {
     let datadir = unsafe { CStr::from_ptr(datadir) };
     let datadir = Path::new(
@@ -137,16 +105,7 @@ fn _generate_proof(
     let challenge = unsafe { std::slice::from_raw_parts(challenge, 32) };
     let challenge = challenge.try_into()?;
 
-    let miner_id = if miner_id.is_null() {
-        None
-    } else {
-        let miner_id = unsafe { std::slice::from_raw_parts(miner_id, 32) };
-        Some(miner_id.try_into()?)
-    };
-
-    let proof = prove::generate_proof(
-        datadir, challenge, cfg, nonces, threads, pow_flags, miner_id,
-    )?;
+    let proof = prove::generate_proof(datadir, challenge, cfg, nonces, threads, pow_flags)?;
     Ok(Box::new(Proof::from(proof)))
 }
 
@@ -247,11 +206,7 @@ pub unsafe extern "C" fn verify_proof(
 
 #[cfg(test)]
 mod tests {
-    use std::ptr::null_mut;
-
-    use post::{
-        initialize::Initialize, metadata::ProofMetadata, pow::randomx::RandomXFlag, prove::Proof,
-    };
+    use post::{initialize::Initialize, metadata::ProofMetadata, pow::randomx::RandomXFlag};
 
     #[test]
     fn datadir_must_be_utf8() {
@@ -270,7 +225,6 @@ mod tests {
             1,
             0,
             Default::default(),
-            null_mut(),
         );
         assert!(result.unwrap_err().to_string().contains("Utf8Error"));
     }
@@ -293,7 +247,6 @@ mod tests {
                     nonce: 0,
                     indices: crate::ArrayU8::default(),
                     pow: 0,
-                    pow_creator: crate::ArrayU8::default(),
                 },
                 std::ptr::null(),
                 super::Config {
@@ -326,10 +279,10 @@ mod tests {
             scrypt: post::ScryptParams::new(0, 0, 0),
         };
 
-        post::initialize::CpuInitializer::new(cfg.scrypt)
+        let meta = post::initialize::CpuInitializer::new(cfg.scrypt)
             .initialize(
                 datadir.path(),
-                &[0u8; 32],
+                &[77; 32],
                 &[0u8; 32],
                 labels_per_unit,
                 2,
@@ -347,7 +300,6 @@ mod tests {
         assert!(!verifier.is_null());
 
         let challenge = b"hello world, challenge me!!!!!!!";
-        let miner_id = [77u8; 32];
 
         // Create proof without miner ID
         let data_dir_cstr = std::ffi::CString::new(datadir.path().to_str().unwrap()).unwrap();
@@ -358,18 +310,14 @@ mod tests {
             16,
             1,
             pow_flags,
-            miner_id.as_ptr(),
         );
 
-        let proof: Proof = unsafe { *cproof }.try_into().unwrap();
-        assert_eq!(proof.pow_creator, Some(miner_id));
-
         let proof_metadata = ProofMetadata {
-            node_id: [0u8; 32],
-            commitment_atx_id: [0u8; 32],
+            node_id: meta.node_id,
+            commitment_atx_id: meta.commitment_atx_id,
             challenge: *challenge,
-            num_units: 2,
-            labels_per_unit,
+            num_units: meta.num_units,
+            labels_per_unit: meta.labels_per_unit,
         };
 
         let result =
@@ -377,10 +325,12 @@ mod tests {
 
         assert_eq!(result, super::VerifyResult::Ok);
 
-        // Modify the proof to not include pow_creator ID and verify again
-        let invalid_proof = crate::post_impl::Proof {
-            pow_creator: crate::ArrayU8::default(),
-            ..unsafe { *cproof }
+        // Modify the proof to have different k2pow
+        let invalid_proof = unsafe {
+            crate::post_impl::Proof {
+                pow: (*cproof).pow - 1,
+                ..*cproof
+            }
         };
 
         let result = unsafe {

@@ -31,7 +31,6 @@ fn verifying(c: &mut Criterion) {
         (0..k2 as u64).collect::<Vec<u64>>().as_slice(),
         num_labels,
         0,
-        None,
     );
     let params = VerifyingParams {
         difficulty: u64::MAX,
