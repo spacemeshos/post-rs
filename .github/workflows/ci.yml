@@ -110,6 +110,8 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     steps:
+      - name: Install opencl
+        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
       - uses: actions/checkout@v3
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
@@ -117,11 +119,8 @@ jobs:
           components: llvm-tools-preview
       - name: cargo install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - name: cargo generate-lockfile
-        if: hashFiles('Cargo.lock') == ''
-        run: cargo generate-lockfile
       - name: cargo llvm-cov
-        run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info
+        run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info --workspace --ignore-filename-regex "main.rs" -- --test-threads=1
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
         with:
@@ -171,7 +170,7 @@ jobs:
             toolchain: stable
     steps:
       - if: matrix.os == 'ubuntu-20.04'
-        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
+        run: sudo apt-get install -y mesa-opencl-icd ocl-icd-opencl-dev
         name: Install opencl
       - if: matrix.os == 'windows-2019'
         name: Install opencl
