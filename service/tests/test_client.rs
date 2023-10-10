@@ -1,88 +1,21 @@
+mod server;
+
 use std::{borrow::Cow, sync::Arc};
 
-use tokio::{
-    net::TcpListener,
-    sync::{broadcast, mpsc, oneshot},
-};
-use tokio_stream::wrappers::TcpListenerStream;
-use tonic::transport::{Error, Server};
+use tokio::sync::oneshot;
 
 use post::{metadata::ProofMetadata, prove::Proof};
 use post_service::{
-    client::{MockPostService, PostService, ServiceClient},
-    service::ProofGenState,
-    test_server::{
+    client::{
         spacemesh_v1::{
-            node_request, post_service_server::PostServiceServer, service_response,
-            GenProofRequest, GenProofResponse, GenProofStatus, NodeRequest, ServiceResponse,
+            self, service_response, ActivationId, GenProofResponse, GenProofStatus, NodeRequest,
+            SmesherId,
         },
-        TestNodeRequest, TestPostService,
+        MockPostService,
     },
+    service::ProofGenState,
 };
-
-struct TestServer {
-    connected: broadcast::Receiver<mpsc::Sender<TestNodeRequest>>,
-    handle: tokio::task::JoinHandle<Result<(), Error>>,
-    addr: std::net::SocketAddr,
-}
-
-impl Drop for TestServer {
-    fn drop(&mut self) {
-        self.handle.abort();
-    }
-}
-
-impl TestServer {
-    async fn new() -> Self {
-        let mut test_node = TestPostService::new();
-        let reg = test_node.register_for_connections();
-
-        let listener = TcpListener::bind("[::1]:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        let server = tokio::spawn(
-            Server::builder()
-                .add_service(PostServiceServer::new(test_node))
-                .serve_with_incoming(TcpListenerStream::new(listener)),
-        );
-
-        TestServer {
-            connected: reg,
-            handle: server,
-            addr,
-        }
-    }
-
-    fn create_client<S>(&self, service: S) -> ServiceClient<S>
-    where
-        S: PostService,
-    {
-        ServiceClient::new(
-            format!("http://{}", self.addr),
-            std::time::Duration::from_secs(1),
-            None,
-            service,
-        )
-        .unwrap()
-    }
-
-    async fn generate_proof(
-        connected: &mpsc::Sender<TestNodeRequest>,
-        challenge: Vec<u8>,
-    ) -> ServiceResponse {
-        let (response, resp_rx) = oneshot::channel();
-        connected
-            .send(TestNodeRequest {
-                request: NodeRequest {
-                    kind: Some(node_request::Kind::GenProof(GenProofRequest { challenge })),
-                },
-                response,
-            })
-            .await
-            .unwrap();
-        resp_rx.await.unwrap()
-    }
-}
+use server::{TestNodeRequest, TestServer};
 
 #[tokio::test]
 async fn test_registers() {
@@ -201,17 +134,17 @@ async fn test_gen_proof_finished() {
 
     let response = TestServer::generate_proof(&connected, challenge.to_vec()).await;
     let _exp_status = GenProofStatus::Ok as i32;
-    let _exp_proof = post_service::test_server::spacemesh_v1::Proof {
+    let _exp_proof = spacemesh_v1::Proof {
         nonce: 1,
         indices: indices.to_vec(),
         pow: 7,
     };
-    let _exp_metadata = post_service::test_server::spacemesh_v1::ProofMetadata {
+    let _exp_metadata = spacemesh_v1::ProofMetadata {
         challenge: challenge.to_vec(),
-        node_id: Some(post_service::test_server::spacemesh_v1::SmesherId {
+        node_id: Some(SmesherId {
             id: node_id.to_vec(),
         }),
-        commitment_atx_id: Some(post_service::test_server::spacemesh_v1::ActivationId {
+        commitment_atx_id: Some(ActivationId {
             id: commitment_atx_id.to_vec(),
         }),
         num_units: 7,
