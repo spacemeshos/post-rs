@@ -15,7 +15,8 @@ use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 
 use post_service::client::spacemesh_v1::{
-    node_request, post_service_server, GenProofRequest, NodeRequest, ServiceResponse,
+    node_request, post_service_server, GenProofRequest, MetadataRequest, NodeRequest,
+    ServiceResponse,
 };
 
 #[derive(Debug)]
@@ -135,6 +136,20 @@ impl TestServer {
             .send(TestNodeRequest {
                 request: NodeRequest {
                     kind: Some(node_request::Kind::GenProof(GenProofRequest { challenge })),
+                },
+                response,
+            })
+            .await
+            .unwrap();
+        resp_rx.await.unwrap()
+    }
+
+    pub async fn request_metadata(connected: &mpsc::Sender<TestNodeRequest>) -> ServiceResponse {
+        let (response, resp_rx) = oneshot::channel();
+        connected
+            .send(TestNodeRequest {
+                request: NodeRequest {
+                    kind: Some(node_request::Kind::Metadata(MetadataRequest {})),
                 },
                 response,
             })

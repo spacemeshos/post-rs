@@ -70,6 +70,18 @@ pub struct ProofMetadata {
     pub labels_per_unit: u64,
 }
 
+impl ProofMetadata {
+    pub fn new(post_metadata: PostMetadata, challenge: [u8; 32]) -> Self {
+        Self {
+            challenge,
+            node_id: post_metadata.node_id,
+            commitment_atx_id: post_metadata.commitment_atx_id,
+            num_units: post_metadata.num_units,
+            labels_per_unit: post_metadata.labels_per_unit,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::PostMetadata;

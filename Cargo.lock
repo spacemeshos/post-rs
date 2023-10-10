@@ -2479,6 +2479,7 @@ dependencies = [
  "mockall",
  "post-rs",
  "prost",
+ "rstest 0.18.2",
  "tempfile",
  "tokio",
  "tokio-stream",

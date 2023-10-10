@@ -86,7 +86,7 @@ impl VerifyingParams {
 }
 
 pub struct Verifier {
-    pow_verifier: Box<dyn PowVerifier>,
+    pow_verifier: Box<dyn PowVerifier + Send + Sync>,
 }
 
 #[derive(thiserror::Error, Debug)]
@@ -114,7 +114,7 @@ pub enum Error {
 }
 
 impl Verifier {
-    pub fn new(pow_verifier: Box<dyn PowVerifier>) -> Self {
+    pub fn new(pow_verifier: Box<dyn PowVerifier + Send + Sync>) -> Self {
         Self { pow_verifier }
     }
 

@@ -7,7 +7,7 @@ use std::{
 
 use eyre::Context;
 use post::{
-    metadata::ProofMetadata,
+    metadata::{PostMetadata, ProofMetadata},
     pow::randomx::{PoW, RandomXFlag},
     prove::Proof,
     verification::{Verifier, VerifyingParams},
@@ -16,10 +16,7 @@ use post::{
 #[derive(Debug)]
 pub enum ProofGenState {
     InProgress,
-    Finished {
-        proof: Proof<'static>,
-        metadata: ProofMetadata,
-    },
+    Finished { proof: Proof<'static> },
 }
 
 #[derive(Debug)]
@@ -81,21 +78,7 @@ impl crate::client::PostService for PostService {
 
                 match result {
                     Ok(proof) => {
-                        let metadata = post::metadata::load(&self.datadir)
-                            .wrap_err("loading POST metadata")?;
-
-                        return Ok(ProofGenState::Finished {
-                            proof,
-                            metadata: ProofMetadata {
-                                challenge: challenge
-                                    .try_into()
-                                    .map_err(|_| eyre::eyre!("invalid challenge format"))?,
-                                node_id: metadata.node_id,
-                                commitment_atx_id: metadata.commitment_atx_id,
-                                num_units: metadata.num_units,
-                                labels_per_unit: metadata.labels_per_unit,
-                            },
-                        });
+                        return Ok(ProofGenState::Finished { proof });
                     }
                     Err(e) => {
                         return Err(e);
@@ -132,6 +115,10 @@ impl crate::client::PostService for PostService {
         self.verifier
             .verify(proof, metadata, VerifyingParams::new(metadata, &self.cfg)?)
             .wrap_err("verifying proof")
+    }
+
+    fn get_metadata(&self) -> eyre::Result<PostMetadata> {
+        post::metadata::load(&self.datadir).wrap_err("loading POST metadata")
     }
 }
 

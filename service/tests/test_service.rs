@@ -2,6 +2,7 @@ use std::{thread::sleep, time::Duration};
 
 use post::{
     initialize::{CpuInitializer, Initialize},
+    metadata::ProofMetadata,
     pow::randomx::RandomXFlag,
     ScryptParams,
 };
@@ -21,7 +22,7 @@ fn test_generate_and_verify() {
         scrypt: ScryptParams::new(0, 0, 0),
     };
 
-    CpuInitializer::new(cfg.scrypt)
+    let metadata = CpuInitializer::new(cfg.scrypt)
         .initialize(
             datadir.path(),
             &[0xBE; 32],
@@ -41,9 +42,7 @@ fn test_generate_and_verify() {
             .unwrap();
 
     let (proof, metadata) = loop {
-        if let ProofGenState::Finished { proof, metadata } =
-            service.gen_proof(vec![0xCA; 32]).unwrap()
-        {
+        if let ProofGenState::Finished { proof } = service.gen_proof(vec![0xCA; 32]).unwrap() {
             break (proof, metadata);
         }
         sleep(Duration::from_millis(10));
@@ -51,7 +50,7 @@ fn test_generate_and_verify() {
 
     // Verify the proof
     service
-        .verify_proof(&proof, &metadata)
+        .verify_proof(&proof, &ProofMetadata::new(metadata, [0xCA; 32]))
         .expect("proof should be valid");
 }
 
