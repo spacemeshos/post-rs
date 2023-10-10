@@ -50,15 +50,14 @@ async fn test_gen_proof_in_progress() {
     let connected = test_server.connected.recv().await.unwrap();
     let response = TestServer::generate_proof(&connected, vec![0xCA; 32]).await;
 
-    let _exp_status = GenProofStatus::Ok as i32;
-    assert!(matches!(
-        response.kind.unwrap(),
-        service_response::Kind::GenProof(GenProofResponse {
-            status: _exp_status,
+    assert_eq!(
+        response.kind,
+        Some(service_response::Kind::GenProof(GenProofResponse {
+            status: GenProofStatus::Ok as i32,
             proof: None,
             metadata: None
-        })
-    ));
+        }))
+    );
 
     client_handle.abort();
     let _ = client_handle.await;
@@ -80,15 +79,14 @@ async fn test_gen_proof_failed() {
     let connected = test_server.connected.recv().await.unwrap();
     let response = TestServer::generate_proof(&connected, vec![0xCA; 32]).await;
 
-    let _exp_status = GenProofStatus::Error as i32;
-    assert!(matches!(
-        response.kind.unwrap(),
-        service_response::Kind::GenProof(GenProofResponse {
-            status: _exp_status,
+    assert_eq!(
+        response.kind,
+        Some(service_response::Kind::GenProof(GenProofResponse {
+            status: GenProofStatus::Error as _,
             proof: None,
             metadata: None
-        })
-    ));
+        }))
+    );
 
     client_handle.abort();
     let _ = client_handle.await;
@@ -142,43 +140,39 @@ async fn test_gen_proof_finished() {
     let connected = test_server.connected.recv().await.unwrap();
 
     let response = TestServer::generate_proof(&connected, challenge.to_vec()).await;
-    let _exp_status = GenProofStatus::Ok as i32;
-    let _exp_proof = spacemesh_v1::Proof {
-        nonce: 1,
-        indices: indices.to_vec(),
-        pow: 7,
-    };
-    let _exp_metadata = spacemesh_v1::ProofMetadata {
-        challenge: challenge.to_vec(),
-        meta: Some(Metadata {
-            node_id: node_id.to_vec(),
-            commitment_atx_id: commitment_atx_id.to_vec(),
-            nonce: 12,
-            num_units: 7,
-            labels_per_unit: 256,
-        }),
-    };
 
-    assert!(matches!(
-        response.kind.unwrap(),
-        service_response::Kind::GenProof(GenProofResponse {
-            status: _exp_status,
-            proof: Some(_exp_proof),
-            metadata: Some(_exp_metadata),
-        })
-    ));
+    assert_eq!(
+        response.kind,
+        Some(service_response::Kind::GenProof(GenProofResponse {
+            status: GenProofStatus::Ok as _,
+            proof: Some(spacemesh_v1::Proof {
+                nonce: 1,
+                indices: indices.to_vec(),
+                pow: 7,
+            }),
+            metadata: Some(spacemesh_v1::ProofMetadata {
+                challenge: challenge.to_vec(),
+                meta: Some(Metadata {
+                    node_id: node_id.to_vec(),
+                    commitment_atx_id: commitment_atx_id.to_vec(),
+                    nonce: 12,
+                    num_units: 4,
+                    labels_per_unit: 256,
+                }),
+            }),
+        }))
+    );
 
     // Second try should fail at verification
     let response = TestServer::generate_proof(&connected, challenge.to_vec()).await;
-    let _exp_status = GenProofStatus::Error as i32;
-    assert!(matches!(
-        response.kind.unwrap(),
-        service_response::Kind::GenProof(GenProofResponse {
-            status: _exp_status,
+    assert_eq!(
+        response.kind,
+        Some(service_response::Kind::GenProof(GenProofResponse {
+            status: GenProofStatus::Error as _,
             proof: None,
             metadata: None
-        })
-    ));
+        }))
+    );
 
     client_handle.abort();
     let _ = client_handle.await;
@@ -209,15 +203,14 @@ async fn test_broken_request_no_kind() {
         .unwrap();
 
     let response = resp_rx.await.unwrap();
-    let _exp_status = GenProofStatus::Error as i32;
-    assert!(matches!(
-        response.kind.unwrap(),
-        service_response::Kind::GenProof(GenProofResponse {
-            status: _exp_status,
+    assert_eq!(
+        response.kind,
+        Some(service_response::Kind::GenProof(GenProofResponse {
+            status: GenProofStatus::Error as _,
             proof: None,
-            metadata: None
-        })
-    ));
+            metadata: None,
+        }))
+    );
 
     client_handle.abort();
     let _ = client_handle.await;
