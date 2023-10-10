@@ -5,6 +5,7 @@ use std::{
     ffi::{c_char, c_uchar, CStr},
     mem::ManuallyDrop,
     path::Path,
+    sync::atomic::AtomicBool,
 };
 
 pub use post::config::Config;
@@ -105,7 +106,8 @@ fn _generate_proof(
     let challenge = unsafe { std::slice::from_raw_parts(challenge, 32) };
     let challenge = challenge.try_into()?;
 
-    let proof = prove::generate_proof(datadir, challenge, cfg, nonces, threads, pow_flags)?;
+    let stop = AtomicBool::new(false);
+    let proof = prove::generate_proof(datadir, challenge, cfg, nonces, threads, pow_flags, stop)?;
     Ok(Box::new(Proof::from(proof)))
 }
 

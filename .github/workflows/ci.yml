@@ -13,7 +13,12 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
+      - uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --workspace --all-features
@@ -42,6 +47,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
@@ -86,6 +93,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -95,7 +104,12 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
+      - uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@master
         with:
           components: clippy
@@ -110,9 +124,14 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     steps:
+      - uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install opencl
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - name: Install stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -176,6 +195,8 @@ jobs:
         name: Install opencl
         run: vcpkg install opencl
       - uses: actions/checkout@v3
+        with:
+          submodules: true
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
@@ -223,6 +244,22 @@ jobs:
           name: profiler-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
           path: |
             target/release/profiler${{ matrix.os == 'windows-2019' && '.exe' || '' }}
+          if-no-files-found: error
+
+      - uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build service
+        run: cargo build -p service --release
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
+      - name: Archive service artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: service-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
+          path: |
+            target/release/service${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
 
   release:
