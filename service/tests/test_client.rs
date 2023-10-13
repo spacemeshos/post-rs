@@ -112,16 +112,18 @@ async fn test_gen_proof_finished() {
             },
         })
     });
-    service.expect_get_metadata().returning(|| {
-        Ok(PostMetadata {
-            node_id: *node_id,
-            commitment_atx_id: *commitment_atx_id,
-            num_units: 4,
-            labels_per_unit: 256,
-            nonce: Some(12),
-            ..Default::default()
-        })
-    });
+
+    let post_metadata = PostMetadata {
+        node_id: *node_id,
+        commitment_atx_id: *commitment_atx_id,
+        num_units: 4,
+        labels_per_unit: 256,
+        nonce: Some(12),
+        ..Default::default()
+    };
+    service
+        .expect_get_metadata()
+        .returning(move || Ok(post_metadata));
     // First try passes
     service
         .expect_verify_proof()
@@ -153,11 +155,11 @@ async fn test_gen_proof_finished() {
             metadata: Some(spacemesh_v1::ProofMetadata {
                 challenge: challenge.to_vec(),
                 meta: Some(Metadata {
-                    node_id: node_id.to_vec(),
-                    commitment_atx_id: commitment_atx_id.to_vec(),
-                    nonce: 12,
-                    num_units: 4,
-                    labels_per_unit: 256,
+                    node_id: post_metadata.node_id.to_vec(),
+                    commitment_atx_id: post_metadata.commitment_atx_id.to_vec(),
+                    nonce: post_metadata.nonce,
+                    num_units: post_metadata.num_units,
+                    labels_per_unit: post_metadata.labels_per_unit,
                 }),
             }),
         }))
@@ -266,7 +268,7 @@ async fn test_get_metadata(#[case] vrf_difficulty: Option<[u8; 32]>) {
                 commitment_atx_id: metadata.commitment_atx_id.to_vec(),
                 num_units: metadata.num_units,
                 labels_per_unit: metadata.labels_per_unit,
-                nonce: metadata.nonce.unwrap_or(u64::MAX),
+                nonce: metadata.nonce,
             }),
         }))
     );

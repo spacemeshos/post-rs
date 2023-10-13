@@ -159,7 +159,7 @@ impl<S: PostService> ServiceClient<S> {
                 let post_metadata = match self.service.get_metadata() {
                     Ok(m) => m,
                     Err(err) => {
-                        log::error!("generated proof is not valid: {err:?}");
+                        log::error!("failed to get metadata: {err:?}");
                         return ServiceResponse {
                             kind: Some(service_response::Kind::GenProof(GenProofResponse {
                                 status: GenProofStatus::Error as i32,
@@ -172,8 +172,8 @@ impl<S: PostService> ServiceClient<S> {
                 if let Err(err) = self.service.verify_proof(
                     &proof,
                     &post::metadata::ProofMetadata::new(
-                        post_metadata.clone(),
-                        request.challenge.clone().try_into().unwrap(),
+                        post_metadata,
+                        request.challenge.as_slice().try_into().unwrap(),
                     ),
                 ) {
                     log::error!("generated proof is not valid: {err:?}");
@@ -247,10 +247,7 @@ fn convert_metadata(meta: PostMetadata) -> spacemesh_v1::Metadata {
     spacemesh_v1::Metadata {
         node_id: meta.node_id.to_vec(),
         commitment_atx_id: meta.commitment_atx_id.to_vec(),
-        nonce: meta.nonce.unwrap_or_else(|| {
-            log::warn!("no nonce in metadata, using max u64");
-            u64::MAX
-        }),
+        nonce: meta.nonce,
         num_units: meta.num_units,
         labels_per_unit: meta.labels_per_unit,
     }
