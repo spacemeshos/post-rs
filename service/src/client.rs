@@ -70,17 +70,28 @@ impl<S: PostService> ServiceClient<S> {
     pub fn new(
         address: String,
         reconnect_interval: Duration,
-        tls: Option<(String, Certificate, Identity)>,
+        tls: Option<(Option<String>, Certificate, Identity)>,
         service: S,
     ) -> eyre::Result<Self> {
         let endpoint = Channel::builder(address.parse()?);
         let endpoint = match tls {
-            Some((domain, cert, identity)) => endpoint.tls_config(
-                ClientTlsConfig::new()
-                    .domain_name(domain)
-                    .ca_certificate(cert)
-                    .identity(identity),
-            )?,
+            Some((domain, cert, identity)) => {
+                let domain = match domain {
+                    Some(domain) => domain,
+                    None => endpoint
+                        .uri()
+                        .authority()
+                        .ok_or_else(|| eyre::eyre!("no domain name in the endpoint"))?
+                        .to_string(),
+                };
+
+                endpoint.tls_config(
+                    ClientTlsConfig::new()
+                        .domain_name(domain)
+                        .ca_certificate(cert)
+                        .identity(identity),
+                )?
+            }
             None => endpoint,
         };
 
