@@ -43,13 +43,7 @@ fn test_generate_and_verify() {
     let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags, stop).unwrap();
 
     // Verify the proof
-    let metadata = ProofMetadata {
-        node_id: metadata.node_id,
-        commitment_atx_id: metadata.commitment_atx_id,
-        challenge: *challenge,
-        num_units: metadata.num_units,
-        labels_per_unit: metadata.labels_per_unit,
-    };
+    let metadata = ProofMetadata::new(metadata, *challenge);
     let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
     verifier
         .verify(

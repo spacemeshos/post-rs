@@ -1,88 +1,27 @@
+mod server;
+
 use std::{borrow::Cow, sync::Arc};
 
-use tokio::{
-    net::TcpListener,
-    sync::{broadcast, mpsc, oneshot},
-};
-use tokio_stream::wrappers::TcpListenerStream;
-use tonic::transport::{Error, Server};
+use rstest::rstest;
+use tempfile::tempdir;
+use tokio::sync::oneshot;
 
-use post::{metadata::ProofMetadata, prove::Proof};
+use post::{
+    initialize::{CpuInitializer, Initialize},
+    metadata::PostMetadata,
+    prove::Proof,
+};
 use post_service::{
-    client::{MockPostService, PostService, ServiceClient},
-    service::ProofGenState,
-    test_server::{
+    client::{
         spacemesh_v1::{
-            node_request, post_service_server::PostServiceServer, service_response,
-            GenProofRequest, GenProofResponse, GenProofStatus, NodeRequest, ServiceResponse,
+            self, service_response, GenProofResponse, GenProofStatus, Metadata, MetadataResponse,
+            NodeRequest,
         },
-        TestNodeRequest, TestPostService,
+        MockPostService,
     },
+    service::ProofGenState,
 };
-
-struct TestServer {
-    connected: broadcast::Receiver<mpsc::Sender<TestNodeRequest>>,
-    handle: tokio::task::JoinHandle<Result<(), Error>>,
-    addr: std::net::SocketAddr,
-}
-
-impl Drop for TestServer {
-    fn drop(&mut self) {
-        self.handle.abort();
-    }
-}
-
-impl TestServer {
-    async fn new() -> Self {
-        let mut test_node = TestPostService::new();
-        let reg = test_node.register_for_connections();
-
-        let listener = TcpListener::bind("[::1]:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        let server = tokio::spawn(
-            Server::builder()
-                .add_service(PostServiceServer::new(test_node))
-                .serve_with_incoming(TcpListenerStream::new(listener)),
-        );
-
-        TestServer {
-            connected: reg,
-            handle: server,
-            addr,
-        }
-    }
-
-    fn create_client<S>(&self, service: S) -> ServiceClient<S>
-    where
-        S: PostService,
-    {
-        ServiceClient::new(
-            format!("http://{}", self.addr),
-            std::time::Duration::from_secs(1),
-            None,
-            service,
-        )
-        .unwrap()
-    }
-
-    async fn generate_proof(
-        connected: &mpsc::Sender<TestNodeRequest>,
-        challenge: Vec<u8>,
-    ) -> ServiceResponse {
-        let (response, resp_rx) = oneshot::channel();
-        connected
-            .send(TestNodeRequest {
-                request: NodeRequest {
-                    kind: Some(node_request::Kind::GenProof(GenProofRequest { challenge })),
-                },
-                response,
-            })
-            .await
-            .unwrap();
-        resp_rx.await.unwrap()
-    }
-}
+use server::{TestNodeRequest, TestServer};
 
 #[tokio::test]
 async fn test_registers() {
@@ -111,15 +50,14 @@ async fn test_gen_proof_in_progress() {
     let connected = test_server.connected.recv().await.unwrap();
     let response = TestServer::generate_proof(&connected, vec![0xCA; 32]).await;
 
-    let _exp_status = GenProofStatus::Ok as i32;
-    assert!(matches!(
-        response.kind.unwrap(),
-        service_response::Kind::GenProof(GenProofResponse {
-            status: _exp_status,
+    assert_eq!(
+        response.kind,
+        Some(service_response::Kind::GenProof(GenProofResponse {
+            status: GenProofStatus::Ok as i32,
             proof: None,
             metadata: None
-        })
-    ));
+        }))
+    );
 
     client_handle.abort();
     let _ = client_handle.await;
@@ -141,15 +79,14 @@ async fn test_gen_proof_failed() {
     let connected = test_server.connected.recv().await.unwrap();
     let response = TestServer::generate_proof(&connected, vec![0xCA; 32]).await;
 
-    let _exp_status = GenProofStatus::Error as i32;
-    assert!(matches!(
-        response.kind.unwrap(),
-        service_response::Kind::GenProof(GenProofResponse {
-            status: _exp_status,
+    assert_eq!(
+        response.kind,
+        Some(service_response::Kind::GenProof(GenProofResponse {
+            status: GenProofStatus::Error as _,
             proof: None,
             metadata: None
-        })
-    ));
+        }))
+    );
 
     client_handle.abort();
     let _ = client_handle.await;
@@ -173,15 +110,20 @@ async fn test_gen_proof_finished() {
                 indices: Cow::Owned(indices.to_vec()),
                 pow: 7,
             },
-            metadata: ProofMetadata {
-                node_id: *node_id,
-                commitment_atx_id: *commitment_atx_id,
-                challenge: *challenge,
-                num_units: 4,
-                labels_per_unit: 256,
-            },
         })
     });
+
+    let post_metadata = PostMetadata {
+        node_id: *node_id,
+        commitment_atx_id: *commitment_atx_id,
+        num_units: 4,
+        labels_per_unit: 256,
+        nonce: Some(12),
+        ..Default::default()
+    };
+    service
+        .expect_get_metadata()
+        .returning(move || Ok(post_metadata));
     // First try passes
     service
         .expect_verify_proof()
@@ -200,44 +142,39 @@ async fn test_gen_proof_finished() {
     let connected = test_server.connected.recv().await.unwrap();
 
     let response = TestServer::generate_proof(&connected, challenge.to_vec()).await;
-    let _exp_status = GenProofStatus::Ok as i32;
-    let _exp_proof = post_service::test_server::spacemesh_v1::Proof {
-        nonce: 1,
-        indices: indices.to_vec(),
-        pow: 7,
-    };
-    let _exp_metadata = post_service::test_server::spacemesh_v1::ProofMetadata {
-        challenge: challenge.to_vec(),
-        node_id: Some(post_service::test_server::spacemesh_v1::SmesherId {
-            id: node_id.to_vec(),
-        }),
-        commitment_atx_id: Some(post_service::test_server::spacemesh_v1::ActivationId {
-            id: commitment_atx_id.to_vec(),
-        }),
-        num_units: 7,
-        labels_per_unit: 256,
-    };
 
-    assert!(matches!(
-        response.kind.unwrap(),
-        service_response::Kind::GenProof(GenProofResponse {
-            status: _exp_status,
-            proof: Some(_exp_proof),
-            metadata: Some(_exp_metadata),
-        })
-    ));
+    assert_eq!(
+        response.kind,
+        Some(service_response::Kind::GenProof(GenProofResponse {
+            status: GenProofStatus::Ok as _,
+            proof: Some(spacemesh_v1::Proof {
+                nonce: 1,
+                indices: indices.to_vec(),
+                pow: 7,
+            }),
+            metadata: Some(spacemesh_v1::ProofMetadata {
+                challenge: challenge.to_vec(),
+                meta: Some(Metadata {
+                    node_id: post_metadata.node_id.to_vec(),
+                    commitment_atx_id: post_metadata.commitment_atx_id.to_vec(),
+                    nonce: post_metadata.nonce,
+                    num_units: post_metadata.num_units,
+                    labels_per_unit: post_metadata.labels_per_unit,
+                }),
+            }),
+        }))
+    );
 
     // Second try should fail at verification
     let response = TestServer::generate_proof(&connected, challenge.to_vec()).await;
-    let _exp_status = GenProofStatus::Error as i32;
-    assert!(matches!(
-        response.kind.unwrap(),
-        service_response::Kind::GenProof(GenProofResponse {
-            status: _exp_status,
+    assert_eq!(
+        response.kind,
+        Some(service_response::Kind::GenProof(GenProofResponse {
+            status: GenProofStatus::Error as _,
             proof: None,
             metadata: None
-        })
-    ));
+        }))
+    );
 
     client_handle.abort();
     let _ = client_handle.await;
@@ -268,15 +205,73 @@ async fn test_broken_request_no_kind() {
         .unwrap();
 
     let response = resp_rx.await.unwrap();
-    let _exp_status = GenProofStatus::Error as i32;
-    assert!(matches!(
-        response.kind.unwrap(),
-        service_response::Kind::GenProof(GenProofResponse {
-            status: _exp_status,
+    assert_eq!(
+        response.kind,
+        Some(service_response::Kind::GenProof(GenProofResponse {
+            status: GenProofStatus::Error as _,
             proof: None,
-            metadata: None
-        })
-    ));
+            metadata: None,
+        }))
+    );
+
+    client_handle.abort();
+    let _ = client_handle.await;
+}
+
+#[rstest]
+#[case(None)]
+#[case(Some([0xFF; 32]))]
+#[tokio::test]
+async fn test_get_metadata(#[case] vrf_difficulty: Option<[u8; 32]>) {
+    let datadir = tempdir().unwrap();
+    let cfg = post::config::Config {
+        k1: 23,
+        k2: 32,
+        k3: 10,
+        pow_difficulty: [0xFF; 32],
+        scrypt: post::ScryptParams::new(0, 0, 0),
+    };
+
+    let metadata = CpuInitializer::new(cfg.scrypt)
+        .initialize(
+            datadir.path(),
+            &[77; 32],
+            &[0u8; 32],
+            256 * 16,
+            31,
+            256 * 16,
+            vrf_difficulty,
+        )
+        .unwrap();
+
+    let mut test_server = TestServer::new().await;
+
+    let service = post_service::service::PostService::new(
+        datadir.path().into(),
+        cfg,
+        16,
+        1,
+        post::pow::randomx::RandomXFlag::get_recommended_flags(),
+    )
+    .unwrap();
+
+    let client = test_server.create_client(Arc::new(service));
+    let client_handle = tokio::spawn(client.run());
+    let connected = test_server.connected.recv().await.unwrap();
+
+    let response = TestServer::request_metadata(&connected).await;
+    assert_eq!(
+        response.kind,
+        Some(service_response::Kind::Metadata(MetadataResponse {
+            meta: Some(Metadata {
+                node_id: metadata.node_id.to_vec(),
+                commitment_atx_id: metadata.commitment_atx_id.to_vec(),
+                num_units: metadata.num_units,
+                labels_per_unit: metadata.labels_per_unit,
+                nonce: metadata.nonce,
+            }),
+        }))
+    );
 
     client_handle.abort();
     let _ = client_handle.await;

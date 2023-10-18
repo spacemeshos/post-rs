@@ -7,7 +7,7 @@ use serde_with::serde_as;
 const METADATA_FILE_NAME: &str = "postdata_metadata.json";
 
 #[serde_as]
-#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct PostMetadata {
     #[serde_as(as = "Base64")]
@@ -68,6 +68,18 @@ pub struct ProofMetadata {
     pub challenge: [u8; 32],
     pub num_units: u32,
     pub labels_per_unit: u64,
+}
+
+impl ProofMetadata {
+    pub fn new(post_metadata: PostMetadata, challenge: [u8; 32]) -> Self {
+        Self {
+            challenge,
+            node_id: post_metadata.node_id,
+            commitment_atx_id: post_metadata.commitment_atx_id,
+            num_units: post_metadata.num_units,
+            labels_per_unit: post_metadata.labels_per_unit,
+        }
+    }
 }
 
 #[cfg(test)]
