@@ -82,6 +82,7 @@ impl<S: PostService> ServiceClient<S> {
                         .uri()
                         .authority()
                         .ok_or_else(|| eyre::eyre!("no domain name in the endpoint"))?
+                        .host()
                         .to_string(),
                 };
 
@@ -261,5 +262,30 @@ fn convert_metadata(meta: PostMetadata) -> spacemesh_v1::Metadata {
         nonce: meta.nonce,
         num_units: meta.num_units,
         labels_per_unit: meta.labels_per_unit,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tonic::transport::{Certificate, Identity};
+
+    #[test]
+    fn derives_domain_from_address() {
+        let crt = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+        let client_crt = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+        super::ServiceClient::new(
+            "https://localhost:1234".to_string(),
+            Default::default(),
+            Some((
+                None,
+                Certificate::from_pem(crt.serialize_pem().unwrap()),
+                Identity::from_pem(
+                    client_crt.serialize_pem().unwrap(),
+                    client_crt.serialize_private_key_pem(),
+                ),
+            )),
+            super::MockPostService::new(),
+        )
+        .unwrap();
     }
 }
