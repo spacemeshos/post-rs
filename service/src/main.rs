@@ -115,8 +115,9 @@ pub struct Tls {
     #[arg(long, required = false)]
     pub key: PathBuf,
     /// domain name to verify the certificate of server against
-    #[arg(long, default_value = "localhost")]
-    pub domain: String,
+    /// defaults to server hostname
+    #[arg(long)]
+    pub domain: Option<String>,
 }
 
 impl std::fmt::Display for RandomXMode {
@@ -179,9 +180,9 @@ async fn main() -> eyre::Result<()> {
 
     let tls = if let Some(tls) = args.tls {
         log::info!(
-            "configuring TLS: server: (CA cert: {}, domain: {}), client: (cert: {}, key: {})",
-            tls.domain,
+            "configuring TLS: server: (CA cert: {}, domain: {:?}), client: (cert: {}, key: {})",
             tls.ca_cert.display(),
+            tls.domain,
             tls.cert.display(),
             tls.key.display(),
         );
