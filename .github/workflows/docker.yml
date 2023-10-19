@@ -13,10 +13,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: true
-      - name: Find tag
-        id: tagger
-        run: |
-          echo "tag=$(git fetch --prune --unshallow && git describe --tags --match 'v*')" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -33,5 +29,5 @@ jobs:
           context: .
           file: ./service/Dockerfile
           push: true
-          tags: spacemeshos/post-service:latest, spacemeshos/post-service:${{ GITHUB.SHA  }}, spacemeshos/post-service:${{steps.tagger.outputs.tag}}
+          tags: spacemeshos/post-service:latest, spacemeshos/post-service:${{ GITHUB.SHA  }}, spacemeshos/post-service:${{ github.ref_name }}
 
