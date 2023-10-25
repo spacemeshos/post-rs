@@ -122,6 +122,17 @@ impl crate::client::PostService for PostService {
     }
 }
 
+impl crate::operator::Service for PostService {
+    fn status(&self) -> crate::operator::ServiceState {
+        let proof_gen = self.proof_generation.lock().unwrap();
+        if proof_gen.as_ref().is_some() {
+            crate::operator::ServiceState::Proving
+        } else {
+            crate::operator::ServiceState::Idle
+        }
+    }
+}
+
 impl Drop for PostService {
     fn drop(&mut self) {
         log::info!("shutting down post service");

@@ -1,11 +1,12 @@
-use std::{fs::read_to_string, path::PathBuf, time::Duration};
+use std::{fs::read_to_string, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
+use tokio::net::TcpListener;
 use tonic::transport::{Certificate, Identity};
 
 use post::pow::randomx::RandomXFlag;
-use post_service::client;
+use post_service::{client, operator};
 
 /// Post Service
 #[derive(Parser, Debug)]
@@ -29,6 +30,11 @@ struct Cli {
 
     #[command(flatten, next_help_heading = "TLS configuration")]
     tls: Option<Tls>,
+
+    /// address to listen on for operator service
+    /// the operator service is disabled if not specified
+    #[arg(long)]
+    operator_address: Option<SocketAddr>,
 }
 
 #[derive(Args, Debug)]
@@ -53,6 +59,22 @@ struct PostConfig {
     /// scrypt parameters for initialization
     #[command(flatten)]
     scrypt: ScryptParams,
+}
+
+impl From<PostConfig> for post::config::Config {
+    fn from(val: PostConfig) -> Self {
+        post::config::Config {
+            k1: val.k1,
+            k2: val.k2,
+            k3: val.k3,
+            pow_difficulty: val.pow_difficulty,
+            scrypt: post::ScryptParams::new(
+                val.scrypt.n.ilog2() as u8 - 1,
+                val.scrypt.r.ilog2() as u8,
+                val.scrypt.p.ilog2() as u8,
+            ),
+        }
+    }
 }
 
 /// Scrypt parameters for initialization
@@ -161,17 +183,7 @@ async fn main() -> eyre::Result<()> {
 
     let service = post_service::service::PostService::new(
         args.dir,
-        post::config::Config {
-            k1: args.post_config.k1,
-            k2: args.post_config.k2,
-            k3: args.post_config.k3,
-            pow_difficulty: args.post_config.pow_difficulty,
-            scrypt: post::ScryptParams::new(
-                args.post_config.scrypt.n.ilog2() as u8 - 1,
-                args.post_config.scrypt.r.ilog2() as u8,
-                args.post_config.scrypt.p.ilog2() as u8,
-            ),
-        },
+        args.post_config.into(),
         args.post_settings.nonces,
         args.post_settings.threads,
         args.post_settings.randomx_mode.into(),
@@ -199,7 +211,13 @@ async fn main() -> eyre::Result<()> {
         None
     };
 
-    let client = client::ServiceClient::new(args.address, args.reconnect_interval_s, tls, service)?;
+    let service = Arc::new(service);
 
+    if let Some(address) = args.operator_address {
+        let listener = TcpListener::bind(address).await?;
+        tokio::spawn(operator::OperatorServer::run(listener, service.clone()));
+    }
+
+    let client = client::ServiceClient::new(args.address, args.reconnect_interval_s, tls, service)?;
     client.run().await
 }

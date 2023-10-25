@@ -18,6 +18,9 @@ Includes:
 ### Randomx-rs
 [RandomX](https://github.com/tevador/randomx), that [randomx-rs](https://github.com/spacemeshos/randomx-rs) depends on, requires **cmake**. Follow [these instructions](https://github.com/spacemeshos/randomx-rs#build-dependencies) to install it.
 
+## Post Service
+Please refer to [service README](service/README.md) for instructions.
+
 ## Troubleshooting
 ### Crash on Mac arm64
 RandomX is known to misbehave, or even crash on arm64 Macs when using JIT. See this issue for details: https://github.com/tevador/RandomX/issues/262.
