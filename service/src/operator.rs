@@ -31,19 +31,19 @@ pub trait Service {
 }
 
 #[derive(Debug, Default)]
-pub struct OperatorService<O: Service> {
-    operator: Arc<O>,
+pub struct OperatorService<S: Service> {
+    service: Arc<S>,
 }
 
 #[tonic::async_trait]
-impl<O: Service + Sync + Send + 'static> PostServiceOperator for OperatorService<O> {
+impl<S: Service + Sync + Send + 'static> PostServiceOperator for OperatorService<S> {
     async fn status(
         &self,
         request: Request<PostServiceStatusRequest>,
     ) -> Result<Response<PostServiceStatusResponse>, Status> {
         log::debug!("got a request from {:?}", request.remote_addr());
 
-        let status = match self.operator.status() {
+        let status = match self.service.status() {
             ServiceState::Idle => spacemesh_v1::post_service_status_response::Status::Idle,
             ServiceState::Proving => spacemesh_v1::post_service_status_response::Status::Proving,
         };
@@ -58,9 +58,9 @@ impl<O: Service + Sync + Send + 'static> PostServiceOperator for OperatorService
 pub struct OperatorServer {}
 
 impl OperatorServer {
-    pub async fn run<O>(listener: TcpListener, operator: Arc<O>) -> eyre::Result<()>
+    pub async fn run<S>(listener: TcpListener, service: Arc<S>) -> eyre::Result<()>
     where
-        O: Service + Sync + Send + 'static,
+        S: Service + Sync + Send + 'static,
     {
         log::info!("running operator service on {}", listener.local_addr()?);
 
@@ -68,7 +68,7 @@ impl OperatorServer {
             .register_encoded_file_descriptor_set(spacemesh_v1::FILE_DESCRIPTOR_SET)
             .build()?;
 
-        let operator_service = PostServiceOperatorServer::new(OperatorService { operator });
+        let operator_service = PostServiceOperatorServer::new(OperatorService { service });
 
         Server::builder()
             .add_service(reflection_service)
@@ -91,20 +91,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_status() {
-        let mut svc_operator = super::MockService::new();
-        svc_operator
-            .expect_status()
+        let mut svc = super::MockService::new();
+        svc.expect_status()
             .once()
             .returning(|| super::ServiceState::Idle);
-        svc_operator
-            .expect_status()
+        svc.expect_status()
             .once()
             .returning(|| super::ServiceState::Proving);
 
         let listener = TcpListener::bind("localhost:0").await.unwrap();
         let addr: std::net::SocketAddr = listener.local_addr().unwrap();
 
-        tokio::spawn(super::OperatorServer::run(listener, Arc::new(svc_operator)));
+        tokio::spawn(super::OperatorServer::run(listener, Arc::new(svc)));
 
         let mut client = PostServiceOperatorClient::connect(format!("http://{addr}"))
             .await
