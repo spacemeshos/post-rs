@@ -2,6 +2,7 @@ use std::{fs::read_to_string, path::PathBuf, time::Duration};
 
 use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
+use sysinfo::{Pid, ProcessExt, ProcessStatus, System, SystemExt};
 use tonic::transport::{Certificate, Identity};
 
 use post::pow::randomx::RandomXFlag;
@@ -29,6 +30,10 @@ struct Cli {
 
     #[command(flatten, next_help_heading = "TLS configuration")]
     tls: Option<Tls>,
+
+    /// watch PID and exit if it dies
+    #[arg(long)]
+    watch_pid: Option<sysinfo::Pid>,
 }
 
 #[derive(Args, Debug)]
@@ -200,6 +205,73 @@ async fn main() -> eyre::Result<()> {
     };
 
     let client = client::ServiceClient::new(args.address, args.reconnect_interval_s, tls, service)?;
+    let client_handle = tokio::spawn(client.run());
 
-    client.run().await
+    if let Some(pid) = args.watch_pid {
+        tokio::task::spawn_blocking(move || watch_pid(pid, Duration::from_secs(1))).await?;
+        Ok(())
+    } else {
+        client_handle.await?
+    }
+}
+
+// watch given PID and return when it dies
+fn watch_pid(pid: Pid, interval: Duration) {
+    log::info!("watching PID {pid}");
+
+    let mut sys = System::new();
+    while sys.refresh_process(pid) {
+        if let Some(p) = sys.process(pid) {
+            match p.status() {
+                ProcessStatus::Zombie | ProcessStatus::Dead => {
+                    break;
+                }
+                _ => {}
+            }
+        }
+        std::thread::sleep(interval);
+    }
+
+    log::info!("PID {pid} died");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::Command;
+
+    use sysinfo::PidExt;
+
+    #[tokio::test]
+    async fn watching_pid_zombie() {
+        let mut proc = Command::new("sleep").arg("99999").spawn().unwrap();
+        let pid = proc.id();
+
+        let handle = tokio::task::spawn_blocking(move || {
+            super::watch_pid(
+                sysinfo::Pid::from_u32(pid),
+                std::time::Duration::from_millis(10),
+            )
+        });
+        // just kill leaves a zombie process
+        proc.kill().unwrap();
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn watching_pid_reaped() {
+        let mut proc = Command::new("sleep").arg("99999").spawn().unwrap();
+        let pid = proc.id();
+
+        let handle = tokio::task::spawn_blocking(move || {
+            super::watch_pid(
+                sysinfo::Pid::from_u32(pid),
+                std::time::Duration::from_millis(10),
+            )
+        });
+
+        // kill and wait
+        proc.kill().unwrap();
+        proc.wait().unwrap();
+        handle.await.unwrap();
+    }
 }
