@@ -9,13 +9,13 @@ use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{transport::Server, Request, Response, Status};
 
-use spacemesh_v1::post_service_operator_server::{PostServiceOperator, PostServiceOperatorServer};
-use spacemesh_v1::{PostServiceStatusRequest, PostServiceStatusResponse};
+use post_v1::operator_service_server::OperatorServiceServer;
+use post_v1::{OperatorStatusRequest, OperatorStatusResponse};
 
-pub mod spacemesh_v1 {
-    tonic::include_proto!("spacemesh.v1");
+pub mod post_v1 {
+    tonic::include_proto!("post.v1");
     pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
-        tonic::include_file_descriptor_set!("post_descriptor");
+        tonic::include_file_descriptor_set!("service_descriptor");
 }
 
 pub enum ServiceState {
@@ -36,19 +36,21 @@ pub struct OperatorService<S: Service> {
 }
 
 #[tonic::async_trait]
-impl<S: Service + Sync + Send + 'static> PostServiceOperator for OperatorService<S> {
+impl<S: Service + Sync + Send + 'static> post_v1::operator_service_server::OperatorService
+    for OperatorService<S>
+{
     async fn status(
         &self,
-        request: Request<PostServiceStatusRequest>,
-    ) -> Result<Response<PostServiceStatusResponse>, Status> {
+        request: Request<OperatorStatusRequest>,
+    ) -> Result<Response<OperatorStatusResponse>, Status> {
         log::debug!("got a request from {:?}", request.remote_addr());
 
         let status = match self.service.status() {
-            ServiceState::Idle => spacemesh_v1::post_service_status_response::Status::Idle,
-            ServiceState::Proving => spacemesh_v1::post_service_status_response::Status::Proving,
+            ServiceState::Idle => post_v1::operator_status_response::Status::Idle,
+            ServiceState::Proving => post_v1::operator_status_response::Status::Proving,
         };
 
-        Ok(Response::new(PostServiceStatusResponse {
+        Ok(Response::new(OperatorStatusResponse {
             status: status as _,
         }))
     }
@@ -65,10 +67,10 @@ impl OperatorServer {
         log::info!("running operator service on {}", listener.local_addr()?);
 
         let reflection_service = tonic_reflection::server::Builder::configure()
-            .register_encoded_file_descriptor_set(spacemesh_v1::FILE_DESCRIPTOR_SET)
+            .register_encoded_file_descriptor_set(post_v1::FILE_DESCRIPTOR_SET)
             .build()?;
 
-        let operator_service = PostServiceOperatorServer::new(OperatorService { service });
+        let operator_service = OperatorServiceServer::new(OperatorService { service });
 
         Server::builder()
             .add_service(reflection_service)
@@ -85,9 +87,9 @@ mod tests {
 
     use tokio::net::TcpListener;
 
-    use super::spacemesh_v1::post_service_operator_client::PostServiceOperatorClient;
-    use super::spacemesh_v1::post_service_status_response::Status;
-    use super::spacemesh_v1::PostServiceStatusRequest;
+    use super::post_v1::operator_service_client::OperatorServiceClient;
+    use super::post_v1::operator_status_response::Status;
+    use super::post_v1::OperatorStatusRequest;
 
     #[tokio::test]
     async fn test_status() {
@@ -104,14 +106,14 @@ mod tests {
 
         tokio::spawn(super::OperatorServer::run(listener, Arc::new(svc)));
 
-        let mut client = PostServiceOperatorClient::connect(format!("http://{addr}"))
+        let mut client = OperatorServiceClient::connect(format!("http://{addr}"))
             .await
             .unwrap();
 
-        let response = client.status(PostServiceStatusRequest {}).await.unwrap();
+        let response = client.status(OperatorStatusRequest {}).await.unwrap();
         assert_eq!(response.into_inner().status(), Status::Idle);
 
-        let response = client.status(PostServiceStatusRequest {}).await.unwrap();
+        let response = client.status(OperatorStatusRequest {}).await.unwrap();
         assert_eq!(response.into_inner().status(), Status::Proving);
     }
 }

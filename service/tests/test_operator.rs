@@ -11,9 +11,9 @@ use post::{
 use post_service::{
     client::spacemesh_v1::{service_response, GenProofStatus},
     operator::{
-        spacemesh_v1::{
-            post_service_operator_client::PostServiceOperatorClient,
-            post_service_status_response::Status, PostServiceStatusRequest,
+        post_v1::{
+            operator_service_client::OperatorServiceClient, operator_status_response::Status,
+            OperatorStatusRequest,
         },
         OperatorServer,
     },
@@ -55,18 +55,16 @@ async fn test_gen_proof_in_progress() {
     let listener = TcpListener::bind("localhost:0").await.unwrap();
     let operator_addr = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(OperatorServer::run(listener, service));
-    let mut client = PostServiceOperatorClient::connect(operator_addr)
-        .await
-        .unwrap();
+    let mut client = OperatorServiceClient::connect(operator_addr).await.unwrap();
 
     // It starts in idle state
-    let response = client.status(PostServiceStatusRequest {}).await.unwrap();
+    let response = client.status(OperatorStatusRequest {}).await.unwrap();
     assert_eq!(response.into_inner().status(), Status::Idle);
 
     // It transforms to Proving when a proof generation starts
     let connected = test_server.connected.recv().await.unwrap();
     TestServer::generate_proof(&connected, vec![0xCA; 32]).await;
-    let response = client.status(PostServiceStatusRequest {}).await.unwrap();
+    let response = client.status(OperatorStatusRequest {}).await.unwrap();
     assert_eq!(response.into_inner().status(), Status::Proving);
 
     loop {
@@ -89,6 +87,6 @@ async fn test_gen_proof_in_progress() {
     }
 
     // It transforms back to Idle when the proof generation finishes
-    let response = client.status(PostServiceStatusRequest {}).await.unwrap();
+    let response = client.status(OperatorStatusRequest {}).await.unwrap();
     assert_eq!(response.into_inner().status(), Status::Idle);
 }
