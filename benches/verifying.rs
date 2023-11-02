@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use post::{
+    config::ScryptParams,
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
     prove::Proof,
@@ -7,8 +8,6 @@ use post::{
 };
 #[cfg(not(windows))]
 use pprof::criterion::{Output, PProfProfiler};
-
-use scrypt_jane::scrypt::ScryptParams;
 
 fn verifying(c: &mut Criterion) {
     let challenge = b"hello world, challenge me!!!!!!!";
@@ -37,7 +36,7 @@ fn verifying(c: &mut Criterion) {
         k2,
         k3,
         pow_difficulty: [0xFF; 32],
-        scrypt: ScryptParams::new(12, 0, 0),
+        scrypt: ScryptParams::new(8192, 1, 1),
     };
 
     c.bench_function("verify", |b| {

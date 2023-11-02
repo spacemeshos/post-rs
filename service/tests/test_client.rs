@@ -229,7 +229,7 @@ async fn test_get_metadata(#[case] vrf_difficulty: Option<[u8; 32]>) {
         k2: 32,
         k3: 10,
         pow_difficulty: [0xFF; 32],
-        scrypt: post::ScryptParams::new(0, 0, 0),
+        scrypt: post::config::ScryptParams::new(2, 1, 1),
     };
 
     let metadata = CpuInitializer::new(cfg.scrypt)

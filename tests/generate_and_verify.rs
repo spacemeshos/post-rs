@@ -1,13 +1,13 @@
 use std::sync::atomic::AtomicBool;
 
 use post::{
+    config::ScryptParams,
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
     prove::generate_proof,
     verification::{Verifier, VerifyingParams},
 };
-use scrypt_jane::scrypt::ScryptParams;
 use tempfile::tempdir;
 
 #[test]
@@ -22,7 +22,7 @@ fn test_generate_and_verify() {
         k2: 32,
         k3: 10,
         pow_difficulty: [0xFF; 32],
-        scrypt: ScryptParams::new(0, 0, 0),
+        scrypt: ScryptParams::new(2, 1, 1),
     };
 
     let metadata = CpuInitializer::new(cfg.scrypt)
@@ -79,7 +79,7 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         k2: 30,
         k3: 30,
         pow_difficulty: [0xFF; 32],
-        scrypt: ScryptParams::new(0, 0, 0),
+        scrypt: ScryptParams::new(2, 1, 1),
     };
 
     let metadata = CpuInitializer::new(cfg.scrypt)

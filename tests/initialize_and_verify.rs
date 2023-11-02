@@ -1,10 +1,11 @@
 use std::io::Write;
 
 use post::{
+    config::ScryptParams,
     initialize::{CpuInitializer, Initialize},
     pos_verification::verify_files,
 };
-use scrypt_jane::scrypt::ScryptParams;
+
 use tempfile::tempdir;
 
 #[test]
@@ -17,7 +18,7 @@ fn test_generate_and_verify() {
         k2: 32,
         k3: 10,
         pow_difficulty: [0xFF; 32],
-        scrypt: ScryptParams::new(0, 0, 0),
+        scrypt: ScryptParams::new(2, 1, 1),
     };
 
     CpuInitializer::new(cfg.scrypt)
@@ -30,7 +31,7 @@ fn test_generate_and_verify() {
     verify_files(datadir.path(), 1.0, Some(0), Some(1), cfg.scrypt).unwrap();
 
     // Try verification with wrong scrypt params
-    let wrong_scrypt = ScryptParams::new(2, 0, 0);
+    let wrong_scrypt = ScryptParams::new(4, 1, 1);
     assert!(verify_files(datadir.path(), 100.0, None, None, wrong_scrypt).is_err());
     assert!(verify_files(datadir.path(), 1.0, None, None, wrong_scrypt).is_err());
     assert!(verify_files(datadir.path(), 100.0, Some(0), Some(0), wrong_scrypt).is_err());
