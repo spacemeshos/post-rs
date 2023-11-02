@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use base64::{engine::general_purpose, Engine as _};
 use clap::{arg, Parser, Subcommand};
 use ed25519_dalek::SigningKey;
 use tracing::info;
@@ -66,12 +67,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let config = certifier::configuration::get_configuration(&args.config_path)?;
     let signer = SigningKey::from_bytes(&config.signing_key);
+    let pubkey_b64 = general_purpose::STANDARD.encode(signer.verifying_key().as_bytes());
 
-    info!(
-        "listening on: {:?}, pubkey: {:?}",
-        config.listen,
-        signer.verifying_key()
-    );
+    info!("listening on: {:?}, pubkey: {}", config.listen, pubkey_b64,);
     info!("using POST configuration: {:?}", config.post_cfg);
 
     let app: axum::Router = certifier::certifier::new(config.post_cfg, signer);
