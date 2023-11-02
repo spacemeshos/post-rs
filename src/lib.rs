@@ -10,6 +10,3 @@ pub mod prove;
 mod random_values_gen;
 pub mod reader;
 pub mod verification;
-
-// Reexport scrypt-jane params
-pub use scrypt_jane::scrypt::ScryptParams;

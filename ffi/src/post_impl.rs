@@ -8,10 +8,9 @@ use std::{
     sync::atomic::AtomicBool,
 };
 
-pub use post::config::Config;
-pub use post::metadata::ProofMetadata;
-pub use post::ScryptParams;
 use post::{
+    config::Config,
+    metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
     prove,
     verification::{Verifier, VerifyingParams},
@@ -208,7 +207,10 @@ pub unsafe extern "C" fn verify_proof(
 
 #[cfg(test)]
 mod tests {
-    use post::{initialize::Initialize, metadata::ProofMetadata, pow::randomx::RandomXFlag};
+    use post::{
+        config::ScryptParams, initialize::Initialize, metadata::ProofMetadata,
+        pow::randomx::RandomXFlag,
+    };
 
     #[test]
     fn datadir_must_be_utf8() {
@@ -218,7 +220,7 @@ mod tests {
             k2: 20,
             k3: 20,
             pow_difficulty: [0xFF; 32],
-            scrypt: super::ScryptParams::new(1, 1, 1),
+            scrypt: ScryptParams::new(2, 1, 1),
         };
         let result = super::_generate_proof(
             datadir.as_ptr(),
@@ -256,7 +258,7 @@ mod tests {
                     k2: 2,
                     k3: 2,
                     pow_difficulty: [0xFF; 32],
-                    scrypt: super::ScryptParams::new(1, 0, 0),
+                    scrypt: ScryptParams::new(2, 1, 1),
                 },
             )
         };
@@ -278,7 +280,7 @@ mod tests {
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0xff, 0xff,
             ],
-            scrypt: post::ScryptParams::new(0, 0, 0),
+            scrypt: ScryptParams::new(2, 1, 1),
         };
 
         let meta = post::initialize::CpuInitializer::new(cfg.scrypt)

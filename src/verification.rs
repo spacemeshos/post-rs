@@ -40,12 +40,11 @@ use std::cmp::Ordering;
 use cipher::BlockEncrypt;
 use itertools::Itertools;
 use primitive_types::U256;
-use scrypt_jane::scrypt::ScryptParams;
 
 use crate::{
     cipher::AesCipher,
     compression::{decompress_indexes, required_bits},
-    config::Config,
+    config::{Config, ScryptParams},
     difficulty::proving_difficulty,
     initialize::{calc_commitment, generate_label},
     metadata::ProofMetadata,
@@ -239,10 +238,11 @@ fn expected_indices_bytes(required_bits: usize, k2: u32) -> usize {
 mod tests {
     use std::borrow::Cow;
 
-    use scrypt_jane::scrypt::ScryptParams;
-
     use crate::{
-        config::Config, metadata::ProofMetadata, pow::MockPowVerifier, prove::Proof,
+        config::{Config, ScryptParams},
+        metadata::ProofMetadata,
+        pow::MockPowVerifier,
+        prove::Proof,
         verification::Error,
     };
 
@@ -268,7 +268,7 @@ mod tests {
             k2: 3,
             k3: 3,
             pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(1, 0, 0),
+            scrypt: ScryptParams::new(2, 1, 1),
         };
 
         let fake_metadata = ProofMetadata {
@@ -302,7 +302,7 @@ mod tests {
             k2: 10,
             k3: 10,
             pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(1, 0, 0),
+            scrypt: ScryptParams::new(4, 1, 1),
         };
 
         let fake_metadata = ProofMetadata {
@@ -366,7 +366,7 @@ mod tests {
             k2: 0,
             k3: 0,
             pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(2, 0, 0),
+            scrypt: ScryptParams::new(2, 1, 1),
         };
         let metadata = ProofMetadata {
             node_id: [0u8; 32],

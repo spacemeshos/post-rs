@@ -8,9 +8,9 @@ use std::{
 
 use mockall::automock;
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
-use scrypt_jane::scrypt::{scrypt, ScryptParams};
+use scrypt_jane::scrypt::scrypt;
 
-use crate::metadata::PostMetadata;
+use crate::{config::ScryptParams, metadata::PostMetadata};
 
 pub const LABEL_SIZE: usize = 16;
 pub const ENTIRE_LABEL_SIZE: usize = 32;
@@ -115,7 +115,7 @@ impl Initialize for CpuInitializer {
                 let mut scrypt_data = [0u8; 72];
                 scrypt_data[0..32].copy_from_slice(commitment);
                 scrypt_data[32..40].copy_from_slice(&index.to_le_bytes());
-                scrypt(&scrypt_data, &[], self.scrypt_params, &mut label);
+                scrypt(&scrypt_data, &[], self.scrypt_params.into(), &mut label);
                 label
             })
             .collect::<Vec<_>>();
@@ -168,7 +168,7 @@ mod tests {
 
         let mut pos_file = tempfile::tempfile().unwrap();
         let commitment = [0u8; 32];
-        let scrypt_params = ScryptParams::new(1, 0, 0);
+        let scrypt_params = ScryptParams::new(4, 1, 1);
         CpuInitializer::new(scrypt_params)
             .initialize_to(&mut pos_file, &commitment, labels, None)
             .unwrap();
@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn test_initialize_fits_in_single_file() {
-        let scrypt_params = ScryptParams::new(1, 0, 0);
+        let scrypt_params = ScryptParams::new(4, 1, 1);
         let data_dir = tempfile::tempdir().unwrap();
         let data_path = data_dir.path();
         CpuInitializer::new(scrypt_params)
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_initialize_returns_metadata() {
-        let scrypt_params = ScryptParams::new(1, 0, 0);
+        let scrypt_params = ScryptParams::new(4, 1, 1);
         let data_dir = tempfile::tempdir().unwrap();
         let node_id = rand::random::<[u8; 32]>();
         let commitment_atx_id = rand::random::<[u8; 32]>();
@@ -228,7 +228,7 @@ mod tests {
 
     #[test]
     fn test_initialize_split_many_files() {
-        let scrypt_params = ScryptParams::new(1, 0, 0);
+        let scrypt_params = ScryptParams::new(4, 1, 1);
         let data_dir = tempfile::tempdir().unwrap();
         let data_path = data_dir.path();
         CpuInitializer::new(scrypt_params)
@@ -262,7 +262,7 @@ mod tests {
 
     #[test]
     fn initialization_to_many_files_gives_same_result_as_single_file() {
-        let scrypt_params = ScryptParams::new(1, 0, 0);
+        let scrypt_params = ScryptParams::new(4, 1, 1);
         let data_dir = tempfile::tempdir().unwrap();
         let data_path = data_dir.path();
 

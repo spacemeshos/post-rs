@@ -171,10 +171,10 @@ async fn main() -> eyre::Result<()> {
             k2: args.post_config.k2,
             k3: args.post_config.k3,
             pow_difficulty: args.post_config.pow_difficulty,
-            scrypt: post::ScryptParams::new(
-                args.post_config.scrypt.n.ilog2() as u8 - 1,
-                args.post_config.scrypt.r.ilog2() as u8,
-                args.post_config.scrypt.p.ilog2() as u8,
+            scrypt: post::config::ScryptParams::new(
+                args.post_config.scrypt.n,
+                args.post_config.scrypt.r,
+                args.post_config.scrypt.p,
             ),
         },
         args.post_settings.nonces,

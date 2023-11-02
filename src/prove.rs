@@ -354,10 +354,11 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{compression::decompress_indexes, difficulty::proving_difficulty};
+    use crate::{
+        compression::decompress_indexes, config::ScryptParams, difficulty::proving_difficulty,
+    };
     use mockall::predicate::{always, eq};
     use rand::{thread_rng, RngCore};
-    use scrypt_jane::scrypt::ScryptParams;
     use std::{collections::HashMap, iter::repeat};
 
     #[test]
@@ -388,7 +389,7 @@ mod tests {
             k2: 300,
             k3: 65,
             pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(1, 0, 0),
+            scrypt: ScryptParams::new(2, 1, 1),
         };
         let params = ProvingParams::new(&meta, &cfg).unwrap();
         let mut pow_prover = pow::MockProver::new();
@@ -424,7 +425,7 @@ mod tests {
             k2: 300,
             k3: 65,
             pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(1, 0, 0),
+            scrypt: ScryptParams::new(4, 1, 1),
         };
         let mut pow_prover = pow::MockProver::new();
         pow_prover
@@ -443,7 +444,7 @@ mod tests {
             k2: 32,
             k3: 10,
             pow_difficulty: [0x0F; 32],
-            scrypt: ScryptParams::new(2, 0, 0),
+            scrypt: ScryptParams::new(2, 1, 1),
         };
         let metadata = PostMetadata {
             num_units: 1,
