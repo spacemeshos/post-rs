@@ -9,8 +9,13 @@ use tracing::info;
 pub struct Config {
     pub listen: std::net::SocketAddr,
     #[serde_as(as = "Base64")]
+    /// The base64-encoded secret key used to sign the proofs.
+    /// It's 256-bit key as defined in [RFC8032 § 5.1.5].
     pub signing_key: SecretKey,
     pub post_cfg: post::config::Config,
+
+    /// Whether to enable metrics on /metrics.
+    pub metrics: bool,
 }
 
 pub fn get_configuration(config_path: &Path) -> Result<Config, config::ConfigError> {

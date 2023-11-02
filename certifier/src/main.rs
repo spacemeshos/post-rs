@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use axum::routing::get;
+use axum_prometheus::PrometheusMetricLayerBuilder;
 use base64::{engine::general_purpose, Engine as _};
 use clap::{arg, Parser, Subcommand};
 use ed25519_dalek::SigningKey;
@@ -72,7 +74,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("listening on: {:?}, pubkey: {}", config.listen, pubkey_b64,);
     info!("using POST configuration: {:?}", config.post_cfg);
 
-    let app: axum::Router = certifier::certifier::new(config.post_cfg, signer);
+    let mut app = certifier::certifier::new(config.post_cfg, signer);
+
+    if config.metrics {
+        info!("metrics on: {}/metrics", config.listen.to_string());
+        let (metric_layer, metric_handle) = PrometheusMetricLayerBuilder::new()
+            .with_prefix("certifier")
+            .with_ignore_patterns(&["/metrics"])
+            .with_default_metrics()
+            .build_pair();
+        app = app
+            .route("/metrics", get(|| async move { metric_handle.render() }))
+            .layer(metric_layer);
+    }
 
     axum::Server::bind(&config.listen)
         .serve(app.into_make_service())
