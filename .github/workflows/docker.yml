@@ -7,6 +7,14 @@ on:
 
 jobs:
   docker-build:
+    strategy:
+      matrix:
+        include:
+          - package: service
+            image: post-service
+          - package: certifier
+            image: certifier-service
+
     runs-on: ubuntu-latest
     steps:
       - name: Git Checkout
@@ -27,7 +35,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./service/Dockerfile
+          file: ./${{ matrix.package }}/Dockerfile
           push: true
-          tags: spacemeshos/post-service:latest, spacemeshos/post-service:${{ GITHUB.SHA  }}, spacemeshos/post-service:${{ github.ref_name }}
+          tags: spacemeshos/${{ matrix.image }}:latest, spacemeshos/${{ matrix.image }}:${{ GITHUB.SHA  }}, spacemeshos/${{ matrix.image }}:${{ github.ref_name }}
 
