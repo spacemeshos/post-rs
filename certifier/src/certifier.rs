@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use axum::http::StatusCode;
 use axum::{extract::State, Json};
 use axum::{routing::post, Router};
 use ed25519_dalek::{Signer, SigningKey};
@@ -28,22 +29,28 @@ struct CertifyResponse {
 async fn certify(
     State(state): State<Arc<AppState>>,
     Json(request): Json<CertifyRequest>,
-) -> Result<Json<CertifyResponse>, String> {
+) -> Result<Json<CertifyResponse>, (StatusCode, String)> {
     tracing::debug!("certifying");
 
     let pub_key = request.metadata.node_id;
     let s = state.clone();
+
+    let params = match VerifyingParams::new(&request.metadata, &s.cfg) {
+        Ok(params) => params,
+        Err(e) => return Err((StatusCode::BAD_REQUEST, format!("invalid metadata: {e:?}"))),
+    };
     let result = tokio::task::spawn_blocking(move || {
-        s.verifier.verify(
-            &request.proof,
-            &request.metadata,
-            VerifyingParams::new(&request.metadata, &s.cfg).unwrap(),
-        )
+        s.verifier.verify(&request.proof, &request.metadata, params)
     })
     .await;
     match result {
-        Err(e) => return Err(format!("internal error verifying proof: {e:?}")),
-        Ok(Err(e)) => return Err(format!("invalid proof: {e:?}")),
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("internal error verifying proof: {e:?}"),
+            ))
+        }
+        Ok(Err(e)) => return Err((StatusCode::FORBIDDEN, format!("invalid proof: {e:?}"))),
         _ => {}
     }
 
