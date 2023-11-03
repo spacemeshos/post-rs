@@ -1,6 +1,19 @@
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
-pub struct Config {
+pub struct InitConfig {
+    /// The minimal number of units that must be initialized.
+    pub min_num_units: u32,
+    /// The maximal number of units that can be initialized.
+    pub max_num_units: u32,
+    ///  The number of labels per unit.
+    pub labels_per_unit: u64,
+    /// Scrypt paramters for initilizing labels
+    pub scrypt: ScryptParams,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct ProofConfig {
     /// K1 specifies the difficulty for a label to be a candidate for a proof.
     pub k1: u32,
     /// K2 is the number of labels below the required difficulty required for a proof.
@@ -10,8 +23,6 @@ pub struct Config {
     /// Difficulty for the nonce proof of work. Lower values increase difficulty of finding
     /// `pow` for [Proof][crate::prove::Proof].
     pub pow_difficulty: [u8; 32],
-    /// Scrypt paramters for initilizing labels
-    pub scrypt: ScryptParams,
 }
 
 #[repr(C)]
