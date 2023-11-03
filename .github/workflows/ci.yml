@@ -32,7 +32,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: ubuntu-latest
             toolchain: stable
           - os: [self-hosted, linux, arm64]
             rustflags: --cfg=aes_armv8
@@ -52,7 +52,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-      - if: matrix.os == 'ubuntu-20.04'
+      - if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev pocl-opencl-icd
         name: Install dependencies for testing openCL
       - if: matrix.os == 'windows-2019'
@@ -128,7 +128,7 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install opencl
-        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
+        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev pocl-opencl-icd
       - uses: actions/checkout@v3
         with:
           submodules: true
