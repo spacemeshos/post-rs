@@ -10,7 +10,7 @@ use post::{
     metadata::{PostMetadata, ProofMetadata},
     pow::randomx::{PoW, RandomXFlag},
     prove::Proof,
-    verification::{Verifier, VerifyingParams},
+    verification::Verifier,
 };
 
 #[derive(Debug)]
@@ -27,7 +27,8 @@ struct ProofGenProcess {
 
 pub struct PostService {
     datadir: PathBuf,
-    cfg: post::config::Config,
+    cfg: post::config::ProofConfig,
+    init_cfg: post::config::InitConfig,
     nonces: usize,
     threads: usize,
     pow_flags: RandomXFlag,
@@ -40,7 +41,8 @@ pub struct PostService {
 impl PostService {
     pub fn new(
         datadir: PathBuf,
-        cfg: post::config::Config,
+        cfg: post::config::ProofConfig,
+        init_cfg: post::config::InitConfig,
         nonces: usize,
         threads: usize,
         pow_flags: RandomXFlag,
@@ -49,6 +51,7 @@ impl PostService {
             proof_generation: Mutex::new(None),
             datadir,
             cfg,
+            init_cfg,
             nonces,
             threads,
             pow_flags,
@@ -113,7 +116,7 @@ impl crate::client::PostService for PostService {
 
     fn verify_proof(&self, proof: &Proof, metadata: &ProofMetadata) -> eyre::Result<()> {
         self.verifier
-            .verify(proof, metadata, VerifyingParams::new(metadata, &self.cfg)?)
+            .verify(proof, metadata, &self.cfg, &self.init_cfg)
             .wrap_err("verifying proof")
     }
 

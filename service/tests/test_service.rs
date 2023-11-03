@@ -1,7 +1,7 @@
 use std::{thread::sleep, time::Duration};
 
 use post::{
-    config::ScryptParams,
+    config::{InitConfig, ProofConfig, ScryptParams},
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
     pow::randomx::RandomXFlag,
@@ -11,25 +11,29 @@ use post_service::{client::PostService, service::ProofGenState};
 #[test]
 fn test_generate_and_verify() {
     // Initialize some data
-    let labels_per_unit = 256;
     let datadir = tempfile::tempdir().unwrap();
 
-    let cfg = post::config::Config {
+    let cfg = ProofConfig {
         k1: 8,
         k2: 4,
         k3: 4,
         pow_difficulty: [0xFF; 32],
+    };
+    let init_cfg = InitConfig {
+        min_num_units: 1,
+        max_num_units: 1000,
+        labels_per_unit: 256,
         scrypt: ScryptParams::new(2, 1, 1),
     };
 
-    let metadata = CpuInitializer::new(cfg.scrypt)
+    let metadata = CpuInitializer::new(init_cfg.scrypt)
         .initialize(
             datadir.path(),
             &[0xBE; 32],
             &[0xCE; 32],
-            labels_per_unit,
+            init_cfg.labels_per_unit,
             4,
-            labels_per_unit,
+            init_cfg.labels_per_unit,
             None,
         )
         .unwrap();
@@ -37,9 +41,15 @@ fn test_generate_and_verify() {
     let pow_flags = RandomXFlag::get_recommended_flags();
 
     // Generate a proof
-    let service =
-        post_service::service::PostService::new(datadir.into_path(), cfg, 16, 1, pow_flags)
-            .unwrap();
+    let service = post_service::service::PostService::new(
+        datadir.into_path(),
+        cfg,
+        init_cfg,
+        16,
+        1,
+        pow_flags,
+    )
+    .unwrap();
 
     let (proof, metadata) = loop {
         if let ProofGenState::Finished { proof } = service.gen_proof(vec![0xCA; 32]).unwrap() {
@@ -57,25 +67,29 @@ fn test_generate_and_verify() {
 #[test]
 fn reject_invalid_challenge() {
     // Initialize some data
-    let labels_per_unit = 256;
     let datadir = tempfile::tempdir().unwrap();
 
-    let cfg = post::config::Config {
+    let cfg = ProofConfig {
         k1: 8,
         k2: 4,
         k3: 4,
         pow_difficulty: [0xFF; 32],
+    };
+    let init_cfg = InitConfig {
+        min_num_units: 1,
+        max_num_units: 1000,
+        labels_per_unit: 256,
         scrypt: ScryptParams::new(2, 1, 1),
     };
 
-    CpuInitializer::new(cfg.scrypt)
+    CpuInitializer::new(init_cfg.scrypt)
         .initialize(
             datadir.path(),
             &[0xBE; 32],
             &[0xCE; 32],
-            labels_per_unit,
+            init_cfg.labels_per_unit,
             4,
-            labels_per_unit,
+            init_cfg.labels_per_unit,
             None,
         )
         .unwrap();
@@ -84,6 +98,7 @@ fn reject_invalid_challenge() {
     let service = post_service::service::PostService::new(
         datadir.into_path(),
         cfg,
+        init_cfg,
         16,
         1,
         RandomXFlag::get_recommended_flags(),
@@ -95,25 +110,29 @@ fn reject_invalid_challenge() {
 #[test]
 fn cannot_run_parallel_proof_gens() {
     // Initialize some data
-    let labels_per_unit = 256;
     let datadir = tempfile::tempdir().unwrap();
 
-    let cfg = post::config::Config {
+    let cfg = ProofConfig {
         k1: 8,
         k2: 4,
         k3: 4,
         pow_difficulty: [0xFF; 32],
+    };
+    let init_cfg = InitConfig {
+        min_num_units: 1,
+        max_num_units: 1000,
+        labels_per_unit: 256,
         scrypt: ScryptParams::new(2, 1, 1),
     };
 
-    CpuInitializer::new(cfg.scrypt)
+    CpuInitializer::new(init_cfg.scrypt)
         .initialize(
             datadir.path(),
             &[0xBE; 32],
             &[0xCE; 32],
-            labels_per_unit,
+            init_cfg.labels_per_unit,
             4,
-            labels_per_unit,
+            init_cfg.labels_per_unit,
             None,
         )
         .unwrap();
@@ -122,6 +141,7 @@ fn cannot_run_parallel_proof_gens() {
     let service = post_service::service::PostService::new(
         datadir.into_path(),
         cfg,
+        init_cfg,
         16,
         1,
         RandomXFlag::get_recommended_flags(),

@@ -39,14 +39,23 @@ struct Cli {
 #[derive(Args, Debug)]
 /// POST configuration - network parameters
 struct PostConfig {
+    /// The minimal number of units that must be initialized.
+    #[arg(long, default_value_t = 4)]
+    pub min_num_units: u32,
+    /// The maximal number of units that can be initialized.
+    #[arg(long, default_value_t = u32::MAX)]
+    pub max_num_units: u32,
+    ///  The number of labels per unit.
+    #[arg(long, default_value_t = 4294967296)]
+    pub labels_per_unit: u64,
     /// K1 specifies the difficulty for a label to be a candidate for a proof
-    #[arg(long, default_value = "26")]
+    #[arg(long, default_value_t = 26)]
     k1: u32,
     /// K2 is the number of labels below the required difficulty required for a proof
-    #[arg(long, default_value = "37")]
+    #[arg(long, default_value_t = 37)]
     k2: u32,
     /// K3 is the size of the subset of proof indices that is validated
-    #[arg(long, default_value = "37")]
+    #[arg(long, default_value_t = 37)]
     k3: u32,
     /// difficulty for the nonce proof of work (aka "k2pow")
     #[arg(
@@ -164,18 +173,24 @@ async fn main() -> eyre::Result<()> {
     log::info!("POST network parameters: {:?}", args.post_config);
     log::info!("POST proving settings: {:?}", args.post_settings);
 
+    let scrypt = post::config::ScryptParams::new(
+        args.post_config.scrypt.n,
+        args.post_config.scrypt.r,
+        args.post_config.scrypt.p,
+    );
     let service = post_service::service::PostService::new(
         args.dir,
-        post::config::Config {
+        post::config::ProofConfig {
             k1: args.post_config.k1,
             k2: args.post_config.k2,
             k3: args.post_config.k3,
             pow_difficulty: args.post_config.pow_difficulty,
-            scrypt: post::config::ScryptParams::new(
-                args.post_config.scrypt.n,
-                args.post_config.scrypt.r,
-                args.post_config.scrypt.p,
-            ),
+        },
+        post::config::InitConfig {
+            min_num_units: args.post_config.min_num_units,
+            max_num_units: args.post_config.max_num_units,
+            labels_per_unit: args.post_config.labels_per_unit,
+            scrypt,
         },
         args.post_settings.nonces,
         args.post_settings.threads,

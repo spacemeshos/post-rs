@@ -1,48 +1,59 @@
+use std::sync::atomic::AtomicBool;
+
 use criterion::{criterion_group, criterion_main, Criterion};
 use post::{
-    config::ScryptParams,
+    config::{InitConfig, ProofConfig, ScryptParams},
+    initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
-    prove::Proof,
-    verification::{Verifier, VerifyingParams},
+    prove::generate_proof,
+    verification::Verifier,
 };
 #[cfg(not(windows))]
 use pprof::criterion::{Output, PProfProfiler};
+use tempfile::tempdir;
 
 fn verifying(c: &mut Criterion) {
     let challenge = b"hello world, challenge me!!!!!!!";
-    let metadata = ProofMetadata {
-        node_id: [0u8; 32],
-        commitment_atx_id: [0u8; 32],
-        challenge: *challenge,
-        num_units: 1,
-        labels_per_unit: 1024 * 1024 * 1024,
-    };
-    let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
+    let datadir = tempdir().unwrap();
 
-    let verifier = Verifier::new(Box::new(
-        PoW::new(RandomXFlag::get_recommended_flags()).unwrap(),
-    ));
-
-    let (k2, k3) = (37, 37);
-    let proof = Proof::new(
-        0,
-        (0..k2 as u64).collect::<Vec<u64>>().as_slice(),
-        num_labels,
-        0,
-    );
-    let params = VerifyingParams {
-        difficulty: u64::MAX,
-        k2,
-        k3,
+    let cfg = ProofConfig {
+        k1: 199,
+        k2: 37,
+        k3: 37,
         pow_difficulty: [0xFF; 32],
+    };
+    let init_cfg = InitConfig {
+        min_num_units: 1,
+        max_num_units: 1,
+        labels_per_unit: 200,
         scrypt: ScryptParams::new(8192, 1, 1),
     };
 
+    let metadata = CpuInitializer::new(init_cfg.scrypt)
+        .initialize(
+            datadir.path(),
+            &[0u8; 32],
+            &[0u8; 32],
+            init_cfg.labels_per_unit,
+            1,
+            init_cfg.labels_per_unit,
+            None,
+        )
+        .unwrap();
+
+    let pow_flags = RandomXFlag::get_recommended_flags();
+    // Generate a proof
+    let stop = AtomicBool::new(false);
+    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags, stop).unwrap();
+    let metadata = ProofMetadata::new(metadata, *challenge);
+
+    // Bench verifying the proof
+    let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
     c.bench_function("verify", |b| {
         b.iter(|| {
             verifier
-                .verify(&proof, &metadata, params)
+                .verify(&proof, &metadata, &cfg, &init_cfg)
                 .expect("proof should be valid");
         });
     });

@@ -416,22 +416,15 @@ mod tests {
     fn initialize_and_verify() {
         // Initialize some data
         let datadir = tempdir().unwrap();
+        let scrypt = ScryptParams::new(2, 1, 1);
 
-        let cfg = post::config::Config {
-            k1: 23,
-            k2: 32,
-            k3: 10,
-            pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(2, 1, 1),
-        };
-
-        CpuInitializer::new(cfg.scrypt)
+        CpuInitializer::new(scrypt)
             .initialize(datadir.path(), &[0u8; 32], &[0u8; 32], 256, 31, 700, None)
             .unwrap();
 
         // Verify the data
         let datapath = CString::new(datadir.path().to_str().unwrap()).unwrap();
-        let result = verify_pos(datapath.as_ptr(), null(), null(), 100.0, cfg.scrypt);
+        let result = verify_pos(datapath.as_ptr(), null(), null(), 100.0, scrypt);
         assert_eq!(VerifyResult::Ok, result);
 
         // verify with wrong scrypt params
@@ -441,7 +434,7 @@ mod tests {
 
         // verify with non-existent path
         let path = CString::new("non-existent-path").unwrap();
-        let result = verify_pos(path.as_ptr(), null(), null(), 100.0, cfg.scrypt);
+        let result = verify_pos(path.as_ptr(), null(), null(), 100.0, scrypt);
         assert_eq!(VerifyResult::Failed, result);
     }
 }

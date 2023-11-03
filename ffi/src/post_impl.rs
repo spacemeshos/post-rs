@@ -9,11 +9,11 @@ use std::{
 };
 
 use post::{
-    config::Config,
+    config::{InitConfig, ProofConfig},
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
     prove,
-    verification::{Verifier, VerifyingParams},
+    verification::Verifier,
 };
 
 use crate::ArrayU8;
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn free_proof(proof: *mut Proof) {
 pub extern "C" fn generate_proof(
     datadir: *const c_char,
     challenge: *const c_uchar,
-    cfg: Config,
+    cfg: ProofConfig,
     nonces: usize,
     threads: usize,
     pow_flags: RandomXFlag,
@@ -90,7 +90,7 @@ pub extern "C" fn generate_proof(
 fn _generate_proof(
     datadir: *const c_char,
     challenge: *const c_uchar,
-    cfg: Config,
+    cfg: ProofConfig,
     nonces: usize,
     threads: usize,
     pow_flags: RandomXFlag,
@@ -168,7 +168,8 @@ pub unsafe extern "C" fn verify_proof(
     verifier: *const Verifier,
     proof: Proof,
     metadata: *const ProofMetadata,
-    cfg: Config,
+    cfg: ProofConfig,
+    init_cfg: InitConfig,
 ) -> VerifyResult {
     let verifier = match verifier.as_ref() {
         Some(verifier) => verifier,
@@ -191,12 +192,7 @@ pub unsafe extern "C" fn verify_proof(
         None => return VerifyResult::InvalidArgument,
     };
 
-    let params = match VerifyingParams::new(metadata, &cfg) {
-        Ok(params) => params,
-        Err(_) => return VerifyResult::InvalidArgument,
-    };
-
-    match verifier.verify(&proof, metadata, params) {
+    match verifier.verify(&proof, metadata, &cfg, &init_cfg) {
         Ok(_) => VerifyResult::Ok,
         Err(err) => {
             log::error!("Proof is invalid: {err}");
@@ -215,12 +211,11 @@ mod tests {
     #[test]
     fn datadir_must_be_utf8() {
         let datadir = std::ffi::CString::new([159, 146, 150]).unwrap();
-        let cfg = super::Config {
+        let cfg = super::ProofConfig {
             k1: 10,
             k2: 20,
             k3: 20,
             pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(2, 1, 1),
         };
         let result = super::_generate_proof(
             datadir.as_ptr(),
@@ -253,11 +248,16 @@ mod tests {
                     pow: 0,
                 },
                 std::ptr::null(),
-                super::Config {
+                super::ProofConfig {
                     k1: 1,
                     k2: 2,
                     k3: 2,
                     pow_difficulty: [0xFF; 32],
+                },
+                super::InitConfig {
+                    min_num_units: 1,
+                    max_num_units: 1,
+                    labels_per_unit: 1,
                     scrypt: ScryptParams::new(2, 1, 1),
                 },
             )
@@ -268,10 +268,9 @@ mod tests {
     #[test]
     fn test_end_to_end() {
         // Initialize some data first
-        let labels_per_unit = 200;
         let datadir = tempfile::tempdir().unwrap();
 
-        let cfg = post::config::Config {
+        let cfg = post::config::ProofConfig {
             k1: 10,
             k2: 10,
             k3: 10,
@@ -280,17 +279,23 @@ mod tests {
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0xff, 0xff,
             ],
+        };
+
+        let init_cfg = post::config::InitConfig {
+            min_num_units: 1,
+            max_num_units: 2,
+            labels_per_unit: 200,
             scrypt: ScryptParams::new(2, 1, 1),
         };
 
-        let meta = post::initialize::CpuInitializer::new(cfg.scrypt)
+        let meta = post::initialize::CpuInitializer::new(init_cfg.scrypt)
             .initialize(
                 datadir.path(),
                 &[77; 32],
                 &[0u8; 32],
-                labels_per_unit,
+                init_cfg.labels_per_unit,
                 2,
-                labels_per_unit,
+                100,
                 None,
             )
             .unwrap();
@@ -316,16 +321,10 @@ mod tests {
             pow_flags,
         );
 
-        let proof_metadata = ProofMetadata {
-            node_id: meta.node_id,
-            commitment_atx_id: meta.commitment_atx_id,
-            challenge: *challenge,
-            num_units: meta.num_units,
-            labels_per_unit: meta.labels_per_unit,
+        let proof_metadata = ProofMetadata::new(meta, *challenge);
+        let result = unsafe {
+            crate::post_impl::verify_proof(verifier, *cproof, &proof_metadata, cfg, init_cfg)
         };
-
-        let result =
-            unsafe { crate::post_impl::verify_proof(verifier, *cproof, &proof_metadata as _, cfg) };
 
         assert_eq!(result, super::VerifyResult::Ok);
 
@@ -338,7 +337,7 @@ mod tests {
         };
 
         let result = unsafe {
-            crate::post_impl::verify_proof(verifier, invalid_proof, &proof_metadata as _, cfg)
+            crate::post_impl::verify_proof(verifier, invalid_proof, &proof_metadata, cfg, init_cfg)
         };
         assert_eq!(result, super::VerifyResult::Invalid);
 
