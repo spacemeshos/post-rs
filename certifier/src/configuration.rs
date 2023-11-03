@@ -12,7 +12,8 @@ pub struct Config {
     /// The base64-encoded secret key used to sign the proofs.
     /// It's 256-bit key as defined in [RFC8032 § 5.1.5].
     pub signing_key: SecretKey,
-    pub post_cfg: post::config::Config,
+    pub post_cfg: post::config::ProofConfig,
+    pub init_cfg: post::config::InitConfig,
 
     /// Whether to enable metrics on /metrics.
     pub metrics: bool,

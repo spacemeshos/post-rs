@@ -4,8 +4,9 @@ use axum::http::StatusCode;
 use axum::{extract::State, Json};
 use axum::{routing::post, Router};
 use ed25519_dalek::{Signer, SigningKey};
+use post::config::{InitConfig, ProofConfig};
 use post::pow::randomx::{PoW, RandomXFlag};
-use post::verification::{Verifier, VerifyingParams};
+use post::verification::Verifier;
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 use tracing::instrument;
@@ -35,24 +36,20 @@ async fn certify(
     let pub_key = request.metadata.node_id;
     let s = state.clone();
 
-    let params = match VerifyingParams::new(&request.metadata, &s.cfg) {
-        Ok(params) => params,
-        Err(e) => return Err((StatusCode::BAD_REQUEST, format!("invalid metadata: {e:?}"))),
-    };
     let result = tokio::task::spawn_blocking(move || {
-        s.verifier.verify(&request.proof, &request.metadata, params)
+        s.verifier
+            .verify(&request.proof, &request.metadata, &s.cfg, &s.init_cfg)
     })
-    .await;
-    match result {
-        Err(e) => {
-            return Err((
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("internal error verifying proof: {e:?}"),
-            ))
-        }
-        Ok(Err(e)) => return Err((StatusCode::FORBIDDEN, format!("invalid proof: {e:?}"))),
-        _ => {}
-    }
+    .await
+    .map_err(|e| {
+        tracing::error!("internal error verifying proof: {e:?}");
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "error verifying proof".into(),
+        )
+    })?;
+
+    result.map_err(|e| (StatusCode::FORBIDDEN, format!("invalid proof: {e:?}")))?;
 
     // Sign the nodeID
     let response = CertifyResponse {
@@ -64,16 +61,18 @@ async fn certify(
 
 struct AppState {
     verifier: Verifier,
-    cfg: post::config::Config,
+    cfg: ProofConfig,
+    init_cfg: InitConfig,
     signer: SigningKey,
 }
 
-pub fn new(cfg: post::config::Config, signer: SigningKey) -> Router {
+pub fn new(cfg: ProofConfig, init_cfg: InitConfig, signer: SigningKey) -> Router {
     let state = AppState {
         verifier: Verifier::new(Box::new(
             PoW::new(RandomXFlag::get_recommended_flags()).expect("creating RandomX PoW verifier"),
         )),
         cfg,
+        init_cfg,
         signer,
     };
 

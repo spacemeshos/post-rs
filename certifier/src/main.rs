@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("listening on: {:?}, pubkey: {}", config.listen, pubkey_b64,);
     info!("using POST configuration: {:?}", config.post_cfg);
 
-    let mut app = certifier::certifier::new(config.post_cfg, signer);
+    let mut app = certifier::certifier::new(config.post_cfg, config.init_cfg, signer);
 
     if config.metrics {
         info!("metrics on: {}/metrics", config.listen.to_string());
