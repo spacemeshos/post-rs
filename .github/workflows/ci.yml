@@ -53,6 +53,8 @@ jobs:
         with:
           toolchain: ${{ matrix.toolchain }}
       - if: matrix.os == 'ubuntu-latest'
+        run: lscpu
+      - if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev pocl-opencl-icd
         name: Install dependencies for testing openCL
       - if: matrix.os == 'windows-2019'
@@ -127,6 +129,7 @@ jobs:
       - uses: arduino/setup-protoc@v2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - run: lscpu
       - name: Install opencl
         run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev pocl-opencl-icd
       - uses: actions/checkout@v3
