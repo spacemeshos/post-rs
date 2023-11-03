@@ -384,4 +384,43 @@ mod tests {
             ));
         }
     }
+
+    #[test]
+    fn verify_metadata() {
+        let valid_meta = ProofMetadata {
+            node_id: [0; 32],
+            commitment_atx_id: [0; 32],
+            challenge: [0; 32],
+            num_units: 1,
+            labels_per_unit: 100,
+        };
+        let init_cfg = InitConfig {
+            min_num_units: 1,
+            max_num_units: 10,
+            labels_per_unit: 100,
+            scrypt: ScryptParams::new(2, 1, 1),
+        };
+        assert!(super::verify_metadata(&valid_meta, &init_cfg).is_ok());
+        {
+            let num_units_small = ProofMetadata {
+                num_units: 0,
+                ..valid_meta
+            };
+            assert!(super::verify_metadata(&num_units_small, &init_cfg).is_err());
+        }
+        {
+            let num_units_large = ProofMetadata {
+                num_units: 99,
+                ..valid_meta
+            };
+            assert!(super::verify_metadata(&num_units_large, &init_cfg).is_err());
+        }
+        {
+            let invalid_labels_per_unit = ProofMetadata {
+                labels_per_unit: 99,
+                ..valid_meta
+            };
+            assert!(super::verify_metadata(&invalid_labels_per_unit, &init_cfg).is_err());
+        }
+    }
 }
