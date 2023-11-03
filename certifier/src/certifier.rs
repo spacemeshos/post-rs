@@ -11,10 +11,10 @@ use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 use tracing::instrument;
 
-#[derive(Debug, Deserialize)]
-struct CertifyRequest {
-    proof: post::prove::Proof<'static>,
-    metadata: post::metadata::ProofMetadata,
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CertifyRequest {
+    pub proof: post::prove::Proof<'static>,
+    pub metadata: post::metadata::ProofMetadata,
 }
 
 #[serde_as]
