@@ -18,7 +18,7 @@ struct Cli {
         default_value = "config.yml",
         env("CERTIFIER_CONFIG_PATH")
     )]
-    config_path: PathBuf,
+    config: PathBuf,
 
     #[command(subcommand)]
     cmd: Option<Commands>,
@@ -67,7 +67,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
 
-    let config = certifier::configuration::get_configuration(&args.config_path)?;
+    let config = certifier::configuration::get_configuration(&args.config)?;
     let signer = SigningKey::from_bytes(&config.signing_key);
     let pubkey_b64 = general_purpose::STANDARD.encode(signer.verifying_key().as_bytes());
 
