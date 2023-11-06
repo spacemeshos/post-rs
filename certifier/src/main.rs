@@ -76,16 +76,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut app = certifier::certifier::new(config.post_cfg, config.init_cfg, signer);
 
-    if config.metrics {
-        info!("metrics on: {}/metrics", config.listen.to_string());
-        let (metric_layer, metric_handle) = PrometheusMetricLayerBuilder::new()
+    if let Some(addr) = config.metrics {
+        info!("metrics enabled on: http://{addr:?}/metrics");
+        let (layer, handle) = PrometheusMetricLayerBuilder::new()
             .with_prefix("certifier")
-            .with_ignore_patterns(&["/metrics"])
             .with_default_metrics()
             .build_pair();
-        app = app
-            .route("/metrics", get(|| async move { metric_handle.render() }))
-            .layer(metric_layer);
+
+        app = app.layer(layer);
+        let metrics = axum::Router::new().route("/metrics", get(|| async move { handle.render() }));
+        tokio::spawn(axum::Server::bind(&addr).serve(metrics.into_make_service()));
     }
 
     axum::Server::bind(&config.listen)

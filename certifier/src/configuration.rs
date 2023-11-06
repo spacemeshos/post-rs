@@ -15,8 +15,9 @@ pub struct Config {
     pub post_cfg: post::config::ProofConfig,
     pub init_cfg: post::config::InitConfig,
 
-    /// Whether to enable metrics on /metrics.
-    pub metrics: bool,
+    /// Address to expose metrics on.
+    /// Metrics are disabled if not configured.
+    pub metrics: Option<std::net::SocketAddr>,
 }
 
 pub fn get_configuration(config_path: &Path) -> Result<Config, config::ConfigError> {
