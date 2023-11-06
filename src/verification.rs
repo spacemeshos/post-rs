@@ -39,6 +39,7 @@ use std::cmp::Ordering;
 
 use cipher::BlockEncrypt;
 use itertools::Itertools;
+use log::debug;
 
 use crate::{
     cipher::AesCipher,
@@ -148,6 +149,10 @@ impl Verifier {
 
         // Verify K2 PoW
         let nonce_group = proof.nonce / NONCES_PER_AES;
+        debug!(
+            "verifying K2 pow for nonce group: {nonce_group} with difficulty: {:x?}",
+            pow_difficulty
+        );
         self.pow_verifier.verify(
             proof.pow,
             nonce_group
