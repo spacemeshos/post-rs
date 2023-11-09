@@ -69,7 +69,7 @@ async fn test_certificate_post_proof() {
 
     // Try to certify with an invalid proof
     let mut invalid_req = req;
-    invalid_req.metadata.labels_per_unit = 2;
+    invalid_req.metadata.num_units = 8;
     let response = client
         .post(format!("http://{addr}/certify"))
         .json(&invalid_req)
