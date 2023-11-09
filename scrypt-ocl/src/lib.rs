@@ -356,8 +356,8 @@ impl Initialize for OpenClInitializer {
 #[cfg(test)]
 mod tests {
     use post::{
+        config::ScryptParams,
         initialize::{CpuInitializer, Initialize},
-        ScryptParams,
     };
     use rstest::rstest;
 
@@ -386,7 +386,7 @@ mod tests {
             .unwrap();
 
         let mut expected = Vec::with_capacity(1);
-        CpuInitializer::new(ScryptParams::new(12, 0, 0))
+        CpuInitializer::new(ScryptParams::new(8192, 1, 1))
             .initialize_to(&mut expected, &[0u8; 32], 0..1, None)
             .unwrap();
 
@@ -411,7 +411,7 @@ mod tests {
         let mut expected =
             Vec::<u8>::with_capacity(usize::try_from(indices.end - indices.start).unwrap());
 
-        CpuInitializer::new(ScryptParams::new(n.ilog2() as u8 - 1, 0, 0))
+        CpuInitializer::new(ScryptParams::new(n, 1, 1))
             .initialize_to(&mut expected, &[0u8; 32], indices, None)
             .unwrap();
 
@@ -436,7 +436,7 @@ mod tests {
         let mut expected =
             Vec::<u8>::with_capacity(usize::try_from(indices.end - indices.start).unwrap());
 
-        CpuInitializer::new(ScryptParams::new(n.ilog2() as u8 - 1, 0, 0))
+        CpuInitializer::new(ScryptParams::new(n, 1, 1))
             .initialize_to(&mut expected, &[0u8; 32], indices, None)
             .unwrap();
 
@@ -457,7 +457,7 @@ mod tests {
         let mut expected =
             Vec::<u8>::with_capacity(usize::try_from(indices.end - indices.start).unwrap());
 
-        CpuInitializer::new(ScryptParams::new(12, 0, 0))
+        CpuInitializer::new(ScryptParams::new(8192, 1, 1))
             .initialize_to(&mut expected, commitment, indices, None)
             .unwrap();
 
@@ -485,7 +485,7 @@ mod tests {
         let nonce = opencl_nonce.expect("vrf nonce not found");
 
         let mut label = Vec::<u8>::with_capacity(LABEL_SIZE);
-        let mut cpu_initializer = CpuInitializer::new(ScryptParams::new(n.ilog2() as u8 - 1, 0, 0));
+        let mut cpu_initializer = CpuInitializer::new(ScryptParams::new(n, 1, 1));
         cpu_initializer
             .initialize_to(&mut label, commitment, nonce.index..nonce.index + 1, None)
             .unwrap();
@@ -525,7 +525,7 @@ mod tests {
         let mut expected =
             Vec::<u8>::with_capacity(usize::try_from(indices.end - indices.start).unwrap());
 
-        CpuInitializer::new(ScryptParams::new(N.ilog2() as u8 - 1, 0, 0))
+        CpuInitializer::new(ScryptParams::new(N, 1, 1))
             .initialize_to(&mut expected, &[0u8; 32], indices, None)
             .unwrap();
 

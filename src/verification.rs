@@ -39,14 +39,12 @@ use std::cmp::Ordering;
 
 use cipher::BlockEncrypt;
 use itertools::Itertools;
-use primitive_types::U256;
-use scrypt_jane::scrypt::ScryptParams;
 
 use crate::{
     cipher::AesCipher,
     compression::{decompress_indexes, required_bits},
-    config::Config,
-    difficulty::proving_difficulty,
+    config::{InitConfig, ProofConfig},
+    difficulty::{proving_difficulty, scale_pow_difficulty},
     initialize::{calc_commitment, generate_label},
     metadata::ProofMetadata,
     pow::PowVerifier,
@@ -55,35 +53,6 @@ use crate::{
 };
 
 const NONCES_PER_AES: u32 = Prover8_56::NONCES_PER_AES;
-
-#[derive(Debug, Clone, Copy)]
-pub struct VerifyingParams {
-    pub difficulty: u64,
-    pub k2: u32,
-    pub k3: u32,
-    pub pow_difficulty: [u8; 32],
-    pub scrypt: ScryptParams,
-}
-
-impl VerifyingParams {
-    pub fn new(metadata: &ProofMetadata, cfg: &Config) -> eyre::Result<Self> {
-        let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
-
-        // Scale PoW difficulty by number of units
-        eyre::ensure!(metadata.num_units > 0, "num_units must be > 0");
-        let difficulty_scaled = U256::from_big_endian(&cfg.pow_difficulty) / metadata.num_units;
-        let mut pow_difficulty = [0u8; 32];
-        difficulty_scaled.to_big_endian(&mut pow_difficulty);
-
-        Ok(Self {
-            difficulty: proving_difficulty(cfg.k1, num_labels)?,
-            k2: cfg.k2,
-            k3: cfg.k3,
-            pow_difficulty,
-            scrypt: cfg.scrypt,
-        })
-    }
-}
 
 pub struct Verifier {
     pow_verifier: Box<dyn PowVerifier + Send + Sync>,
@@ -111,6 +80,45 @@ pub enum Error {
         difficulty_lsb: u64,
         label: [u8; 16],
     },
+    #[error(transparent)]
+    InvalidMetadata(#[from] MetadataValidationError),
+    #[error("invalid number of labels: (0)")]
+    InvalidNumLabels(String),
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum MetadataValidationError {
+    #[error("numunits too small: {got} < {min}")]
+    NumUnitsTooSmall { min: u32, got: u32 },
+    #[error("numunits too large: {got} < {max}")]
+    NumUnitsTooLarge { max: u32, got: u32 },
+    #[error("invalid labels_per_unit: {got} != {expected}")]
+    LabelsPerUnitInvalid { expected: u64, got: u64 },
+}
+
+pub fn verify_metadata(
+    metadata: &ProofMetadata,
+    init_cfg: &InitConfig,
+) -> Result<(), MetadataValidationError> {
+    if metadata.num_units < init_cfg.min_num_units {
+        return Err(MetadataValidationError::NumUnitsTooSmall {
+            min: init_cfg.min_num_units,
+            got: metadata.num_units,
+        });
+    }
+    if metadata.num_units > init_cfg.max_num_units {
+        return Err(MetadataValidationError::NumUnitsTooLarge {
+            max: init_cfg.max_num_units,
+            got: metadata.num_units,
+        });
+    }
+    if metadata.labels_per_unit != init_cfg.labels_per_unit {
+        return Err(MetadataValidationError::LabelsPerUnitInvalid {
+            expected: init_cfg.labels_per_unit,
+            got: metadata.labels_per_unit,
+        });
+    }
+    Ok(())
 }
 
 impl Verifier {
@@ -130,9 +138,13 @@ impl Verifier {
         &self,
         proof: &Proof,
         metadata: &ProofMetadata,
-        params: VerifyingParams,
+        cfg: &ProofConfig,
+        init_cfg: &InitConfig,
     ) -> Result<(), Error> {
+        verify_metadata(metadata, init_cfg)?;
+
         let challenge = metadata.challenge;
+        let pow_difficulty = scale_pow_difficulty(&cfg.pow_difficulty, metadata.num_units);
 
         // Verify K2 PoW
         let nonce_group = proof.nonce / NONCES_PER_AES;
@@ -142,14 +154,14 @@ impl Verifier {
                 .try_into()
                 .map_err(|_| Error::NonceGroupOutOfBounds(nonce_group))?,
             &challenge[..8].try_into().unwrap(),
-            &params.pow_difficulty,
+            &pow_difficulty,
             &metadata.node_id,
         )?;
 
         // Verify the number of indices against K2
-        let num_lables = metadata.num_units as u64 * metadata.labels_per_unit;
-        let bits_per_index = required_bits(num_lables);
-        let expected = expected_indices_bytes(bits_per_index, params.k2);
+        let num_labels = metadata.num_units as u64 * init_cfg.labels_per_unit;
+        let bits_per_index = required_bits(num_labels);
+        let expected = expected_indices_bytes(bits_per_index, cfg.k2);
         if proof.indices.len() != expected {
             return Err(Error::InvalidIndicesLen {
                 expected,
@@ -158,12 +170,14 @@ impl Verifier {
         }
 
         let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index)
-            .take(params.k2 as usize)
+            .take(cfg.k2 as usize)
             .collect_vec();
         let commitment = calc_commitment(&metadata.node_id, &metadata.commitment_atx_id);
         let cipher = AesCipher::new(&challenge, nonce_group, proof.pow);
         let lazy_cipher = AesCipher::new_lazy(&challenge, proof.nonce, nonce_group, proof.pow);
-        let (difficulty_msb, difficulty_lsb) = Prover8_56::split_difficulty(params.difficulty);
+
+        let difficulty = proving_difficulty(cfg.k1, num_labels).map_err(Error::InvalidNumLabels)?;
+        let (difficulty_msb, difficulty_lsb) = Prover8_56::split_difficulty(difficulty);
 
         let output_index = (proof.nonce % NONCES_PER_AES) as usize;
 
@@ -175,11 +189,11 @@ impl Verifier {
             &proof.pow.to_le_bytes(),
         ];
 
-        let k3_indices = RandomValuesIterator::new(indices_unpacked, seed).take(params.k3 as usize);
+        let k3_indices = RandomValuesIterator::new(indices_unpacked, seed).take(cfg.k3 as usize);
 
         k3_indices.into_iter().try_for_each(|index| {
             let mut output = [0u8; 16];
-            let label = generate_label(&commitment, params.scrypt, index);
+            let label = generate_label(&commitment, init_cfg.scrypt, index);
             cipher
                 .aes
                 .encrypt_block_b2b(&label.into(), (&mut output).into());
@@ -239,14 +253,15 @@ fn expected_indices_bytes(required_bits: usize, k2: u32) -> usize {
 mod tests {
     use std::borrow::Cow;
 
-    use scrypt_jane::scrypt::ScryptParams;
-
     use crate::{
-        config::Config, metadata::ProofMetadata, pow::MockPowVerifier, prove::Proof,
+        config::{InitConfig, ProofConfig, ScryptParams},
+        metadata::ProofMetadata,
+        pow::MockPowVerifier,
+        prove::Proof,
         verification::Error,
     };
 
-    use super::{expected_indices_bytes, next_multiple_of, Verifier, VerifyingParams};
+    use super::{expected_indices_bytes, next_multiple_of, Verifier};
 
     #[test]
     fn test_next_mutliple_of() {
@@ -263,12 +278,17 @@ mod tests {
 
     #[test]
     fn reject_invalid_pow() {
-        let params = VerifyingParams {
-            difficulty: u64::MAX,
+        let cfg = ProofConfig {
+            k1: 3,
             k2: 3,
             k3: 3,
             pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(1, 0, 0),
+        };
+        let init_cfg = InitConfig {
+            min_num_units: 1,
+            max_num_units: 10,
+            labels_per_unit: 2048,
+            scrypt: ScryptParams::new(2, 1, 1),
         };
 
         let fake_metadata = ProofMetadata {
@@ -290,19 +310,25 @@ mod tests {
                 pow: 0,
             },
             &fake_metadata,
-            params,
+            &cfg,
+            &init_cfg,
         );
         assert!(matches!(result, Err(Error::InvalidPoW(_))));
     }
 
     #[test]
     fn reject_invalid_proof() {
-        let params = VerifyingParams {
-            difficulty: u64::MAX,
+        let pcfg = ProofConfig {
+            k1: 10,
             k2: 10,
             k3: 10,
             pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(1, 0, 0),
+        };
+        let icfg = InitConfig {
+            min_num_units: 1,
+            max_num_units: 10,
+            labels_per_unit: 2048,
+            scrypt: ScryptParams::new(4, 1, 1),
         };
 
         let fake_metadata = ProofMetadata {
@@ -323,7 +349,7 @@ mod tests {
                 indices: Cow::from(vec![]),
                 pow: 0,
             };
-            let result = verifier.verify(&empty_proof, &fake_metadata, params);
+            let result = verifier.verify(&empty_proof, &fake_metadata, &pcfg, &icfg);
             assert!(matches!(
                 result,
                 Err(Error::InvalidIndicesLen {
@@ -338,7 +364,7 @@ mod tests {
                 indices: Cow::from(vec![]),
                 pow: 0,
             };
-            let res = verifier.verify(&nonce_out_of_bounds_proof, &fake_metadata, params);
+            let res = verifier.verify(&nonce_out_of_bounds_proof, &fake_metadata, &pcfg, &icfg);
             assert!(matches!(res, Err(Error::NonceGroupOutOfBounds(256))));
         }
         {
@@ -347,7 +373,8 @@ mod tests {
                 indices: Cow::from(vec![1, 2, 3]),
                 pow: 0,
             };
-            let result = verifier.verify(&proof_with_not_enough_indices, &fake_metadata, params);
+            let result =
+                verifier.verify(&proof_with_not_enough_indices, &fake_metadata, &pcfg, &icfg);
             assert!(matches!(
                 result,
                 Err(Error::InvalidIndicesLen {
@@ -358,50 +385,42 @@ mod tests {
         }
     }
 
-    /// Test that PoW threshold is scaled with num_units.
     #[test]
-    fn scaling_pow_thresholds() {
-        let cfg = Config {
-            k1: 0,
-            k2: 0,
-            k3: 0,
-            pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(2, 0, 0),
-        };
-        let metadata = ProofMetadata {
-            node_id: [0u8; 32],
-            commitment_atx_id: [0u8; 32],
-            challenge: [0u8; 32],
+    fn verify_metadata() {
+        let valid_meta = ProofMetadata {
+            node_id: [0; 32],
+            commitment_atx_id: [0; 32],
+            challenge: [0; 32],
             num_units: 1,
             labels_per_unit: 100,
         };
+        let init_cfg = InitConfig {
+            min_num_units: 1,
+            max_num_units: 10,
+            labels_per_unit: 100,
+            scrypt: ScryptParams::new(2, 1, 1),
+        };
+        assert!(super::verify_metadata(&valid_meta, &init_cfg).is_ok());
         {
-            // reject zero num_units
-            let params = VerifyingParams::new(
-                &ProofMetadata {
-                    num_units: 0,
-                    ..metadata
-                },
-                &cfg,
-            );
-            assert!(params.is_err());
+            let num_units_small = ProofMetadata {
+                num_units: 0,
+                ..valid_meta
+            };
+            assert!(super::verify_metadata(&num_units_small, &init_cfg).is_err());
         }
         {
-            // don't scale when num_units is 1
-            let params = VerifyingParams::new(&metadata, &cfg).unwrap();
-            assert_eq!(params.pow_difficulty, cfg.pow_difficulty);
+            let num_units_large = ProofMetadata {
+                num_units: 99,
+                ..valid_meta
+            };
+            assert!(super::verify_metadata(&num_units_large, &init_cfg).is_err());
         }
         {
-            // scale with num_units
-            let params = VerifyingParams::new(
-                &ProofMetadata {
-                    num_units: 10,
-                    ..metadata
-                },
-                &cfg,
-            )
-            .unwrap();
-            assert!(params.pow_difficulty < cfg.pow_difficulty);
+            let invalid_labels_per_unit = ProofMetadata {
+                labels_per_unit: 99,
+                ..valid_meta
+            };
+            assert!(super::verify_metadata(&invalid_labels_per_unit, &init_cfg).is_err());
         }
     }
 }

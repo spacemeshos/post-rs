@@ -5,9 +5,9 @@ use std::{io::Read, io::Seek, path::Path};
 use itertools::Itertools;
 use rand::seq::IteratorRandom;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
-use scrypt_jane::scrypt::ScryptParams;
 
 use crate::{
+    config::ScryptParams,
     initialize::{calc_commitment, CpuInitializer, Initialize},
     metadata,
 };

@@ -1,9 +1,9 @@
 use std::{error::Error, ffi::c_char, fmt::Debug};
 
 use post::{
+    config::ScryptParams,
     initialize::{CpuInitializer, Initialize},
     pos_verification::VerificationError,
-    ScryptParams,
 };
 use scrypt_ocl::{ocl::DeviceType, OpenClInitializer, ProviderId};
 
@@ -186,11 +186,7 @@ fn _new_initializer(
     };
 
     let instance: Box<dyn Initialize> = match provider_id {
-        CPU_PROVIDER_ID => Box::new(CpuInitializer::new(ScryptParams::new(
-            n.ilog2() as u8 - 1,
-            0,
-            0,
-        ))),
+        CPU_PROVIDER_ID => Box::new(CpuInitializer::new(ScryptParams::new(n, 1, 1))),
         id => Box::new(OpenClInitializer::new(
             Some(ProviderId(id)),
             n,
@@ -260,8 +256,8 @@ mod tests {
     };
 
     use post::{
+        config::ScryptParams,
         initialize::{CpuInitializer, Initialize, MockInitialize},
-        ScryptParams,
     };
     use tempfile::tempdir;
 
@@ -299,7 +295,7 @@ mod tests {
 
         let mut expected = Vec::<u8>::with_capacity(indices.clone().count());
 
-        CpuInitializer::new(ScryptParams::new(4, 0, 0))
+        CpuInitializer::new(ScryptParams::new(32, 1, 1))
             .initialize_to(
                 &mut expected,
                 &[0u8; 32],
@@ -420,32 +416,25 @@ mod tests {
     fn initialize_and_verify() {
         // Initialize some data
         let datadir = tempdir().unwrap();
+        let scrypt = ScryptParams::new(2, 1, 1);
 
-        let cfg = post::config::Config {
-            k1: 23,
-            k2: 32,
-            k3: 10,
-            pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(0, 0, 0),
-        };
-
-        CpuInitializer::new(cfg.scrypt)
+        CpuInitializer::new(scrypt)
             .initialize(datadir.path(), &[0u8; 32], &[0u8; 32], 256, 31, 700, None)
             .unwrap();
 
         // Verify the data
         let datapath = CString::new(datadir.path().to_str().unwrap()).unwrap();
-        let result = verify_pos(datapath.as_ptr(), null(), null(), 100.0, cfg.scrypt);
+        let result = verify_pos(datapath.as_ptr(), null(), null(), 100.0, scrypt);
         assert_eq!(VerifyResult::Ok, result);
 
         // verify with wrong scrypt params
-        let wrong_scrypt = ScryptParams::new(2, 0, 0);
+        let wrong_scrypt = ScryptParams::new(4, 1, 1);
         let result = verify_pos(datapath.as_ptr(), null(), null(), 100.0, wrong_scrypt);
         assert_eq!(VerifyResult::Invalid, result);
 
         // verify with non-existent path
         let path = CString::new("non-existent-path").unwrap();
-        let result = verify_pos(path.as_ptr(), null(), null(), 100.0, cfg.scrypt);
+        let result = verify_pos(path.as_ptr(), null(), null(), 100.0, scrypt);
         assert_eq!(VerifyResult::Failed, result);
     }
 }

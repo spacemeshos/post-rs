@@ -224,15 +224,20 @@ async fn test_broken_request_no_kind() {
 #[tokio::test]
 async fn test_get_metadata(#[case] vrf_difficulty: Option<[u8; 32]>) {
     let datadir = tempdir().unwrap();
-    let cfg = post::config::Config {
+    let cfg = post::config::ProofConfig {
         k1: 23,
         k2: 32,
         k3: 10,
         pow_difficulty: [0xFF; 32],
-        scrypt: post::ScryptParams::new(0, 0, 0),
+    };
+    let init_cfg = post::config::InitConfig {
+        min_num_units: 1,
+        max_num_units: 1000,
+        labels_per_unit: 256 * 16,
+        scrypt: post::config::ScryptParams::new(2, 1, 1),
     };
 
-    let metadata = CpuInitializer::new(cfg.scrypt)
+    let metadata = CpuInitializer::new(init_cfg.scrypt)
         .initialize(
             datadir.path(),
             &[77; 32],
@@ -249,6 +254,7 @@ async fn test_get_metadata(#[case] vrf_difficulty: Option<[u8; 32]>) {
     let service = post_service::service::PostService::new(
         datadir.path().into(),
         cfg,
+        init_cfg,
         16,
         1,
         post::pow::randomx::RandomXFlag::get_recommended_flags(),

@@ -2,6 +2,7 @@ use std::{fs::read_to_string, net::SocketAddr, path::PathBuf, sync::Arc, time::D
 
 use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
+use sysinfo::{Pid, ProcessExt, ProcessStatus, System, SystemExt};
 use tokio::net::TcpListener;
 use tonic::transport::{Certificate, Identity};
 
@@ -31,6 +32,10 @@ struct Cli {
     #[command(flatten, next_help_heading = "TLS configuration")]
     tls: Option<Tls>,
 
+    /// watch PID and exit if it dies
+    #[arg(long)]
+    watch_pid: Option<sysinfo::Pid>,
+
     /// address to listen on for operator service
     /// the operator service is disabled if not specified
     #[arg(long)]
@@ -40,14 +45,23 @@ struct Cli {
 #[derive(Args, Debug)]
 /// POST configuration - network parameters
 struct PostConfig {
+    /// The minimal number of units that must be initialized.
+    #[arg(long, default_value_t = 4)]
+    pub min_num_units: u32,
+    /// The maximal number of units that can be initialized.
+    #[arg(long, default_value_t = u32::MAX)]
+    pub max_num_units: u32,
+    ///  The number of labels per unit.
+    #[arg(long, default_value_t = 4294967296)]
+    pub labels_per_unit: u64,
     /// K1 specifies the difficulty for a label to be a candidate for a proof
-    #[arg(long, default_value = "26")]
+    #[arg(long, default_value_t = 26)]
     k1: u32,
     /// K2 is the number of labels below the required difficulty required for a proof
-    #[arg(long, default_value = "37")]
+    #[arg(long, default_value_t = 37)]
     k2: u32,
     /// K3 is the size of the subset of proof indices that is validated
-    #[arg(long, default_value = "37")]
+    #[arg(long, default_value_t = 37)]
     k3: u32,
     /// difficulty for the nonce proof of work (aka "k2pow")
     #[arg(
@@ -59,22 +73,6 @@ struct PostConfig {
     /// scrypt parameters for initialization
     #[command(flatten)]
     scrypt: ScryptParams,
-}
-
-impl From<PostConfig> for post::config::Config {
-    fn from(val: PostConfig) -> Self {
-        post::config::Config {
-            k1: val.k1,
-            k2: val.k2,
-            k3: val.k3,
-            pow_difficulty: val.pow_difficulty,
-            scrypt: post::ScryptParams::new(
-                val.scrypt.n.ilog2() as u8 - 1,
-                val.scrypt.r.ilog2() as u8,
-                val.scrypt.p.ilog2() as u8,
-            ),
-        }
-    }
 }
 
 /// Scrypt parameters for initialization
@@ -181,9 +179,25 @@ async fn main() -> eyre::Result<()> {
     log::info!("POST network parameters: {:?}", args.post_config);
     log::info!("POST proving settings: {:?}", args.post_settings);
 
+    let scrypt = post::config::ScryptParams::new(
+        args.post_config.scrypt.n,
+        args.post_config.scrypt.r,
+        args.post_config.scrypt.p,
+    );
     let service = post_service::service::PostService::new(
         args.dir,
-        args.post_config.into(),
+        post::config::ProofConfig {
+            k1: args.post_config.k1,
+            k2: args.post_config.k2,
+            k3: args.post_config.k3,
+            pow_difficulty: args.post_config.pow_difficulty,
+        },
+        post::config::InitConfig {
+            min_num_units: args.post_config.min_num_units,
+            max_num_units: args.post_config.max_num_units,
+            labels_per_unit: args.post_config.labels_per_unit,
+            scrypt,
+        },
         args.post_settings.nonces,
         args.post_settings.threads,
         args.post_settings.randomx_mode.into(),
@@ -219,5 +233,73 @@ async fn main() -> eyre::Result<()> {
     }
 
     let client = client::ServiceClient::new(args.address, args.reconnect_interval_s, tls, service)?;
-    client.run().await
+    let client_handle = tokio::spawn(client.run());
+
+    if let Some(pid) = args.watch_pid {
+        tokio::task::spawn_blocking(move || watch_pid(pid, Duration::from_secs(1))).await?;
+        Ok(())
+    } else {
+        client_handle.await?
+    }
+}
+
+// watch given PID and return when it dies
+fn watch_pid(pid: Pid, interval: Duration) {
+    log::info!("watching PID {pid}");
+
+    let mut sys = System::new();
+    while sys.refresh_process(pid) {
+        if let Some(p) = sys.process(pid) {
+            match p.status() {
+                ProcessStatus::Zombie | ProcessStatus::Dead => {
+                    break;
+                }
+                _ => {}
+            }
+        }
+        std::thread::sleep(interval);
+    }
+
+    log::info!("PID {pid} died");
+}
+
+#[cfg(test)]
+mod tests {
+    use std::process::Command;
+
+    use sysinfo::PidExt;
+
+    #[tokio::test]
+    async fn watching_pid_zombie() {
+        let mut proc = Command::new("sleep").arg("99999").spawn().unwrap();
+        let pid = proc.id();
+
+        let handle = tokio::task::spawn_blocking(move || {
+            super::watch_pid(
+                sysinfo::Pid::from_u32(pid),
+                std::time::Duration::from_millis(10),
+            )
+        });
+        // just kill leaves a zombie process
+        proc.kill().unwrap();
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn watching_pid_reaped() {
+        let mut proc = Command::new("sleep").arg("99999").spawn().unwrap();
+        let pid = proc.id();
+
+        let handle = tokio::task::spawn_blocking(move || {
+            super::watch_pid(
+                sysinfo::Pid::from_u32(pid),
+                std::time::Duration::from_millis(10),
+            )
+        });
+
+        // kill and wait
+        proc.kill().unwrap();
+        proc.wait().unwrap();
+        handle.await.unwrap();
+    }
 }

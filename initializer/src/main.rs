@@ -9,8 +9,8 @@ use base64::{engine::general_purpose, Engine};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use eyre::Context;
 use post::{
+    config::ScryptParams,
     initialize::{CpuInitializer, Initialize, LABEL_SIZE},
-    ScryptParams,
 };
 use rand::seq::IteratorRandom;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
@@ -128,7 +128,7 @@ fn verify_data(args: VerifyData) -> eyre::Result<()> {
     let input_file_size = input_file.metadata()?.len();
     let labels_in_file = input_file_size / 16;
     let labels_to_verify = (labels_in_file as f64 * (args.fraction / 100.0)) as usize;
-    let scrypt_params = ScryptParams::new(args.n.ilog2() as u8 - 1, 0, 0);
+    let scrypt_params = ScryptParams::new(args.n, 1, 1);
 
     let mut rng = rand::thread_rng();
     (0..labels_in_file)
@@ -171,11 +171,7 @@ fn initialize(args: InitializeArgs) -> eyre::Result<()> {
     eyre::ensure!(args.n.is_power_of_two(), "scrypt N must be a power of two");
 
     let mut initializer: Box<dyn Initialize> = match args.method {
-        InitializationMethod::Cpu => Box::new(CpuInitializer::new(ScryptParams::new(
-            args.n.ilog2() as u8 - 1,
-            0,
-            0,
-        ))),
+        InitializationMethod::Cpu => Box::new(CpuInitializer::new(ScryptParams::new(args.n, 1, 1))),
         InitializationMethod::Gpu => Box::new(OpenClInitializer::new(
             args.provider.map(ProviderId),
             args.n,

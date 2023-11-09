@@ -25,7 +25,7 @@ use rayon::prelude::{ParallelBridge, ParallelIterator};
 use crate::{
     cipher::AesCipher,
     compression::{compress_indices, required_bits},
-    config::Config,
+    config::ProofConfig,
     difficulty::proving_difficulty,
     metadata::{self, PostMetadata},
     pow,
@@ -61,13 +61,13 @@ pub struct ProvingParams {
 }
 
 impl ProvingParams {
-    pub fn new(metadata: &PostMetadata, cfg: &Config) -> eyre::Result<Self> {
+    pub fn new(metadata: &PostMetadata, cfg: &ProofConfig) -> eyre::Result<Self> {
         let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
         let mut pow_difficulty = [0u8; 32];
         let difficulty_scaled = U256::from_big_endian(&cfg.pow_difficulty) / metadata.num_units;
         difficulty_scaled.to_big_endian(&mut pow_difficulty);
         Ok(Self {
-            difficulty: proving_difficulty(cfg.k1, num_labels)?,
+            difficulty: proving_difficulty(cfg.k1, num_labels).map_err(|e| eyre::eyre!(e))?,
             pow_difficulty,
         })
     }
@@ -264,7 +264,7 @@ impl Prover for Prover8_56 {
 pub fn generate_proof<Stopper>(
     datadir: &Path,
     challenge: &[u8; 32],
-    cfg: Config,
+    cfg: ProofConfig,
     nonces: usize,
     threads: usize,
     pow_flags: RandomXFlag,
@@ -357,7 +357,6 @@ mod tests {
     use crate::{compression::decompress_indexes, difficulty::proving_difficulty};
     use mockall::predicate::{always, eq};
     use rand::{thread_rng, RngCore};
-    use scrypt_jane::scrypt::ScryptParams;
     use std::{collections::HashMap, iter::repeat};
 
     #[test]
@@ -383,12 +382,11 @@ mod tests {
             max_file_size: 1024,
             ..Default::default()
         };
-        let cfg = Config {
+        let cfg = ProofConfig {
             k1: 279,
             k2: 300,
             k3: 65,
             pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(1, 0, 0),
         };
         let params = ProvingParams::new(&meta, &cfg).unwrap();
         let mut pow_prover = pow::MockProver::new();
@@ -419,12 +417,11 @@ mod tests {
             max_file_size: 1024,
             ..Default::default()
         };
-        let cfg = Config {
+        let cfg = ProofConfig {
             k1: 279,
             k2: 300,
             k3: 65,
             pow_difficulty: [0xFF; 32],
-            scrypt: ScryptParams::new(1, 0, 0),
         };
         let mut pow_prover = pow::MockProver::new();
         pow_prover
@@ -438,12 +435,11 @@ mod tests {
     /// Test that PoW threshold is scaled with num_units.
     #[test]
     fn scaling_pows_thresholds() {
-        let cfg = Config {
+        let cfg = ProofConfig {
             k1: 32,
             k2: 32,
             k3: 10,
             pow_difficulty: [0x0F; 32],
-            scrypt: ScryptParams::new(2, 0, 0),
         };
         let metadata = PostMetadata {
             num_units: 1,

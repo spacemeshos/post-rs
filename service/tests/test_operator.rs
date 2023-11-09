@@ -6,7 +6,6 @@ use tokio::{net::TcpListener, time::sleep};
 use post::{
     initialize::{CpuInitializer, Initialize},
     pow::randomx::RandomXFlag,
-    ScryptParams,
 };
 use post_service::{
     client::spacemesh_v1::{service_response, GenProofStatus},
@@ -28,23 +27,43 @@ async fn test_gen_proof_in_progress() {
     // Initialize some data
     let datadir = tempfile::tempdir().unwrap();
 
-    let cfg = post::config::Config {
+    let cfg = post::config::ProofConfig {
         k1: 8,
         k2: 4,
         k3: 4,
         pow_difficulty: [0xFF; 32],
-        scrypt: ScryptParams::new(0, 0, 0),
+    };
+    let init_cfg = post::config::InitConfig {
+        min_num_units: 1,
+        max_num_units: 100,
+        labels_per_unit: 256,
+        scrypt: post::config::ScryptParams::new(2, 1, 1),
     };
 
-    CpuInitializer::new(cfg.scrypt)
-        .initialize(datadir.path(), &[0xBE; 32], &[0xCE; 32], 256, 4, 256, None)
+    CpuInitializer::new(init_cfg.scrypt)
+        .initialize(
+            datadir.path(),
+            &[0xBE; 32],
+            &[0xCE; 32],
+            init_cfg.labels_per_unit,
+            4,
+            256,
+            None,
+        )
         .unwrap();
 
     let pow_flags = RandomXFlag::get_recommended_flags();
 
     let service = Arc::new(
-        post_service::service::PostService::new(datadir.into_path(), cfg, 16, 1, pow_flags)
-            .unwrap(),
+        post_service::service::PostService::new(
+            datadir.into_path(),
+            cfg,
+            init_cfg,
+            16,
+            1,
+            pow_flags,
+        )
+        .unwrap(),
     );
 
     let mut test_server = TestServer::new().await;

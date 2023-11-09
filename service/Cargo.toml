@@ -1,6 +1,6 @@
 [package]
 name = "service"
-version = "0.5.1"
+version = "0.5.2"
 edition = "2021"
 
 [lib]
@@ -26,6 +26,7 @@ env_logger = "0.10.0"
 clap = { version = "4.4.4", features = ["derive"] }
 hex = "0.4.3"
 mockall = "0.11.4"
+sysinfo = "0.29.10"
 
 [build-dependencies]
 tonic-build = "0.10.0"
