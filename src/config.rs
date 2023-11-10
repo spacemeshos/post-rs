@@ -1,5 +1,9 @@
+use serde::Deserialize;
+
+/// POST configuration (network parameter)
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[serde_with::serde_as]
+#[derive(Debug, Clone, Copy, Deserialize)]
 pub struct InitConfig {
     /// The minimal number of units that must be initialized.
     pub min_num_units: u32,
@@ -12,7 +16,8 @@ pub struct InitConfig {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[serde_with::serde_as]
+#[derive(Debug, Clone, Copy, Deserialize)]
 pub struct ProofConfig {
     /// K1 specifies the difficulty for a label to be a candidate for a proof.
     pub k1: u32,
@@ -22,11 +27,12 @@ pub struct ProofConfig {
     pub k3: u32,
     /// Difficulty for the nonce proof of work. Lower values increase difficulty of finding
     /// `pow` for [Proof][crate::prove::Proof].
+    #[serde_as(as = "serde_with::hex::Hex")]
     pub pow_difficulty: [u8; 32],
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 pub struct ScryptParams {
     pub n: usize,
     pub r: usize,

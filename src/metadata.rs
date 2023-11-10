@@ -61,13 +61,16 @@ pub fn load(datadir: &Path) -> eyre::Result<PostMetadata> {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone)]
+#[serde_as]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProofMetadata {
+    #[serde_as(as = "Base64")]
     pub node_id: [u8; 32],
+    #[serde_as(as = "Base64")]
     pub commitment_atx_id: [u8; 32],
+    #[serde_as(as = "Base64")]
     pub challenge: [u8; 32],
     pub num_units: u32,
-    pub labels_per_unit: u64,
 }
 
 impl ProofMetadata {
@@ -77,7 +80,6 @@ impl ProofMetadata {
             node_id: post_metadata.node_id,
             commitment_atx_id: post_metadata.commitment_atx_id,
             num_units: post_metadata.num_units,
-            labels_per_unit: post_metadata.labels_per_unit,
         }
     }
 }

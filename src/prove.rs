@@ -21,6 +21,8 @@ use eyre::Context;
 use primitive_types::U256;
 use randomx_rs::RandomXFlag;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
+use serde::{Deserialize, Serialize};
+use serde_with::{base64::Base64, serde_as};
 
 use crate::{
     cipher::AesCipher,
@@ -37,9 +39,11 @@ const BLOCK_SIZE: usize = 16; // size of the aes block
 const AES_BATCH: usize = 8; // will use encrypt8 asm method
 const CHUNK_SIZE: usize = BLOCK_SIZE * AES_BATCH;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[serde_as]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct Proof<'a> {
     pub nonce: u32,
+    #[serde_as(as = "Base64")]
     pub indices: Cow<'a, [u8]>,
     pub pow: u64,
 }
