@@ -55,7 +55,7 @@ jobs:
       - if: matrix.os == 'ubuntu-latest'
         run: lscpu
       - if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev pocl-opencl-icd
+        run: sudo apt-get install -y libpocl2 intel-opencl-icd ocl-icd-opencl-dev
         name: Install dependencies for testing openCL
       - if: matrix.os == 'windows-2019'
         name: Install dependencies for linking openCL
@@ -131,7 +131,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - run: lscpu
       - name: Install opencl
-        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev pocl-opencl-icd
+        run: sudo apt-get install -y libpocl2 intel-opencl-icd ocl-icd-opencl-dev
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -192,7 +192,7 @@ jobs:
             toolchain: stable
     steps:
       - if: matrix.os == 'ubuntu-20.04'
-        run: sudo apt-get install -y mesa-opencl-icd ocl-icd-opencl-dev
+        run: sudo apt-get install -y ocl-icd-opencl-dev
         name: Install opencl
       - if: matrix.os == 'windows-2019'
         name: Install opencl
