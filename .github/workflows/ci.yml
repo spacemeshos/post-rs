@@ -67,26 +67,17 @@ jobs:
         run: cargo test --all-features --release
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
 
       - name: Test scrypt-ocl crate
         if: matrix.os != 'windows-2019'
         run: cargo test -p scrypt-ocl --all-features --release -- --test-threads=1
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
 
       - name: Test ffi crate
         run: cargo test -p post-cbindings --all-features --release -- --test-threads=1
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
 
   fmt:
     name: Rustfmt
@@ -218,9 +209,6 @@ jobs:
         run: cargo build -p post-cbindings --profile release-clib
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -235,9 +223,6 @@ jobs:
         run: cargo build -p profiler --release
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
       - name: Archive profiler artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -253,7 +238,6 @@ jobs:
         run: cargo build -p service --release
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
       - name: Archive service artifacts
         uses: actions/upload-artifact@v3
         with:
