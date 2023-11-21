@@ -30,7 +30,6 @@ pub mod spacemesh_v1 {
 
 pub struct ServiceClient<S: PostService> {
     endpoint: Endpoint,
-    reconnect_interval: Duration,
     service: S,
 }
 
@@ -69,7 +68,6 @@ impl<T: PostService + ?Sized> PostService for std::sync::Arc<T> {
 impl<S: PostService> ServiceClient<S> {
     pub fn new(
         address: String,
-        reconnect_interval: Duration,
         tls: Option<(Option<String>, Certificate, Identity)>,
         service: S,
     ) -> eyre::Result<Self> {
@@ -96,28 +94,37 @@ impl<S: PostService> ServiceClient<S> {
             None => endpoint,
         };
 
-        Ok(Self {
-            endpoint,
-            reconnect_interval,
-            service,
-        })
+        Ok(Self { endpoint, service })
     }
 
-    pub async fn run(mut self) -> eyre::Result<()> {
+    pub async fn run(
+        mut self,
+        max_retries: Option<usize>,
+        reconnect_interval: Duration,
+    ) -> eyre::Result<()> {
         loop {
+            let mut attempt = 1;
             let client = loop {
-                log::debug!("connecting to the node on {}", self.endpoint.uri());
+                log::debug!(
+                    "connecting to the node on {} (attempt {})",
+                    self.endpoint.uri(),
+                    attempt
+                );
                 match PostServiceClient::connect(self.endpoint.clone()).await {
                     Ok(client) => break client,
                     Err(e) => {
                         log::info!("could not connect to the node: {e}");
-                        sleep(self.reconnect_interval).await;
+                        if let Some(max) = max_retries {
+                            eyre::ensure!(attempt <= max, "max retries ({max}) reached");
+                        }
+                        sleep(reconnect_interval).await;
                     }
                 }
+                attempt += 1;
             };
             let res = self.register_and_serve(client).await;
             log::info!("disconnected: {res:?}");
-            sleep(self.reconnect_interval).await;
+            sleep(reconnect_interval).await;
         }
     }
 
@@ -275,7 +282,6 @@ mod tests {
         let client_crt = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
         super::ServiceClient::new(
             "https://localhost:1234".to_string(),
-            Default::default(),
             Some((
                 None,
                 Certificate::from_pem(crt.serialize_pem().unwrap()),

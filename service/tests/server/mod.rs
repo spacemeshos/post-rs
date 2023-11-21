@@ -118,13 +118,7 @@ impl TestServer {
     where
         S: PostService,
     {
-        ServiceClient::new(
-            format!("http://{}", self.addr),
-            std::time::Duration::from_secs(1),
-            None,
-            service,
-        )
-        .unwrap()
+        ServiceClient::new(format!("http://{}", self.addr), None, service).unwrap()
     }
 
     pub async fn generate_proof(
