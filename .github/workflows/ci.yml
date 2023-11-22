@@ -32,8 +32,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: [self-hosted, linux, x64, intel]
             toolchain: stable
+            runner: self-hosted-linux-intel
           - os: [self-hosted, linux, arm64]
             rustflags: --cfg=aes_armv8
             toolchain: nightly-2023-06-27 # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
@@ -52,11 +53,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-      - if: matrix.os == 'ubuntu-20.04'
-        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
-        name: Install dependencies for testing openCL
+      - if: matrix.runner == 'self-hosted-linux-intel'
+        run: sudo apt-get update && sudo apt-get install -y libpocl2 pocl-opencl-icd ocl-icd-opencl-dev
+        name: Install dependencies for testing openCL on Linux
       - if: matrix.os == 'windows-2019'
-        name: Install dependencies for linking openCL
+        name: Install dependencies for testing openCL on Windows
         run: |
           choco install -y wget unzip opencl-intel-cpu-runtime
           wget https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v2023.04.17/OpenCL-SDK-v2023.04.17-Win-x64.zip
@@ -113,13 +114,13 @@ jobs:
           args: --all-features --workspace
 
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, intel]
     steps:
       - uses: arduino/setup-protoc@v2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install opencl
-        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
+        run: sudo apt-get update && sudo apt-get install -y libpocl2 pocl-opencl-icd ocl-icd-opencl-dev
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -147,7 +148,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: ubuntu-latest
             dylib: libpost.so
             staticlib: libpost.a
             artifact-name: linux
@@ -179,8 +180,8 @@ jobs:
             artifact-name: windows
             toolchain: stable
     steps:
-      - if: matrix.os == 'ubuntu-20.04'
-        run: sudo apt-get install -y mesa-opencl-icd ocl-icd-opencl-dev
+      - if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y ocl-icd-opencl-dev
         name: Install opencl
       - if: matrix.os == 'windows-2019'
         name: Install opencl
