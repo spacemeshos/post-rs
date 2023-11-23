@@ -30,7 +30,6 @@ pub mod spacemesh_v1 {
 
 pub struct ServiceClient<S: PostService> {
     endpoint: Endpoint,
-    reconnect_interval: Duration,
     service: S,
 }
 
@@ -69,7 +68,6 @@ impl<T: PostService + ?Sized> PostService for std::sync::Arc<T> {
 impl<S: PostService> ServiceClient<S> {
     pub fn new(
         address: String,
-        reconnect_interval: Duration,
         tls: Option<(Option<String>, Certificate, Identity)>,
         service: S,
     ) -> eyre::Result<Self> {
@@ -96,28 +94,37 @@ impl<S: PostService> ServiceClient<S> {
             None => endpoint,
         };
 
-        Ok(Self {
-            endpoint,
-            reconnect_interval,
-            service,
-        })
+        Ok(Self { endpoint, service })
     }
 
-    pub async fn run(mut self) -> eyre::Result<()> {
+    pub async fn run(
+        mut self,
+        max_retries: Option<usize>,
+        reconnect_interval: Duration,
+    ) -> eyre::Result<()> {
         loop {
+            let mut attempt = 1;
             let client = loop {
-                log::debug!("connecting to the node on {}", self.endpoint.uri());
+                log::debug!(
+                    "connecting to the node on {} (attempt {})",
+                    self.endpoint.uri(),
+                    attempt
+                );
                 match PostServiceClient::connect(self.endpoint.clone()).await {
                     Ok(client) => break client,
                     Err(e) => {
                         log::info!("could not connect to the node: {e}");
-                        sleep(self.reconnect_interval).await;
+                        if let Some(max) = max_retries {
+                            eyre::ensure!(attempt <= max, "max retries ({max}) reached");
+                        }
+                        sleep(reconnect_interval).await;
                     }
                 }
+                attempt += 1;
             };
             let res = self.register_and_serve(client).await;
             log::info!("disconnected: {res:?}");
-            sleep(self.reconnect_interval).await;
+            sleep(reconnect_interval).await;
         }
     }
 
@@ -267,6 +274,8 @@ fn convert_metadata(meta: PostMetadata) -> spacemesh_v1::Metadata {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use tonic::transport::{Certificate, Identity};
 
     #[test]
@@ -275,7 +284,6 @@ mod tests {
         let client_crt = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
         super::ServiceClient::new(
             "https://localhost:1234".to_string(),
-            Default::default(),
             Some((
                 None,
                 Certificate::from_pem(crt.serialize_pem().unwrap()),
@@ -287,5 +295,18 @@ mod tests {
             super::MockPostService::new(),
         )
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn gives_up_after_max_retries() {
+        let client = super::ServiceClient::new(
+            "http://localhost:1234".to_string(),
+            None,
+            super::MockPostService::new(),
+        )
+        .unwrap();
+
+        let res = client.run(Some(2), Duration::from_millis(1)).await;
+        assert_eq!(res.unwrap_err().to_string(), "max retries (2) reached");
     }
 }

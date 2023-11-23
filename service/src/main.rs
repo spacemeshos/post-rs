@@ -21,6 +21,10 @@ struct Cli {
     /// time to wait before reconnecting to the node
     #[arg(long, default_value = "5", value_parser = |secs: &str| secs.parse().map(Duration::from_secs))]
     reconnect_interval_s: Duration,
+    /// Maximum number of retries to connect to the node
+    /// The default is infinite.
+    #[arg(long)]
+    max_retries: Option<usize>,
 
     #[command(flatten, next_help_heading = "POST configuration")]
     post_config: PostConfig,
@@ -219,14 +223,28 @@ async fn main() -> eyre::Result<()> {
         None
     };
 
-    let client = client::ServiceClient::new(args.address, args.reconnect_interval_s, tls, service)?;
-    let client_handle = tokio::spawn(client.run());
+    let client = client::ServiceClient::new(args.address, tls, service)?;
+    let client_handle = tokio::spawn(client.run(args.max_retries, args.reconnect_interval_s));
 
-    if let Some(pid) = args.watch_pid {
-        tokio::task::spawn_blocking(move || watch_pid(pid, Duration::from_secs(1))).await?;
-        Ok(())
-    } else {
-        client_handle.await?
+    tokio::select! {
+        Some(err) = watch_pid_if_needed(args.watch_pid) => {
+            log::info!("PID watcher exited: {err:?}");
+            return Ok(())
+        }
+        err = client_handle => {
+            return err.unwrap();
+        }
+    }
+}
+
+async fn watch_pid_if_needed(
+    pid: Option<Pid>,
+) -> Option<std::result::Result<(), tokio::task::JoinError>> {
+    match pid {
+        Some(pid) => {
+            Some(tokio::task::spawn_blocking(move || watch_pid(pid, Duration::from_secs(1))).await)
+        }
+        None => None,
     }
 }
 
@@ -254,7 +272,18 @@ fn watch_pid(pid: Pid, interval: Duration) {
 mod tests {
     use std::process::Command;
 
-    use sysinfo::PidExt;
+    use sysinfo::{Pid, PidExt};
+
+    #[tokio::test]
+    async fn watch_pid_if_needed() {
+        // Don't watch
+        assert!(super::watch_pid_if_needed(None).await.is_none());
+        // Watch
+        super::watch_pid_if_needed(Some(Pid::from(0)))
+            .await
+            .expect("should be some")
+            .expect("should be OK");
+    }
 
     #[tokio::test]
     async fn watching_pid_zombie() {

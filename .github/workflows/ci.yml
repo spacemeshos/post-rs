@@ -47,6 +47,9 @@ jobs:
             toolchain: stable
 
     steps:
+      - uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -64,8 +67,8 @@ jobs:
           unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
       - uses: Swatinem/rust-cache@v2
 
-      - name: Test post crate
-        run: cargo test --all-features --release
+      - name: Tests
+        run: cargo test --all-features --release -p post-rs -p certifier -p service
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
           # https://github.com/tevador/RandomX/issues/262
