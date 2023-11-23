@@ -274,6 +274,8 @@ fn convert_metadata(meta: PostMetadata) -> spacemesh_v1::Metadata {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use tonic::transport::{Certificate, Identity};
 
     #[test]
@@ -293,5 +295,18 @@ mod tests {
             super::MockPostService::new(),
         )
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn gives_up_after_max_retries() {
+        let client = super::ServiceClient::new(
+            "http://localhost:1234".to_string(),
+            None,
+            super::MockPostService::new(),
+        )
+        .unwrap();
+
+        let res = client.run(Some(2), Duration::from_millis(1)).await;
+        assert_eq!(res.unwrap_err().to_string(), "max retries (2) reached");
     }
 }

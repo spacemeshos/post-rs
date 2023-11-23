@@ -51,7 +51,7 @@ async fn test_certificate_post_proof() {
     // Spawn the certifier service
     let signer = SigningKey::generate(&mut rand::rngs::OsRng);
     let app = certifier::certifier::new(cfg, init_cfg, signer);
-    let server = axum::Server::bind(&"127.0.0.1:0".parse().unwrap()).serve(app.into_make_service());
+    let server = axum::Server::bind(&([127, 0, 0, 1], 0).into()).serve(app.into_make_service());
     let addr = server.local_addr();
     tokio::spawn(server);
 
