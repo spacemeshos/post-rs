@@ -47,6 +47,9 @@ jobs:
             toolchain: stable
 
     steps:
+      - uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -64,30 +67,21 @@ jobs:
           unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
       - uses: Swatinem/rust-cache@v2
 
-      - name: Test post crate
-        run: cargo test --all-features --release
+      - name: Tests
+        run: cargo test --all-features --release -p post-rs -p certifier -p service
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
 
       - name: Test scrypt-ocl crate
         if: matrix.os != 'windows-2019'
         run: cargo test -p scrypt-ocl --all-features --release -- --test-threads=1
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
 
       - name: Test ffi crate
         run: cargo test -p post-cbindings --all-features --release -- --test-threads=1
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
 
   fmt:
     name: Rustfmt
@@ -219,9 +213,6 @@ jobs:
         run: cargo build -p post-cbindings --profile release-clib
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -236,9 +227,6 @@ jobs:
         run: cargo build -p profiler --release
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
       - name: Archive profiler artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -254,7 +242,6 @@ jobs:
         run: cargo build -p service --release
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
       - name: Archive service artifacts
         uses: actions/upload-artifact@v3
         with:
