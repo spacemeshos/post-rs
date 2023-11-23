@@ -32,9 +32,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: [self-hosted, linux, x64, intel]
+          - os: [self-hosted, linux, x64, gke]
             toolchain: stable
-            runner: self-hosted-linux-intel
+            runner: self-hosted-linux-gke
           - os: [self-hosted, linux, arm64]
             rustflags: --cfg=aes_armv8
             toolchain: nightly-2023-06-27 # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
@@ -56,7 +56,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.toolchain }}
-      - if: matrix.runner == 'self-hosted-linux-intel'
+      - if: matrix.runner == 'self-hosted-linux-gke'
         run: sudo apt-get update && sudo apt-get install -y libpocl2 pocl-opencl-icd ocl-icd-opencl-dev
         name: Install dependencies for testing openCL on Linux
       - if: matrix.os == 'windows-2019'
@@ -117,7 +117,7 @@ jobs:
           args: --all-features --workspace
 
   coverage:
-    runs-on: [self-hosted, linux, x64, intel]
+    runs-on: [self-hosted, linux, x64, gke]
     steps:
       - uses: arduino/setup-protoc@v2
         with:
