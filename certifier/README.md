@@ -48,6 +48,11 @@ metrics: "127.0.0.1:9090"
 
 Each field can also be provided as env variable prefixed with CERTIFIER. For example, `CERTIFIER_SIGNING_KEY`.
 
+##### Concurrency limit
+It's important to configure the maximum number of requests that will be processed in parallel.
+The POST verification is heavy on CPU and hence a value higher than the number of CPU cores might lead to drop in performance and increase latency.
+It will use the number of available CPU cores if not set.
+
 #### Docker
 There is a docker image created to simplify deployment: `spacemeshos/certifier-service`.
 

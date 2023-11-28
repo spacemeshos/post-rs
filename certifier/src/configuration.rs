@@ -7,7 +7,13 @@ use tracing::info;
 #[serde_as]
 #[derive(serde::Deserialize, Clone)]
 pub struct Config {
+    /// The address to listen on for incoming requests.
     pub listen: std::net::SocketAddr,
+
+    /// The maximum number of requests to process in parallel.
+    /// Typically set to the number of cores, which is the default (if not set).
+    pub max_concurrent_requests: Option<usize>,
+
     #[serde_as(as = "Base64")]
     /// The base64-encoded secret key used to sign the proofs.
     /// It's 256-bit key as defined in [RFC8032 § 5.1.5].
