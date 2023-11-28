@@ -5,11 +5,13 @@ use axum::{extract::State, Json};
 use axum::{routing::post, Router};
 use ed25519_dalek::{Signer, SigningKey};
 use post::config::{InitConfig, ProofConfig};
-use post::pow::randomx::{PoW, RandomXFlag};
+use post::pow::randomx::PoW;
 use post::verification::Verifier;
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 use tracing::instrument;
+
+use crate::configuration::RandomXMode;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CertifyRequest {
@@ -66,10 +68,15 @@ struct AppState {
     signer: SigningKey,
 }
 
-pub fn new(cfg: ProofConfig, init_cfg: InitConfig, signer: SigningKey) -> Router {
+pub fn new(
+    cfg: ProofConfig,
+    init_cfg: InitConfig,
+    signer: SigningKey,
+    randomx_mode: RandomXMode,
+) -> Router {
     let state = AppState {
         verifier: Verifier::new(Box::new(
-            PoW::new(RandomXFlag::get_recommended_flags()).expect("creating RandomX PoW verifier"),
+            PoW::new(randomx_mode.into()).expect("creating RandomX PoW verifier"),
         )),
         cfg,
         init_cfg,

@@ -1,4 +1,4 @@
-use std::{path::PathBuf, thread};
+use std::path::PathBuf;
 
 use axum::routing::get;
 use axum_prometheus::PrometheusMetricLayerBuilder;
@@ -75,14 +75,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("listening on: {:?}, pubkey: {}", config.listen, pubkey_b64,);
     info!("POST proof configuration: {:?}", config.post_cfg);
     info!("POST init configuration: {:?}", config.init_cfg);
+    info!("RandomX mode: {:?}", config.randomx_mode);
+    info!(
+        "max concurrent requests: {}",
+        config.max_concurrent_requests
+    );
 
-    let max_concurrent_requests = config
-        .max_concurrent_requests
-        .unwrap_or(thread::available_parallelism()?.get());
-    info!("max concurrent requests: {max_concurrent_requests}");
-
-    let mut app = certifier::certifier::new(config.post_cfg, config.init_cfg, signer)
-        .layer(ConcurrencyLimitLayer::new(max_concurrent_requests));
+    let mut app = certifier::certifier::new(
+        config.post_cfg,
+        config.init_cfg,
+        signer,
+        config.randomx_mode,
+    )
+    .layer(ConcurrencyLimitLayer::new(config.max_concurrent_requests));
 
     if let Some(addr) = config.metrics {
         info!("metrics enabled on: http://{addr:?}/metrics");

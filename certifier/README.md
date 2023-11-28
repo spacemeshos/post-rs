@@ -44,6 +44,7 @@ init_cfg:
     p: 1
 
 metrics: "127.0.0.1:9090"
+randomx_mode: Fast
 ```
 
 Each field can also be provided as env variable prefixed with CERTIFIER. For example, `CERTIFIER_SIGNING_KEY`.
@@ -52,6 +53,13 @@ Each field can also be provided as env variable prefixed with CERTIFIER. For exa
 It's important to configure the maximum number of requests that will be processed in parallel.
 The POST verification is heavy on CPU and hence a value higher than the number of CPU cores might lead to drop in performance and increase latency.
 It will use the number of available CPU cores if not set.
+
+##### RandomX mode
+Randomx is used for K2 PoW verification. There are two modes:
+- `Fast`: uses about 2080MiB memory, runs fast
+- `Light` (default): uses about 256MiB memory, but runs significantly slower (about x10 slower)
+
+The modes give the same results, they differ in speed and memory consumption only.
 
 #### Docker
 There is a docker image created to simplify deployment: `spacemeshos/certifier-service`.
