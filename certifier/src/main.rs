@@ -1,10 +1,11 @@
-use std::path::PathBuf;
+use std::{future::IntoFuture, path::PathBuf};
 
 use axum::routing::get;
 use axum_prometheus::PrometheusMetricLayerBuilder;
 use base64::{engine::general_purpose, Engine as _};
 use clap::{arg, Parser, Subcommand};
 use ed25519_dalek::SigningKey;
+use tokio::net::TcpListener;
 use tracing::info;
 use tracing_log::LogTracer;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
@@ -85,11 +86,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         app = app.layer(layer);
         let metrics = axum::Router::new().route("/metrics", get(|| async move { handle.render() }));
-        tokio::spawn(axum::Server::bind(&addr).serve(metrics.into_make_service()));
+        let listener = TcpListener::bind(addr).await?;
+        tokio::spawn(axum::serve(listener, metrics.into_make_service()).into_future());
     }
 
-    axum::Server::bind(&config.listen)
-        .serve(app.into_make_service())
-        .await?;
+    let listener = TcpListener::bind(config.listen).await?;
+    axum::serve(listener, app.into_make_service()).await?;
     Ok(())
 }
