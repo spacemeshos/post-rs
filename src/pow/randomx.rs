@@ -30,6 +30,7 @@ impl PoW {
         } else {
             (Some(cache), None)
         };
+        log::debug!("RandomX initialized");
 
         Ok(Self {
             cache,

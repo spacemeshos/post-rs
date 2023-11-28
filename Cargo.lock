@@ -480,6 +480,7 @@ dependencies = [
  "serde_with 3.4.0",
  "tempfile",
  "tokio",
+ "tower",
  "tracing",
  "tracing-log 0.2.0",
  "tracing-subscriber",

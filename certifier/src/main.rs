@@ -5,6 +5,7 @@ use axum_prometheus::PrometheusMetricLayerBuilder;
 use base64::{engine::general_purpose, Engine as _};
 use clap::{arg, Parser, Subcommand};
 use ed25519_dalek::SigningKey;
+use tower::limit::ConcurrencyLimitLayer;
 use tracing::info;
 use tracing_log::LogTracer;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
@@ -72,9 +73,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pubkey_b64 = general_purpose::STANDARD.encode(signer.verifying_key().as_bytes());
 
     info!("listening on: {:?}, pubkey: {}", config.listen, pubkey_b64,);
-    info!("using POST configuration: {:?}", config.post_cfg);
+    info!("POST proof configuration: {:?}", config.post_cfg);
+    info!("POST init configuration: {:?}", config.init_cfg);
+    info!("RandomX mode: {:?}", config.randomx_mode);
+    info!(
+        "max concurrent requests: {}",
+        config.max_concurrent_requests
+    );
 
-    let mut app = certifier::certifier::new(config.post_cfg, config.init_cfg, signer);
+    let mut app = certifier::certifier::new(
+        config.post_cfg,
+        config.init_cfg,
+        signer,
+        config.randomx_mode,
+    )
+    .layer(ConcurrencyLimitLayer::new(config.max_concurrent_requests));
 
     if let Some(addr) = config.metrics {
         info!("metrics enabled on: http://{addr:?}/metrics");
