@@ -1,4 +1,4 @@
-use std::sync::atomic::AtomicBool;
+use std::{future::IntoFuture, net::SocketAddr, str::FromStr, sync::atomic::AtomicBool};
 
 use certifier::{certifier::CertifyRequest, configuration::RandomXMode};
 use ed25519_dalek::SigningKey;
@@ -10,6 +10,7 @@ use post::{
     prove::generate_proof,
 };
 use reqwest::StatusCode;
+use tokio::net::TcpListener;
 
 #[tokio::test]
 async fn test_certificate_post_proof() {
@@ -51,9 +52,12 @@ async fn test_certificate_post_proof() {
     // Spawn the certifier service
     let signer = SigningKey::generate(&mut rand::rngs::OsRng);
     let app = certifier::certifier::new(cfg, init_cfg, signer, RandomXMode::Light);
-    let server = axum::Server::bind(&([127, 0, 0, 1], 0).into()).serve(app.into_make_service());
-    let addr = server.local_addr();
-    tokio::spawn(server);
+    let listener = TcpListener::bind(SocketAddr::from_str("127.0.0.1:0").unwrap())
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = axum::serve(listener, app.into_make_service());
+    tokio::spawn(server.into_future());
 
     let client = reqwest::Client::new();
 
