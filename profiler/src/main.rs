@@ -1,4 +1,7 @@
+mod tui;
 mod util;
+
+use tui::start_tui;
 
 use std::{
     cmp::min,
@@ -28,7 +31,7 @@ struct Cli {
     command: Option<Commands>,
 
     #[clap(flatten)]
-    default: ProvingArgs,
+    default: TuiArgs,
 }
 
 #[derive(Subcommand)]
@@ -38,6 +41,12 @@ enum Commands {
     Proving(ProvingArgs),
     /// Bench proof of work.
     Pow(PowArgs),
+    Tui(TuiArgs),
+}
+
+#[derive(Args, Debug)]
+struct TuiArgs {
+    tui: Option<bool>,
 }
 
 #[derive(Args, Debug)]
@@ -89,8 +98,6 @@ struct PowArgs {
     /// '0' means use all available threads
     #[arg(short, long, default_value_t = 1)]
     threads: usize,
-
-    /// Number of nonces to attempt in single pass over POS data.
     ///
     /// Each group of 16 nonces requires a separate PoW. Must be a multiple of 16.
     ///
@@ -193,14 +200,23 @@ fn main() -> eyre::Result<()> {
     env_logger::init();
     let args = Cli::parse();
 
-    match args.command.unwrap_or(Commands::Proving(args.default)) {
-        Commands::Proving(args) => proving(args),
-        Commands::Pow(args) => pow(args),
+    match args.command.unwrap_or(Commands::Tui(args.default)) {
+        Commands::Proving(args) => {
+            let _ = proving(args);
+            Ok(())
+        }
+        Commands::Pow(args) => {
+            let _ = pow(args);
+            Ok(())
+        }
+        Commands::Tui(args) => start_tui(args),
     }
 }
 
 /// Bench proving speed (going over POS data).
-fn proving(args: ProvingArgs) -> eyre::Result<()> {
+fn proving(args: ProvingArgs) -> eyre::Result<PerfResult> {
+    eprintln!("proving with args: {:?}", args);
+
     let challenge = b"hello world, challenge me!!!!!!!";
     let batch_size = 1024 * 1024;
     let total_size = args.data_size * 1024 * 1024 * 1024;
@@ -242,9 +258,9 @@ fn proving(args: ProvingArgs) -> eyre::Result<()> {
         time_s: total_time.as_secs_f64(),
         speed_gib_s: processed as f64 / total_time.as_secs_f64(),
     };
-    println!("{}", serde_json::to_string_pretty(&result)?);
+    eprintln!("{}", serde_json::to_string_pretty(&result)?);
 
-    Ok(())
+    Ok(result)
 }
 
 #[derive(Debug, Serialize)]
@@ -258,7 +274,7 @@ struct PowPerfResult {
 }
 
 /// Bench K2 Proof of Work
-fn pow(args: PowArgs) -> eyre::Result<()> {
+fn pow(args: PowArgs) -> eyre::Result<PowPerfResult> {
     eprintln!(
         "Benchmarking PoW for 1 space unit and 16 nonces (the result will be scaled automatically to {} units and {} nonces).",
         args.num_units, args.nonces,
@@ -298,14 +314,14 @@ fn pow(args: PowArgs) -> eyre::Result<()> {
     })?;
 
     let total = durations.iter().sum::<time::Duration>() * (args.nonces / 16) * args.num_units;
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&PowPerfResult {
-            randomx_vm_init_time,
-            average_time: total / durations.len() as u32,
-            iterations: durations.len(),
-        })?
-    );
 
-    Ok(())
+    let result = PowPerfResult {
+        randomx_vm_init_time,
+        average_time: total / durations.len() as u32,
+        iterations: durations.len(),
+    };
+
+    eprintln!("{}", serde_json::to_string_pretty(&result)?);
+
+    Ok(result)
 }

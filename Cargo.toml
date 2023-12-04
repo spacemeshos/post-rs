@@ -1,12 +1,12 @@
 [workspace]
 members = [
-    ".",
-    "ffi",
-    "scrypt-ocl",
-    "initializer",
-    "profiler",
-    "service",
-    "certifier",
+  ".",
+  "ffi",
+  "scrypt-ocl",
+  "initializer",
+  "profiler",
+  "service",
+  "certifier",
 ]
 
 [package]
