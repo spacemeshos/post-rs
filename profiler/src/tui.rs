@@ -380,7 +380,6 @@ fn perf_result_view(s: &mut Cursive, result: PerfResult) {
     );
 }
 fn powperf_result_view(s: &mut Cursive, result: PowPerfResult) {
-    // A little break before things get serious.
     s.set_autorefresh(false);
     s.pop_layer();
     s.add_layer(
