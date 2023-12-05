@@ -118,7 +118,7 @@ pub fn start_tui(_args: TuiArgs) -> eyre::Result<()> {
                                         .with_name("num_units"),
                                 )
                                 .child(
-                                    "difficulty: ",
+                                    "Difficulty: ",
                                     EditView::new()
                                         .content(current_data.pow.difficulty.to_string().clone())
                                         .with_name("difficulty"),
