@@ -272,6 +272,12 @@ mod tests {
     use super::{verify_pos, InitializeResult, CPU_PROVIDER_ID};
 
     #[test]
+    fn get_providers_null_out() {
+        let result = super::get_providers(null_mut(), 0);
+        assert_eq!(InitializeResult::InvalidArgument, result);
+    }
+
+    #[test]
     fn cant_initialize_more_than_2_64_labels() {
         let initializer = super::new_initializer(CPU_PROVIDER_ID, 32, [0u8; 32].as_ptr(), null());
 

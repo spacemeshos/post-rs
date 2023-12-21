@@ -260,6 +260,12 @@ mod tests {
     }
 
     #[test]
+    fn create_verifier_with_null_out() {
+        let result = super::new_verifier(RandomXFlag::default(), std::ptr::null_mut());
+        assert_eq!(result, super::NewVerifierResult::InvalidArgument);
+    }
+
+    #[test]
     fn detects_null_verifier() {
         let result = unsafe {
             super::verify_proof(
