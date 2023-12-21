@@ -67,16 +67,18 @@ pub enum Error {
     InvalidPoW(#[from] crate::pow::Error),
     #[error("invalid number of indices (expected: {expected}, got: {got})")]
     InvalidIndicesLen { expected: usize, got: usize },
-    #[error("MSB value for index: {index} doesn't satisfy difficulty: {msb} > {difficulty_msb} (label: {label:?})")]
+    #[error("MSB value for index: {index} (id: {index_id}) doesn't satisfy difficulty: {msb} > {difficulty_msb} (label: {label:?})")]
     InvalidMsb {
         index: u64,
+        index_id: usize,
         msb: u8,
         difficulty_msb: u8,
         label: [u8; 16],
     },
-    #[error("LSB value for index: {index} doesn't satisfy difficulty: {lsb} >= {difficulty_lsb} (label: {label:?})")]
+    #[error("LSB value for index: {index} (id: {index_id}) doesn't satisfy difficulty: {lsb} >= {difficulty_lsb} (label: {label:?})")]
     InvalidLsb {
         index: u64,
+        index_id: usize,
         lsb: u64,
         difficulty_lsb: u64,
         label: [u8; 16],
@@ -186,9 +188,9 @@ impl Verifier {
             &proof.pow.to_le_bytes(),
         ];
 
-        let k3_indices = RandomValuesIterator::new(indices_unpacked, seed).take(cfg.k3 as usize);
-
-        k3_indices.into_iter().try_for_each(|index| {
+        let k3_indices = RandomValuesIterator::new(indices_unpacked.into_iter().enumerate(), seed)
+            .take(cfg.k3 as usize);
+        for (index_id, index) in k3_indices {
             let mut output = [0u8; 16];
             let label = generate_label(&commitment, init_cfg.scrypt, index);
             cipher
@@ -203,6 +205,7 @@ impl Verifier {
                 Ordering::Greater => {
                     return Err(Error::InvalidMsb {
                         index,
+                        index_id,
                         msb,
                         difficulty_msb,
                         label,
@@ -219,6 +222,7 @@ impl Verifier {
                     if lsb >= difficulty_lsb {
                         return Err(Error::InvalidLsb {
                             index,
+                            index_id,
                             lsb,
                             difficulty_lsb,
                             label,
@@ -226,8 +230,8 @@ impl Verifier {
                     }
                 }
             }
-            Ok(())
-        })
+        }
+        Ok(())
     }
 }
 

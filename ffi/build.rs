@@ -9,6 +9,7 @@ fn main() {
 
     let mut config = Config::default();
     config.macro_expansion.bitflags = true;
+    config.enumeration.prefix_with_name = true;
 
     cbindgen::Builder::new()
         .with_config(config)

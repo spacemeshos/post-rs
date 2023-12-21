@@ -113,10 +113,38 @@ fn _generate_proof(
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VerifyResult {
+    /// Proof is valid
     Ok,
+    /// Invalid for other reasons
     Invalid,
+    /// Found invalid label
+    /// The index (in Proof.indices) of the index of invalid label is returned.
+    /// Say the proof has 3 indices [100, 200, 500] (these index labels in POS data),
+    /// if the label at index 200 is found invalid, the index 1 is returned.
+    InvalidIndex { index_id: usize },
+    /// Can't verify proof because invalid argument was passed
     InvalidArgument,
-    FailedToCreateVerifier,
+}
+
+impl From<post::verification::Error> for VerifyResult {
+    fn from(err: post::verification::Error) -> Self {
+        match err {
+            post::verification::Error::InvalidMsb { index_id, .. } => {
+                VerifyResult::InvalidIndex { index_id }
+            }
+            post::verification::Error::InvalidLsb { index_id, .. } => {
+                VerifyResult::InvalidIndex { index_id }
+            }
+            _ => VerifyResult::Invalid,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewVerifierResult {
+    Ok,
+    InvalidArgument,
     Failed,
 }
 
@@ -134,19 +162,19 @@ pub extern "C" fn recommended_pow_flags() -> RandomXFlag {
 }
 
 #[no_mangle]
-pub extern "C" fn new_verifier(flags: RandomXFlag, out: *mut *mut Verifier) -> VerifyResult {
+pub extern "C" fn new_verifier(flags: RandomXFlag, out: *mut *mut Verifier) -> NewVerifierResult {
     if out.is_null() {
-        return VerifyResult::InvalidArgument;
+        return NewVerifierResult::InvalidArgument;
     }
     match PoW::new(flags) {
         Ok(verifier) => {
             unsafe { *out = Box::into_raw(Box::new(Verifier::new(Box::new(verifier)))) };
-            VerifyResult::Ok
+            NewVerifierResult::Ok
         }
 
         Err(e) => {
             log::error!("{e:?}");
-            VerifyResult::FailedToCreateVerifier
+            NewVerifierResult::Failed
         }
     }
 }
@@ -196,7 +224,7 @@ pub unsafe extern "C" fn verify_proof(
         Ok(_) => VerifyResult::Ok,
         Err(err) => {
             log::error!("Proof is invalid: {err}");
-            VerifyResult::Invalid
+            err.into()
         }
     }
 }
@@ -232,7 +260,7 @@ mod tests {
     fn create_and_free_verifier() {
         let mut verifier = std::ptr::null_mut();
         let result = super::new_verifier(RandomXFlag::default(), &mut verifier);
-        assert_eq!(result, super::VerifyResult::Ok);
+        assert_eq!(result, super::NewVerifierResult::Ok);
         assert!(!verifier.is_null());
         super::free_verifier(verifier);
     }
@@ -304,8 +332,8 @@ mod tests {
 
         // Create verifier
         let mut verifier = std::ptr::null_mut();
-        let result: crate::post_impl::VerifyResult = super::new_verifier(pow_flags, &mut verifier);
-        assert_eq!(result, super::VerifyResult::Ok);
+        let result = super::new_verifier(pow_flags, &mut verifier);
+        assert_eq!(result, super::NewVerifierResult::Ok);
         assert!(!verifier.is_null());
 
         let challenge = b"hello world, challenge me!!!!!!!";

@@ -1,12 +1,13 @@
-use std::sync::atomic::AtomicBool;
+use std::{borrow::Cow, sync::atomic::AtomicBool};
 
 use post::{
+    compression::{compress_indices, decompress_indexes, required_bits},
     config::{InitConfig, ScryptParams},
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
-    prove::generate_proof,
-    verification::Verifier,
+    prove::{generate_proof, Proof},
+    verification::{Error, Verifier},
 };
 use tempfile::tempdir;
 
@@ -19,7 +20,7 @@ fn test_generate_and_verify() {
     let cfg = post::config::ProofConfig {
         k1: 23,
         k2: 32,
-        k3: 10,
+        k3: 32,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = InitConfig {
@@ -54,11 +55,19 @@ fn test_generate_and_verify() {
         .expect("proof should be valid");
 
     // Check that the proof is invalid if we modify one index
-    let mut invalid_proof = proof;
-    invalid_proof.pow -= 1;
-    verifier
-        .verify(&invalid_proof, &metadata, &cfg, &init_cfg)
-        .expect_err("proof should be invalid");
+    let bits = required_bits(metadata.num_units as u64 * init_cfg.labels_per_unit);
+    let mut indices = decompress_indexes(&proof.indices, bits).collect::<Vec<_>>();
+    indices[7] ^= u64::MAX;
+    let invalid_proof = Proof {
+        indices: Cow::Owned(compress_indices(&indices, bits)),
+        ..proof
+    };
+
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg);
+    assert!(matches!(
+        result,
+        Err(Error::InvalidMsb { index_id, .. }) if index_id == 7
+    ));
 }
 
 #[test]
@@ -107,9 +116,17 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         .expect("proof should be valid");
 
     // Check that the proof is invalid if we modify one index
-    let mut invalid_proof = proof;
-    invalid_proof.indices.to_mut()[0] += 1;
-    verifier
-        .verify(&invalid_proof, &metadata, &cfg, &init_cfg)
-        .expect_err("proof should be invalid");
+    let bits = required_bits(metadata.num_units as u64 * init_cfg.labels_per_unit);
+    let mut indices = decompress_indexes(&proof.indices, bits).collect::<Vec<_>>();
+    indices[4] ^= u64::MAX;
+    let invalid_proof = Proof {
+        indices: Cow::Owned(compress_indices(&indices, bits)),
+        ..proof
+    };
+
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg);
+    assert!(matches!(
+        result,
+        Err(Error::InvalidMsb { index_id, .. }) if index_id == 4
+    ));
 }
