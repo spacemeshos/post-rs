@@ -135,6 +135,7 @@ impl Verifier {
         metadata: &ProofMetadata,
         cfg: &ProofConfig,
         init_cfg: &InitConfig,
+        verifier_id: &[u8],
     ) -> Result<(), Error> {
         verify_metadata(metadata, init_cfg)?;
 
@@ -180,17 +181,15 @@ impl Verifier {
 
         let output_index = (proof.nonce % NONCES_PER_AES) as usize;
 
-        // Select K3 indices
+        // Randomly select K3 indices
         let seed = &[
-            challenge.as_slice(),
-            &proof.nonce.to_le_bytes(),
-            proof.indices.as_ref(),
-            &proof.pow.to_le_bytes(),
+            verifier_id,
+            metadata.node_id.as_slice(),
+            metadata.challenge.as_slice(),
         ];
+        let shuffled = RandomValuesIterator::new(indices_unpacked.into_iter().enumerate(), seed);
 
-        let k3_indices = RandomValuesIterator::new(indices_unpacked.into_iter().enumerate(), seed)
-            .take(cfg.k3 as usize);
-        for (index_id, index) in k3_indices {
+        for (index_id, index) in shuffled.take(cfg.k3 as usize) {
             let mut output = [0u8; 16];
             let label = generate_label(&commitment, init_cfg.scrypt, index);
             cipher
@@ -312,6 +311,7 @@ mod tests {
             &fake_metadata,
             &cfg,
             &init_cfg,
+            &[],
         );
         assert!(matches!(result, Err(Error::InvalidPoW(_))));
     }
@@ -348,7 +348,7 @@ mod tests {
                 indices: Cow::from(vec![]),
                 pow: 0,
             };
-            let result = verifier.verify(&empty_proof, &fake_metadata, &pcfg, &icfg);
+            let result = verifier.verify(&empty_proof, &fake_metadata, &pcfg, &icfg, &[]);
             assert!(matches!(
                 result,
                 Err(Error::InvalidIndicesLen {
@@ -358,22 +358,21 @@ mod tests {
             ));
         }
         {
-            let nonce_out_of_bounds_proof = Proof {
+            let nonce_out_of_bounds = Proof {
                 nonce: 256 * 16,
                 indices: Cow::from(vec![]),
                 pow: 0,
             };
-            let res = verifier.verify(&nonce_out_of_bounds_proof, &fake_metadata, &pcfg, &icfg);
+            let res = verifier.verify(&nonce_out_of_bounds, &fake_metadata, &pcfg, &icfg, &[]);
             assert!(matches!(res, Err(Error::NonceGroupOutOfBounds(256))));
         }
         {
-            let proof_with_not_enough_indices = Proof {
+            let not_enough_indices = Proof {
                 nonce: 0,
                 indices: Cow::from(vec![1, 2, 3]),
                 pow: 0,
             };
-            let result =
-                verifier.verify(&proof_with_not_enough_indices, &fake_metadata, &pcfg, &icfg);
+            let result = verifier.verify(&not_enough_indices, &fake_metadata, &pcfg, &icfg, &[]);
             assert!(matches!(
                 result,
                 Err(Error::InvalidIndicesLen {

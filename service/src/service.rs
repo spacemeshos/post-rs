@@ -114,9 +114,14 @@ impl crate::client::PostService for PostService {
         Ok(ProofGenState::InProgress)
     }
 
-    fn verify_proof(&self, proof: &Proof, metadata: &ProofMetadata) -> eyre::Result<()> {
+    fn verify_proof(
+        &self,
+        proof: &Proof,
+        metadata: &ProofMetadata,
+        verifier_id: &[u8],
+    ) -> eyre::Result<()> {
         self.verifier
-            .verify(proof, metadata, &self.cfg, &self.init_cfg)
+            .verify(proof, metadata, &self.cfg, &self.init_cfg, verifier_id)
             .wrap_err("verifying proof")
     }
 

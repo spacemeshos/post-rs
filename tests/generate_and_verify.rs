@@ -51,7 +51,7 @@ fn test_generate_and_verify() {
     let metadata = ProofMetadata::new(metadata, *challenge);
     let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
     verifier
-        .verify(&proof, &metadata, &cfg, &init_cfg)
+        .verify(&proof, &metadata, &cfg, &init_cfg, &[])
         .expect("proof should be valid");
 
     // Check that the proof is invalid if we modify one index
@@ -63,7 +63,7 @@ fn test_generate_and_verify() {
         ..proof
     };
 
-    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg);
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[]);
     assert!(matches!(
         result,
         Err(Error::InvalidMsb { index_id, .. }) if index_id == 7
@@ -112,7 +112,7 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
     let metadata = ProofMetadata::new(metadata, *challenge);
     let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
     verifier
-        .verify(&proof, &metadata, &cfg, &init_cfg)
+        .verify(&proof, &metadata, &cfg, &init_cfg, &[])
         .expect("proof should be valid");
 
     // Check that the proof is invalid if we modify one index
@@ -124,7 +124,7 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         ..proof
     };
 
-    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg);
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[]);
     assert!(matches!(
         result,
         Err(Error::InvalidMsb { index_id, .. }) if index_id == 4

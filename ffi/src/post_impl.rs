@@ -1,4 +1,3 @@
-use core::slice;
 use std::{
     borrow::Cow,
     error::Error,
@@ -41,11 +40,9 @@ impl From<prove::Proof<'_>> for Proof {
 
 impl From<Proof> for prove::Proof<'_> {
     fn from(val: Proof) -> Self {
-        let indices = unsafe { slice::from_raw_parts(val.indices.ptr, val.indices.len) };
-
         post::prove::Proof {
             nonce: val.nonce,
-            indices: Cow::from(indices),
+            indices: Cow::Borrowed(unsafe { val.indices.as_slice() }),
             pow: val.pow,
         }
     }
@@ -198,6 +195,7 @@ pub unsafe extern "C" fn verify_proof(
     metadata: *const ProofMetadata,
     cfg: ProofConfig,
     init_cfg: InitConfig,
+    verifier_id: ArrayU8,
 ) -> VerifyResult {
     let verifier = match verifier.as_ref() {
         Some(verifier) => verifier,
@@ -207,20 +205,14 @@ pub unsafe extern "C" fn verify_proof(
         }
     };
 
-    let proof = match proof.try_into() {
-        Ok(proof) => proof,
-        Err(err) => {
-            log::error!("Invalid proof: {err}");
-            return VerifyResult::InvalidArgument;
-        }
-    };
-
     let metadata = match unsafe { metadata.as_ref() } {
         Some(metadata) => metadata,
         None => return VerifyResult::InvalidArgument,
     };
 
-    match verifier.verify(&proof, metadata, &cfg, &init_cfg) {
+    let verifier_id = unsafe { verifier_id.as_slice() };
+
+    match verifier.verify(&proof.into(), metadata, &cfg, &init_cfg, verifier_id) {
         Ok(_) => VerifyResult::Ok,
         Err(err) => {
             log::error!("Proof is invalid: {err}");
@@ -235,6 +227,8 @@ mod tests {
         config::ScryptParams, initialize::Initialize, metadata::ProofMetadata,
         pow::randomx::RandomXFlag,
     };
+
+    use crate::post_impl::verify_proof;
 
     #[test]
     fn datadir_must_be_utf8() {
@@ -288,6 +282,7 @@ mod tests {
                     labels_per_unit: 1,
                     scrypt: ScryptParams::new(2, 1, 1),
                 },
+                [].into(),
             )
         };
         assert_eq!(result, super::VerifyResult::InvalidArgument);
@@ -340,7 +335,7 @@ mod tests {
 
         // Create proof without miner ID
         let data_dir_cstr = std::ffi::CString::new(datadir.path().to_str().unwrap()).unwrap();
-        let cproof = crate::post_impl::generate_proof(
+        let proof_ptr = crate::post_impl::generate_proof(
             data_dir_cstr.as_ptr(),
             challenge.as_ptr(),
             cfg,
@@ -348,28 +343,22 @@ mod tests {
             1,
             pow_flags,
         );
+        let proof = unsafe { *proof_ptr };
 
-        let proof_metadata = ProofMetadata::new(meta, *challenge);
-        let result = unsafe {
-            crate::post_impl::verify_proof(verifier, *cproof, &proof_metadata, cfg, init_cfg)
-        };
-
+        let metadata = ProofMetadata::new(meta, *challenge);
+        let result = unsafe { verify_proof(verifier, proof, &metadata, cfg, init_cfg, [].into()) };
         assert_eq!(result, super::VerifyResult::Ok);
 
         // Modify the proof to have different k2pow
-        let invalid_proof = unsafe {
-            crate::post_impl::Proof {
-                pow: (*cproof).pow - 1,
-                ..*cproof
-            }
+        let proof = crate::post_impl::Proof {
+            pow: (proof).pow - 1,
+            ..proof
         };
 
-        let result = unsafe {
-            crate::post_impl::verify_proof(verifier, invalid_proof, &proof_metadata, cfg, init_cfg)
-        };
+        let result = unsafe { verify_proof(verifier, proof, &metadata, cfg, init_cfg, [].into()) };
         assert_eq!(result, super::VerifyResult::Invalid);
 
-        unsafe { super::free_proof(cproof) };
+        unsafe { super::free_proof(proof_ptr) };
         super::free_verifier(verifier);
     }
 }

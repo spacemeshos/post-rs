@@ -53,7 +53,7 @@ fn verifying(c: &mut Criterion) {
     c.bench_function("verify", |b| {
         b.iter(|| {
             verifier
-                .verify(&proof, &metadata, &cfg, &init_cfg)
+                .verify(&proof, &metadata, &cfg, &init_cfg, &[7; 32])
                 .expect("proof should be valid");
         });
     });
