@@ -38,7 +38,6 @@
 use std::cmp::Ordering;
 
 use cipher::BlockEncrypt;
-use itertools::Itertools;
 use log::debug;
 
 use crate::{
@@ -169,9 +168,6 @@ impl Verifier {
             });
         }
 
-        let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index)
-            .take(cfg.k2 as usize)
-            .collect_vec();
         let commitment = calc_commitment(&metadata.node_id, &metadata.commitment_atx_id);
         let cipher = AesCipher::new(&challenge, nonce_group, proof.pow);
         let lazy_cipher = AesCipher::new_lazy(&challenge, proof.nonce, nonce_group, proof.pow);
@@ -181,15 +177,24 @@ impl Verifier {
 
         let output_index = (proof.nonce % NONCES_PER_AES) as usize;
 
-        // Randomly select K3 indices
-        let seed = &[
-            verifier_id,
-            metadata.node_id.as_slice(),
-            metadata.challenge.as_slice(),
-        ];
-        let shuffled = RandomValuesIterator::new(indices_unpacked.into_iter().enumerate(), seed);
+        let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index)
+            .take(cfg.k2 as usize)
+            .enumerate();
+        let indices: Box<dyn Iterator<Item = (usize, u64)>> = if cfg.k3 == cfg.k2 {
+            // No need for shuffling as we're selecting all indices
+            Box::new(indices_unpacked)
+        } else {
+            // Shuffle indices
+            let seed = &[
+                verifier_id,
+                metadata.node_id.as_slice(),
+                metadata.challenge.as_slice(),
+            ];
 
-        for (index_id, index) in shuffled.take(cfg.k3 as usize) {
+            Box::new(RandomValuesIterator::new(indices_unpacked, seed))
+        };
+
+        for (index_id, index) in indices.take(cfg.k3 as usize) {
             let mut output = [0u8; 16];
             let label = generate_label(&commitment, init_cfg.scrypt, index);
             cipher
