@@ -115,6 +115,21 @@ pub fn verify_metadata(
     Ok(())
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub enum Mode {
+    /// Verify all indices in proof
+    All,
+    // Verify only one index at the given index
+    One {
+        index: usize,
+    },
+    // Verify a randomly selected subset of k3 indices
+    Subset {
+        k3: usize,
+    },
+}
+
 impl Verifier {
     pub fn new(pow_verifier: Box<dyn PowVerifier + Send + Sync>) -> Self {
         Self { pow_verifier }
@@ -135,6 +150,7 @@ impl Verifier {
         cfg: &ProofConfig,
         init_cfg: &InitConfig,
         verifier_id: &[u8],
+        mode: Mode,
     ) -> Result<(), Error> {
         verify_metadata(metadata, init_cfg)?;
 
@@ -180,21 +196,23 @@ impl Verifier {
         let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index)
             .take(cfg.k2 as usize)
             .enumerate();
-        let indices: Box<dyn Iterator<Item = (usize, u64)>> = if cfg.k3 == cfg.k2 {
-            // No need for shuffling as we're selecting all indices
-            Box::new(indices_unpacked)
-        } else {
-            // Shuffle indices
-            let seed = &[
-                verifier_id,
-                metadata.node_id.as_slice(),
-                metadata.challenge.as_slice(),
-            ];
 
-            Box::new(RandomValuesIterator::new(indices_unpacked, seed))
+        let indices: Box<dyn Iterator<Item = (usize, u64)>> = match mode {
+            Mode::All => Box::new(indices_unpacked),
+            Mode::Subset { k3 } if k3 == cfg.k2 as usize => Box::new(indices_unpacked),
+            Mode::One { index } => Box::new(indices_unpacked.skip(index).take(1)),
+            Mode::Subset { k3 } => {
+                // Shuffle and take k3 indices
+                let seed = &[
+                    verifier_id,
+                    metadata.node_id.as_slice(),
+                    metadata.challenge.as_slice(),
+                ];
+                Box::new(RandomValuesIterator::new(indices_unpacked, seed).take(k3))
+            }
         };
 
-        for (index_id, index) in indices.take(cfg.k3 as usize) {
+        for (index_id, index) in indices {
             let mut output = [0u8; 16];
             let label = generate_label(&commitment, init_cfg.scrypt, index);
             cipher
@@ -266,7 +284,7 @@ mod tests {
         verification::Error,
     };
 
-    use super::{expected_indices_bytes, next_multiple_of, Verifier};
+    use super::{expected_indices_bytes, next_multiple_of, Mode, Verifier};
 
     #[test]
     fn test_next_mutliple_of() {
@@ -286,7 +304,6 @@ mod tests {
         let cfg = ProofConfig {
             k1: 3,
             k2: 3,
-            k3: 3,
             pow_difficulty: [0xFF; 32],
         };
         let init_cfg = InitConfig {
@@ -317,6 +334,7 @@ mod tests {
             &cfg,
             &init_cfg,
             &[],
+            Mode::All,
         );
         assert!(matches!(result, Err(Error::InvalidPoW(_))));
     }
@@ -326,7 +344,6 @@ mod tests {
         let pcfg = ProofConfig {
             k1: 10,
             k2: 10,
-            k3: 10,
             pow_difficulty: [0xFF; 32],
         };
         let icfg = InitConfig {
@@ -353,7 +370,8 @@ mod tests {
                 indices: Cow::from(vec![]),
                 pow: 0,
             };
-            let result = verifier.verify(&empty_proof, &fake_metadata, &pcfg, &icfg, &[]);
+            let result =
+                verifier.verify(&empty_proof, &fake_metadata, &pcfg, &icfg, &[], Mode::All);
             assert!(matches!(
                 result,
                 Err(Error::InvalidIndicesLen {
@@ -368,7 +386,14 @@ mod tests {
                 indices: Cow::from(vec![]),
                 pow: 0,
             };
-            let res = verifier.verify(&nonce_out_of_bounds, &fake_metadata, &pcfg, &icfg, &[]);
+            let res = verifier.verify(
+                &nonce_out_of_bounds,
+                &fake_metadata,
+                &pcfg,
+                &icfg,
+                &[],
+                Mode::All,
+            );
             assert!(matches!(res, Err(Error::NonceGroupOutOfBounds(256))));
         }
         {
@@ -377,7 +402,14 @@ mod tests {
                 indices: Cow::from(vec![1, 2, 3]),
                 pow: 0,
             };
-            let result = verifier.verify(&not_enough_indices, &fake_metadata, &pcfg, &icfg, &[]);
+            let result = verifier.verify(
+                &not_enough_indices,
+                &fake_metadata,
+                &pcfg,
+                &icfg,
+                &[],
+                Mode::All,
+            );
             assert!(matches!(
                 result,
                 Err(Error::InvalidIndicesLen {

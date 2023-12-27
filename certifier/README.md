@@ -31,7 +31,6 @@ signing_key: <BASE64-encoded ed25519 private key>
 post_cfg:
   k1: 26
   k2: 37
-  k3: 37
   pow_difficulty: "000dfb23b0979b4b000000000000000000000000000000000000000000000000"
 
 init_cfg:

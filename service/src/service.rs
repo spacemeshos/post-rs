@@ -10,7 +10,7 @@ use post::{
     metadata::{PostMetadata, ProofMetadata},
     pow::randomx::{PoW, RandomXFlag},
     prove::Proof,
-    verification::Verifier,
+    verification::{Mode, Verifier},
 };
 
 #[derive(Debug)]
@@ -121,7 +121,14 @@ impl crate::client::PostService for PostService {
         verifier_id: &[u8],
     ) -> eyre::Result<()> {
         self.verifier
-            .verify(proof, metadata, &self.cfg, &self.init_cfg, verifier_id)
+            .verify(
+                proof,
+                metadata,
+                &self.cfg,
+                &self.init_cfg,
+                verifier_id,
+                Mode::All,
+            )
             .wrap_err("verifying proof")
     }
 

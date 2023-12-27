@@ -7,7 +7,7 @@ use post::{
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
     prove::generate_proof,
-    verification::Verifier,
+    verification::{Mode, Verifier},
 };
 #[cfg(not(windows))]
 use pprof::criterion::{Output, PProfProfiler};
@@ -20,7 +20,6 @@ fn verifying(c: &mut Criterion) {
     let cfg = ProofConfig {
         k1: 199,
         k2: 37,
-        k3: 37,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = InitConfig {
@@ -53,7 +52,7 @@ fn verifying(c: &mut Criterion) {
     c.bench_function("verify", |b| {
         b.iter(|| {
             verifier
-                .verify(&proof, &metadata, &cfg, &init_cfg, &[7; 32])
+                .verify(&proof, &metadata, &cfg, &init_cfg, &[7; 32], Mode::All)
                 .expect("proof should be valid");
         });
     });

@@ -12,7 +12,7 @@ use post::{
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
     prove,
-    verification::Verifier,
+    verification::{Mode, Verifier},
 };
 
 use crate::ArrayU8;
@@ -196,6 +196,7 @@ pub unsafe extern "C" fn verify_proof(
     cfg: ProofConfig,
     init_cfg: InitConfig,
     verifier_id: ArrayU8,
+    mode: Mode,
 ) -> VerifyResult {
     let verifier = match verifier.as_ref() {
         Some(verifier) => verifier,
@@ -212,7 +213,7 @@ pub unsafe extern "C" fn verify_proof(
 
     let verifier_id = unsafe { verifier_id.as_slice() };
 
-    match verifier.verify(&proof.into(), metadata, &cfg, &init_cfg, verifier_id) {
+    match verifier.verify(&proof.into(), metadata, &cfg, &init_cfg, verifier_id, mode) {
         Ok(_) => VerifyResult::Ok,
         Err(err) => {
             log::error!("Proof is invalid: {err}");
@@ -225,7 +226,7 @@ pub unsafe extern "C" fn verify_proof(
 mod tests {
     use post::{
         config::ScryptParams, initialize::Initialize, metadata::ProofMetadata,
-        pow::randomx::RandomXFlag,
+        pow::randomx::RandomXFlag, verification::Mode,
     };
 
     use crate::post_impl::verify_proof;
@@ -236,7 +237,6 @@ mod tests {
         let cfg = super::ProofConfig {
             k1: 10,
             k2: 20,
-            k3: 20,
             pow_difficulty: [0xFF; 32],
         };
         let result = super::_generate_proof(
@@ -279,7 +279,6 @@ mod tests {
                 super::ProofConfig {
                     k1: 1,
                     k2: 2,
-                    k3: 2,
                     pow_difficulty: [0xFF; 32],
                 },
                 super::InitConfig {
@@ -289,6 +288,7 @@ mod tests {
                     scrypt: ScryptParams::new(2, 1, 1),
                 },
                 [].into(),
+                Mode::All,
             )
         };
         assert_eq!(result, super::VerifyResult::InvalidArgument);
@@ -302,7 +302,6 @@ mod tests {
         let cfg = post::config::ProofConfig {
             k1: 10,
             k2: 10,
-            k3: 10,
             pow_difficulty: [
                 0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
                 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -352,7 +351,17 @@ mod tests {
         let proof = unsafe { *proof_ptr };
 
         let metadata = ProofMetadata::new(meta, *challenge);
-        let result = unsafe { verify_proof(verifier, proof, &metadata, cfg, init_cfg, [].into()) };
+        let result = unsafe {
+            verify_proof(
+                verifier,
+                proof,
+                &metadata,
+                cfg,
+                init_cfg,
+                [].into(),
+                Mode::All,
+            )
+        };
         assert_eq!(result, super::VerifyResult::Ok);
 
         // Modify the proof to have different k2pow
@@ -361,7 +370,17 @@ mod tests {
             ..proof
         };
 
-        let result = unsafe { verify_proof(verifier, proof, &metadata, cfg, init_cfg, [].into()) };
+        let result = unsafe {
+            verify_proof(
+                verifier,
+                proof,
+                &metadata,
+                cfg,
+                init_cfg,
+                [].into(),
+                Mode::All,
+            )
+        };
         assert_eq!(result, super::VerifyResult::Invalid);
 
         unsafe { super::free_proof(proof_ptr) };

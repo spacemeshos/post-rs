@@ -6,7 +6,7 @@ use axum::{routing::post, Router};
 use ed25519_dalek::{Signer, SigningKey};
 use post::config::{InitConfig, ProofConfig};
 use post::pow::randomx::PoW;
-use post::verification::Verifier;
+use post::verification::{Mode, Verifier};
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 use tracing::instrument;
@@ -40,8 +40,14 @@ async fn certify(
     let s = state.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        s.verifier
-            .verify(&req.proof, &req.metadata, &s.cfg, &s.init_cfg, &my_id)
+        s.verifier.verify(
+            &req.proof,
+            &req.metadata,
+            &s.cfg,
+            &s.init_cfg,
+            &my_id,
+            Mode::All,
+        )
     })
     .await
     .map_err(|e| {

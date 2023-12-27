@@ -227,7 +227,6 @@ async fn test_get_metadata(#[case] vrf_difficulty: Option<[u8; 32]>) {
     let cfg = post::config::ProofConfig {
         k1: 23,
         k2: 32,
-        k3: 10,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = post::config::InitConfig {

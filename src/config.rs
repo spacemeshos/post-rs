@@ -23,8 +23,6 @@ pub struct ProofConfig {
     pub k1: u32,
     /// K2 is the number of labels below the required difficulty required for a proof.
     pub k2: u32,
-    /// K3 is the size of the subset of proof indices that is validated.
-    pub k3: u32,
     /// Difficulty for the nonce proof of work. Lower values increase difficulty of finding
     /// `pow` for [Proof][crate::prove::Proof].
     #[serde_as(as = "serde_with::hex::Hex")]

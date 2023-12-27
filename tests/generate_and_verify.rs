@@ -7,7 +7,7 @@ use post::{
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
     prove::{generate_proof, Proof},
-    verification::{Error, Verifier},
+    verification::{Error, Mode, Verifier},
 };
 use tempfile::tempdir;
 
@@ -20,7 +20,6 @@ fn test_generate_and_verify() {
     let cfg = post::config::ProofConfig {
         k1: 23,
         k2: 32,
-        k3: 32,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = InitConfig {
@@ -51,7 +50,7 @@ fn test_generate_and_verify() {
     let metadata = ProofMetadata::new(metadata, *challenge);
     let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
     verifier
-        .verify(&proof, &metadata, &cfg, &init_cfg, &[])
+        .verify(&proof, &metadata, &cfg, &init_cfg, &[], Mode::All)
         .expect("proof should be valid");
 
     // Check that the proof is invalid if we modify one index
@@ -63,7 +62,7 @@ fn test_generate_and_verify() {
         ..proof
     };
 
-    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[]);
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[], Mode::All);
     assert!(matches!(
         result,
         Err(Error::InvalidMsb { index_id, .. }) if index_id == 7
@@ -81,7 +80,6 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
     let cfg = post::config::ProofConfig {
         k1: 20,
         k2: 30,
-        k3: 30,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = InitConfig {
@@ -112,7 +110,7 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
     let metadata = ProofMetadata::new(metadata, *challenge);
     let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
     verifier
-        .verify(&proof, &metadata, &cfg, &init_cfg, &[])
+        .verify(&proof, &metadata, &cfg, &init_cfg, &[], Mode::All)
         .expect("proof should be valid");
 
     // Check that the proof is invalid if we modify one index
@@ -124,7 +122,14 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         ..proof
     };
 
-    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[]);
+    let result = verifier.verify(
+        &invalid_proof,
+        &metadata,
+        &cfg,
+        &init_cfg,
+        &[],
+        Mode::One { index: 4 },
+    );
     assert!(matches!(
         result,
         Err(Error::InvalidMsb { index_id, .. }) if index_id == 4

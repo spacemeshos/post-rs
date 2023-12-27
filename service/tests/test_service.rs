@@ -16,7 +16,6 @@ fn test_generate_and_verify() {
     let cfg = ProofConfig {
         k1: 8,
         k2: 4,
-        k3: 4,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = InitConfig {
@@ -72,7 +71,6 @@ fn reject_invalid_challenge() {
     let cfg = ProofConfig {
         k1: 8,
         k2: 4,
-        k3: 4,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = InitConfig {
@@ -115,7 +113,6 @@ fn cannot_run_parallel_proof_gens() {
     let cfg = ProofConfig {
         k1: 8,
         k2: 4,
-        k3: 4,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = InitConfig {

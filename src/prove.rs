@@ -389,7 +389,6 @@ mod tests {
         let cfg = ProofConfig {
             k1: 279,
             k2: 300,
-            k3: 65,
             pow_difficulty: [0xFF; 32],
         };
         let params = ProvingParams::new(&meta, &cfg).unwrap();
@@ -424,7 +423,6 @@ mod tests {
         let cfg = ProofConfig {
             k1: 279,
             k2: 300,
-            k3: 65,
             pow_difficulty: [0xFF; 32],
         };
         let mut pow_prover = pow::MockProver::new();
@@ -442,7 +440,6 @@ mod tests {
         let cfg = ProofConfig {
             k1: 32,
             k2: 32,
-            k3: 10,
             pow_difficulty: [0x0F; 32],
         };
         let metadata = PostMetadata {
