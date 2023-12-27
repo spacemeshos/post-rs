@@ -91,7 +91,7 @@ pub enum Error {
 pub enum MetadataValidationError {
     #[error("numunits too small: {got} < {min}")]
     NumUnitsTooSmall { min: u32, got: u32 },
-    #[error("numunits too large: {got} < {max}")]
+    #[error("numunits too large: {got} > {max}")]
     NumUnitsTooLarge { max: u32, got: u32 },
 }
 
