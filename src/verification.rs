@@ -39,6 +39,7 @@ use std::cmp::Ordering;
 
 use cipher::BlockEncrypt;
 use itertools::Itertools;
+use log::debug;
 
 use crate::{
     cipher::AesCipher,
@@ -92,8 +93,6 @@ pub enum MetadataValidationError {
     NumUnitsTooSmall { min: u32, got: u32 },
     #[error("numunits too large: {got} < {max}")]
     NumUnitsTooLarge { max: u32, got: u32 },
-    #[error("invalid labels_per_unit: {got} != {expected}")]
-    LabelsPerUnitInvalid { expected: u64, got: u64 },
 }
 
 pub fn verify_metadata(
@@ -110,12 +109,6 @@ pub fn verify_metadata(
         return Err(MetadataValidationError::NumUnitsTooLarge {
             max: init_cfg.max_num_units,
             got: metadata.num_units,
-        });
-    }
-    if metadata.labels_per_unit != init_cfg.labels_per_unit {
-        return Err(MetadataValidationError::LabelsPerUnitInvalid {
-            expected: init_cfg.labels_per_unit,
-            got: metadata.labels_per_unit,
         });
     }
     Ok(())
@@ -148,6 +141,10 @@ impl Verifier {
 
         // Verify K2 PoW
         let nonce_group = proof.nonce / NONCES_PER_AES;
+        debug!(
+            "verifying K2 pow for nonce group: {nonce_group} with difficulty: {:x?}",
+            pow_difficulty
+        );
         self.pow_verifier.verify(
             proof.pow,
             nonce_group
@@ -296,7 +293,6 @@ mod tests {
             commitment_atx_id: [0; 32],
             challenge: [0; 32],
             num_units: 10,
-            labels_per_unit: 2048,
         };
         let mut pow_verifier = Box::new(MockPowVerifier::new());
         pow_verifier
@@ -336,7 +332,6 @@ mod tests {
             commitment_atx_id: [0u8; 32],
             challenge: [0u8; 32],
             num_units: 10,
-            labels_per_unit: 2048,
         };
         let mut pow_verifier = Box::new(MockPowVerifier::new());
         pow_verifier
@@ -392,7 +387,6 @@ mod tests {
             commitment_atx_id: [0; 32],
             challenge: [0; 32],
             num_units: 1,
-            labels_per_unit: 100,
         };
         let init_cfg = InitConfig {
             min_num_units: 1,
@@ -414,13 +408,6 @@ mod tests {
                 ..valid_meta
             };
             assert!(super::verify_metadata(&num_units_large, &init_cfg).is_err());
-        }
-        {
-            let invalid_labels_per_unit = ProofMetadata {
-                labels_per_unit: 99,
-                ..valid_meta
-            };
-            assert!(super::verify_metadata(&invalid_labels_per_unit, &init_cfg).is_err());
         }
     }
 }

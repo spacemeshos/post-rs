@@ -1,0 +1,33 @@
+[package]
+name = "certifier"
+version = "0.6.1"
+edition = "2021"
+
+[dependencies]
+axum = "0.7.1"
+serde = { version = "1.0.190", features = ["derive"] }
+tokio = { version = "1.0", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+] }
+post-rs = { path = "../" }
+serde_with = { version = "3.4.0", features = ["base64", "hex"] }
+ed25519-dalek = { version = "2.0.0", features = ["rand_core"] }
+clap = { version = "4.4.7", features = ["derive", "env"] }
+hex = "0.4.3"
+config = "0.13.3"
+secrecy = { version = "0.8.0", features = ["serde"] }
+tracing = { version = "0.1.40", features = ["log"] }
+tracing-log = "0.2.0"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+rand = "0.8.5"
+serde_json = "1.0.108"
+base64 = "0.21.5"
+axum-prometheus = "0.5.0"
+tower = { version = "0.4.13", features = ["limit"] }
+
+[dev-dependencies]
+reqwest = { version = "0.11.22", features = ["json"] }
+tempfile = "3.8.1"

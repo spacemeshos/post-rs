@@ -4,6 +4,7 @@ use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
 use sysinfo::{Pid, ProcessExt, ProcessStatus, System, SystemExt};
 use tokio::net::TcpListener;
+use tokio::sync::oneshot::{self, error::TryRecvError, Receiver};
 use tonic::transport::{Certificate, Identity};
 
 use post::pow::randomx::RandomXFlag;
@@ -22,6 +23,10 @@ struct Cli {
     /// time to wait before reconnecting to the node
     #[arg(long, default_value = "5", value_parser = |secs: &str| secs.parse().map(Duration::from_secs))]
     reconnect_interval_s: Duration,
+    /// Maximum number of retries to connect to the node
+    /// The default is infinite.
+    #[arg(long)]
+    max_retries: Option<usize>,
 
     #[command(flatten, next_help_heading = "POST configuration")]
     post_config: PostConfig,
@@ -232,19 +237,37 @@ async fn main() -> eyre::Result<()> {
         tokio::spawn(operator::OperatorServer::run(listener, service.clone()));
     }
 
-    let client = client::ServiceClient::new(args.address, args.reconnect_interval_s, tls, service)?;
-    let client_handle = tokio::spawn(client.run());
+    let client = client::ServiceClient::new(args.address, tls, service)?;
+    let client_handle = tokio::spawn(client.run(args.max_retries, args.reconnect_interval_s));
 
-    if let Some(pid) = args.watch_pid {
-        tokio::task::spawn_blocking(move || watch_pid(pid, Duration::from_secs(1))).await?;
-        Ok(())
-    } else {
-        client_handle.await?
+    // A channel to communicate when the blocking task should quit.
+    let (term_tx, term_rx) = oneshot::channel();
+
+    tokio::select! {
+        Some(err) = watch_pid_if_needed(args.watch_pid.map(|p| (p, term_rx))) => {
+            log::info!("PID watcher exited: {err:?}");
+            return Ok(())
+        }
+        err = client_handle => {
+            drop(term_tx);
+            return err.unwrap();
+        }
+    }
+}
+
+async fn watch_pid_if_needed(
+    watch: Option<(Pid, Receiver<()>)>,
+) -> Option<std::result::Result<(), tokio::task::JoinError>> {
+    match watch {
+        Some((pid, term)) => Some(
+            tokio::task::spawn_blocking(move || watch_pid(pid, Duration::from_secs(1), term)).await,
+        ),
+        None => None,
     }
 }
 
 // watch given PID and return when it dies
-fn watch_pid(pid: Pid, interval: Duration) {
+fn watch_pid(pid: Pid, interval: Duration, mut term: Receiver<()>) {
     log::info!("watching PID {pid}");
 
     let mut sys = System::new();
@@ -252,32 +275,51 @@ fn watch_pid(pid: Pid, interval: Duration) {
         if let Some(p) = sys.process(pid) {
             match p.status() {
                 ProcessStatus::Zombie | ProcessStatus::Dead => {
-                    break;
+                    log::info!("PID {pid} died");
+                    return;
                 }
                 _ => {}
             }
         }
-        std::thread::sleep(interval);
+        match term.try_recv() {
+            Ok(_) | Err(TryRecvError::Closed) => {
+                log::debug!("PID watcher received termination signal");
+                return;
+            }
+            _ => std::thread::sleep(interval),
+        }
     }
-
-    log::info!("PID {pid} died");
 }
 
 #[cfg(test)]
 mod tests {
     use std::process::Command;
 
-    use sysinfo::PidExt;
+    use sysinfo::{Pid, PidExt};
+    use tokio::sync::oneshot;
+
+    #[tokio::test]
+    async fn watch_pid_if_needed() {
+        // Don't watch
+        assert!(super::watch_pid_if_needed(None).await.is_none());
+        // Watch
+        let (_term_tx, term_rx) = oneshot::channel();
+        super::watch_pid_if_needed(Some((Pid::from(0), term_rx)))
+            .await
+            .expect("should be some")
+            .expect("should be OK");
+    }
 
     #[tokio::test]
     async fn watching_pid_zombie() {
         let mut proc = Command::new("sleep").arg("99999").spawn().unwrap();
         let pid = proc.id();
-
+        let (_term_tx, term_rx) = oneshot::channel();
         let handle = tokio::task::spawn_blocking(move || {
             super::watch_pid(
                 sysinfo::Pid::from_u32(pid),
                 std::time::Duration::from_millis(10),
+                term_rx,
             )
         });
         // just kill leaves a zombie process
@@ -289,11 +331,13 @@ mod tests {
     async fn watching_pid_reaped() {
         let mut proc = Command::new("sleep").arg("99999").spawn().unwrap();
         let pid = proc.id();
+        let (_term_tx, term_rx) = oneshot::channel();
 
         let handle = tokio::task::spawn_blocking(move || {
             super::watch_pid(
                 sysinfo::Pid::from_u32(pid),
                 std::time::Duration::from_millis(10),
+                term_rx,
             )
         });
 
@@ -301,5 +345,37 @@ mod tests {
         proc.kill().unwrap();
         proc.wait().unwrap();
         handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn terminate_watching_pid() {
+        let mut proc = Command::new("sleep").arg("99999").spawn().unwrap();
+        let pid = proc.id();
+        let (term_tx, term_rx) = oneshot::channel();
+        let handle = tokio::task::spawn_blocking(move || {
+            super::watch_pid(
+                sysinfo::Pid::from_u32(pid),
+                std::time::Duration::from_millis(10),
+                term_rx,
+            )
+        });
+        // Terminate by closing the channel
+        drop(term_tx);
+        handle.await.unwrap();
+
+        let (term_tx, term_rx) = oneshot::channel();
+        let handle = tokio::task::spawn_blocking(move || {
+            super::watch_pid(
+                sysinfo::Pid::from_u32(pid),
+                std::time::Duration::from_millis(10),
+                term_rx,
+            )
+        });
+        // Terminate by sending a signal
+        term_tx.send(()).unwrap();
+        handle.await.unwrap();
+
+        proc.kill().unwrap();
+        proc.wait().unwrap();
     }
 }

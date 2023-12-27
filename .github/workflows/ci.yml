@@ -32,61 +32,50 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-20.04
-            toolchain: stable
+          - os: [self-hosted, linux, x64, intel]
+            runner: self-hosted-linux-intel
           - os: [self-hosted, linux, arm64]
             rustflags: --cfg=aes_armv8
-            toolchain: nightly-2023-06-27 # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
           - os: [self-hosted, macos, arm64]
             rustflags: --cfg=aes_armv8
-            toolchain: nightly-2023-06-27 # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
           - os: macos-latest
             toolchain: stable
           - os: windows-2019
-            toolchain: stable
 
     steps:
+      - uses: arduino/setup-protoc@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.toolchain }}
-      - if: matrix.os == 'ubuntu-20.04'
-        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
-        name: Install dependencies for testing openCL
+      - uses: dtolnay/rust-toolchain@stable
+      - if: matrix.runner == 'self-hosted-linux-intel'
+        run: sudo apt-get update && sudo apt-get install -y libpocl2 pocl-opencl-icd ocl-icd-opencl-dev
+        name: Install dependencies for testing openCL on Linux
       - if: matrix.os == 'windows-2019'
-        name: Install dependencies for linking openCL
+        name: Install dependencies for testing openCL on Windows
         run: |
           choco install -y wget unzip opencl-intel-cpu-runtime
           wget https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v2023.04.17/OpenCL-SDK-v2023.04.17-Win-x64.zip
           unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
       - uses: Swatinem/rust-cache@v2
 
-      - name: Test post crate
-        run: cargo test --all-features --release
+      - name: Tests
+        run: cargo test --all-features --release -p post-rs -p certifier -p service
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
 
       - name: Test scrypt-ocl crate
         if: matrix.os != 'windows-2019'
         run: cargo test -p scrypt-ocl --all-features --release -- --test-threads=1
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
 
       - name: Test ffi crate
         run: cargo test -p post-cbindings --all-features --release -- --test-threads=1
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
 
   fmt:
     name: Rustfmt
@@ -113,7 +102,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           components: clippy
-          toolchain: nightly-2023-06-27
+          toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - name: Annotate commit with clippy warnings
         uses: actions-rs/clippy-check@v1
@@ -122,13 +111,13 @@ jobs:
           args: --all-features --workspace
 
   coverage:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, intel]
     steps:
       - uses: arduino/setup-protoc@v2
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install opencl
-        run: sudo apt-get install -y libpocl2 mesa-opencl-icd ocl-icd-opencl-dev
+        run: sudo apt-get update && sudo apt-get install -y libpocl2 pocl-opencl-icd ocl-icd-opencl-dev
       - uses: actions/checkout@v3
         with:
           submodules: true
@@ -156,40 +145,35 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-20.04
+          - os: ubuntu-latest
             dylib: libpost.so
             staticlib: libpost.a
             artifact-name: linux
-            toolchain: stable
 
           - os: [self-hosted, linux, arm64]
             dylib: libpost.so
             staticlib: libpost.a
             rustflags: --cfg=aes_armv8
             artifact-name: linux-arm64
-            toolchain: nightly-2023-06-27 # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
 
           - os: [self-hosted, macos, arm64]
             dylib: libpost.dylib
             staticlib: libpost.a
             rustflags: --cfg=aes_armv8
             artifact-name: macos-m1
-            toolchain: nightly-2023-06-27 # required for AES (https://docs.rs/aes/0.8.2/aes/#armv8-intrinsics-nightly-only)
 
           - os: macos-latest
             dylib: libpost.dylib
             staticlib: libpost.a
             artifact-name: macos
-            toolchain: stable
 
           - os: windows-2019
             dylib: post.dll
             staticlib: post.lib
             artifact-name: windows
-            toolchain: stable
     steps:
-      - if: matrix.os == 'ubuntu-20.04'
-        run: sudo apt-get install -y mesa-opencl-icd ocl-icd-opencl-dev
+      - if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y ocl-icd-opencl-dev
         name: Install opencl
       - if: matrix.os == 'windows-2019'
         name: Install opencl
@@ -197,9 +181,7 @@ jobs:
       - uses: actions/checkout@v3
         with:
           submodules: true
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: ${{ matrix.toolchain }}
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ join( matrix.os, '-' ) }}
@@ -218,9 +200,6 @@ jobs:
         run: cargo build -p post-cbindings --profile release-clib
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -235,9 +214,6 @@ jobs:
         run: cargo build -p profiler --release
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          # https://github.com/tevador/RandomX/issues/262
-          # https://github.com/tari-project/randomx-rs/issues/48
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
       - name: Archive profiler artifacts
         uses: actions/upload-artifact@v3
         with:
@@ -253,7 +229,6 @@ jobs:
         run: cargo build -p service --release
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
-          SDKROOT: "/Library/Developer/CommandLineTools/SDKs/MacOSX12.3.sdk"
       - name: Archive service artifacts
         uses: actions/upload-artifact@v3
         with:

@@ -1,4 +1,4 @@
-use core::panic;
+use core::{panic, time};
 use std::{sync::Arc, time::Duration};
 
 use tokio::{net::TcpListener, time::sleep};
@@ -68,7 +68,7 @@ async fn test_gen_proof_in_progress() {
 
     let mut test_server = TestServer::new().await;
     let client = test_server.create_client(service.clone());
-    tokio::spawn(client.run());
+    tokio::spawn(client.run(None, time::Duration::from_secs(1)));
 
     // Create operator server and client
     let listener = TcpListener::bind("localhost:0").await.unwrap();
