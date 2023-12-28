@@ -224,12 +224,14 @@ pub unsafe extern "C" fn verify_proof(
 
 #[cfg(test)]
 mod tests {
+    use std::ptr::null;
+
     use post::{
         config::ScryptParams, initialize::Initialize, metadata::ProofMetadata,
         pow::randomx::RandomXFlag, verification::Mode,
     };
 
-    use crate::post_impl::verify_proof;
+    use crate::post_impl::{free_verifier, verify_proof};
 
     #[test]
     fn datadir_must_be_utf8() {
@@ -266,31 +268,39 @@ mod tests {
     }
 
     #[test]
-    fn detects_null_verifier() {
-        let result = unsafe {
-            super::verify_proof(
-                std::ptr::null(),
-                super::Proof {
-                    nonce: 0,
-                    indices: crate::ArrayU8::default(),
-                    pow: 0,
-                },
-                std::ptr::null(),
-                super::ProofConfig {
-                    k1: 1,
-                    k2: 2,
-                    pow_difficulty: [0xFF; 32],
-                },
-                super::InitConfig {
-                    min_num_units: 1,
-                    max_num_units: 1,
-                    labels_per_unit: 1,
-                    scrypt: ScryptParams::new(2, 1, 1),
-                },
-                [].into(),
-                Mode::All,
-            )
+    fn verify_proof_detects_null_params() {
+        let proof = super::Proof {
+            nonce: 0,
+            indices: crate::ArrayU8::default(),
+            pow: 0,
         };
+        let cfg = super::ProofConfig {
+            k1: 1,
+            k2: 2,
+            pow_difficulty: [0xFF; 32],
+        };
+        let init_cfg = super::InitConfig {
+            min_num_units: 1,
+            max_num_units: 1,
+            labels_per_unit: 1,
+            scrypt: ScryptParams::new(2, 1, 1),
+        };
+        // null verifier
+        let result = unsafe {
+            super::verify_proof(null(), proof, null(), cfg, init_cfg, [].into(), Mode::All)
+        };
+        assert_eq!(result, super::VerifyResult::InvalidArgument);
+
+        let mut verifier = std::ptr::null_mut();
+        let result = super::new_verifier(RandomXFlag::default(), &mut verifier);
+        assert_eq!(result, super::NewVerifierResult::Ok);
+        assert!(!verifier.is_null());
+
+        // null metadata
+        let result = unsafe {
+            super::verify_proof(verifier, proof, null(), cfg, init_cfg, [].into(), Mode::All)
+        };
+        free_verifier(verifier);
         assert_eq!(result, super::VerifyResult::InvalidArgument);
     }
 

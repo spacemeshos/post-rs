@@ -62,7 +62,31 @@ fn test_generate_and_verify() {
         ..proof
     };
 
+    // verify all indices
     let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[], Mode::All);
+    assert!(matches!(
+        result,
+        Err(Error::InvalidMsb { index_id, .. }) if index_id == 7
+    ));
+
+    // verify subset of all indices
+    let mode = Mode::Subset { k3: cfg.k2 as _ };
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[], mode);
+    assert!(matches!(
+        result,
+        Err(Error::InvalidMsb { index_id, .. }) if index_id == 7
+    ));
+
+    // verify subset of 1 index - pass as doesn't hit the invalid index
+    let mode = Mode::Subset { k3: 1 };
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[], mode);
+    assert!(result.is_ok());
+
+    // verify subset of indices - fail as hits the invalid index
+    let mode = Mode::Subset {
+        k3: cfg.k2 as usize - 1,
+    };
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[], mode);
     assert!(matches!(
         result,
         Err(Error::InvalidMsb { index_id, .. }) if index_id == 7
