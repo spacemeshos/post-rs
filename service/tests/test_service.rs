@@ -59,7 +59,7 @@ fn test_generate_and_verify() {
 
     // Verify the proof
     service
-        .verify_proof(&proof, &ProofMetadata::new(metadata, [0xCA; 32]), &[])
+        .verify_proof(&proof, &ProofMetadata::new(metadata, [0xCA; 32]))
         .expect("proof should be valid");
 }
 

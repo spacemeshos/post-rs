@@ -50,7 +50,7 @@ fn test_generate_and_verify() {
     let metadata = ProofMetadata::new(metadata, *challenge);
     let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
     verifier
-        .verify(&proof, &metadata, &cfg, &init_cfg, &[], Mode::All)
+        .verify(&proof, &metadata, &cfg, &init_cfg, Mode::All)
         .expect("proof should be valid");
 
     // Check that the proof is invalid if we modify one index
@@ -63,30 +63,34 @@ fn test_generate_and_verify() {
     };
 
     // verify all indices
-    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[], Mode::All);
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, Mode::All);
     assert!(matches!(
         result,
         Err(Error::InvalidMsb { index_id, .. }) if index_id == 7
     ));
 
     // verify subset of all indices
-    let mode = Mode::Subset { k3: cfg.k2 as _ };
-    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[], mode);
+    let mode = Mode::Subset {
+        k3: cfg.k2 as _,
+        seed: &[],
+    };
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, mode);
     assert!(matches!(
         result,
         Err(Error::InvalidMsb { index_id, .. }) if index_id == 7
     ));
 
     // verify subset of 1 index - pass as doesn't hit the invalid index
-    let mode = Mode::Subset { k3: 1 };
-    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[], mode);
+    let mode = Mode::Subset { k3: 1, seed: &[] };
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, mode);
     assert!(result.is_ok());
 
     // verify subset of indices - fail as hits the invalid index
     let mode = Mode::Subset {
         k3: cfg.k2 as usize - 1,
+        seed: &[],
     };
-    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, &[], mode);
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, mode);
     assert!(matches!(
         result,
         Err(Error::InvalidMsb { index_id, .. }) if index_id == 7
@@ -134,7 +138,7 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
     let metadata = ProofMetadata::new(metadata, *challenge);
     let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
     verifier
-        .verify(&proof, &metadata, &cfg, &init_cfg, &[], Mode::All)
+        .verify(&proof, &metadata, &cfg, &init_cfg, Mode::All)
         .expect("proof should be valid");
 
     // Check that the proof is invalid if we modify one index
@@ -151,7 +155,6 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         &metadata,
         &cfg,
         &init_cfg,
-        &[],
         Mode::One { index: 4 },
     );
     assert!(matches!(

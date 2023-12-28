@@ -40,14 +40,8 @@ async fn certify(
     let s = state.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        s.verifier.verify(
-            &req.proof,
-            &req.metadata,
-            &s.cfg,
-            &s.init_cfg,
-            &my_id,
-            Mode::All,
-        )
+        s.verifier
+            .verify(&req.proof, &req.metadata, &s.cfg, &s.init_cfg, Mode::All)
     })
     .await
     .map_err(|e| {

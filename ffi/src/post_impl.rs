@@ -138,6 +138,36 @@ impl From<post::verification::Error> for VerifyResult {
 }
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub enum VerifyMode {
+    /// Verify all indices in proof
+    All,
+    // Verify only one index at the given index
+    One {
+        index: usize,
+    },
+    // Verify a randomly selected subset of k3 indices
+    // The `seed` is used to randomize the selection of indices.
+    Subset {
+        k3: usize,
+        seed: ArrayU8,
+    },
+}
+
+impl<'a> From<VerifyMode> for Mode<'a> {
+    fn from(mode: VerifyMode) -> Self {
+        match mode {
+            VerifyMode::All => Mode::All,
+            VerifyMode::One { index } => Mode::One { index },
+            VerifyMode::Subset { k3, seed: id } => Mode::Subset {
+                k3,
+                seed: unsafe { id.as_slice() },
+            },
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewVerifierResult {
     Ok,
@@ -195,8 +225,7 @@ pub unsafe extern "C" fn verify_proof(
     metadata: *const ProofMetadata,
     cfg: ProofConfig,
     init_cfg: InitConfig,
-    verifier_id: ArrayU8,
-    mode: Mode,
+    mode: VerifyMode,
 ) -> VerifyResult {
     let verifier = match verifier.as_ref() {
         Some(verifier) => verifier,
@@ -211,9 +240,7 @@ pub unsafe extern "C" fn verify_proof(
         None => return VerifyResult::InvalidArgument,
     };
 
-    let verifier_id = unsafe { verifier_id.as_slice() };
-
-    match verifier.verify(&proof.into(), metadata, &cfg, &init_cfg, verifier_id, mode) {
+    match verifier.verify(&proof.into(), metadata, &cfg, &init_cfg, mode.into()) {
         Ok(_) => VerifyResult::Ok,
         Err(err) => {
             log::error!("Proof is invalid: {err}");
@@ -228,10 +255,10 @@ mod tests {
 
     use post::{
         config::ScryptParams, initialize::Initialize, metadata::ProofMetadata,
-        pow::randomx::RandomXFlag, verification::Mode,
+        pow::randomx::RandomXFlag,
     };
 
-    use crate::post_impl::{free_verifier, verify_proof};
+    use crate::post_impl::{free_verifier, verify_proof, VerifyMode};
 
     #[test]
     fn datadir_must_be_utf8() {
@@ -286,9 +313,8 @@ mod tests {
             scrypt: ScryptParams::new(2, 1, 1),
         };
         // null verifier
-        let result = unsafe {
-            super::verify_proof(null(), proof, null(), cfg, init_cfg, [].into(), Mode::All)
-        };
+        let result =
+            unsafe { super::verify_proof(null(), proof, null(), cfg, init_cfg, VerifyMode::All) };
         assert_eq!(result, super::VerifyResult::InvalidArgument);
 
         let mut verifier = std::ptr::null_mut();
@@ -297,9 +323,8 @@ mod tests {
         assert!(!verifier.is_null());
 
         // null metadata
-        let result = unsafe {
-            super::verify_proof(verifier, proof, null(), cfg, init_cfg, [].into(), Mode::All)
-        };
+        let result =
+            unsafe { super::verify_proof(verifier, proof, null(), cfg, init_cfg, VerifyMode::All) };
         free_verifier(verifier);
         assert_eq!(result, super::VerifyResult::InvalidArgument);
     }
@@ -361,17 +386,8 @@ mod tests {
         let proof = unsafe { *proof_ptr };
 
         let metadata = ProofMetadata::new(meta, *challenge);
-        let result = unsafe {
-            verify_proof(
-                verifier,
-                proof,
-                &metadata,
-                cfg,
-                init_cfg,
-                [].into(),
-                Mode::All,
-            )
-        };
+        let result =
+            unsafe { verify_proof(verifier, proof, &metadata, cfg, init_cfg, VerifyMode::All) };
         assert_eq!(result, super::VerifyResult::Ok);
 
         // Modify the proof to have different k2pow
@@ -380,17 +396,8 @@ mod tests {
             ..proof
         };
 
-        let result = unsafe {
-            verify_proof(
-                verifier,
-                proof,
-                &metadata,
-                cfg,
-                init_cfg,
-                [].into(),
-                Mode::All,
-            )
-        };
+        let result =
+            unsafe { verify_proof(verifier, proof, &metadata, cfg, init_cfg, VerifyMode::All) };
         assert_eq!(result, super::VerifyResult::Invalid);
 
         unsafe { super::free_proof(proof_ptr) };

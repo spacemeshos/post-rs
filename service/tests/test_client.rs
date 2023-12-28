@@ -128,12 +128,12 @@ async fn test_gen_proof_finished() {
     service
         .expect_verify_proof()
         .once()
-        .returning(|_, _, _| Ok(()));
+        .returning(|_, _| Ok(()));
     // Second try fails
     service
         .expect_verify_proof()
         .once()
-        .returning(|_, _, _| Err(eyre::eyre!("invalid proof")));
+        .returning(|_, _| Err(eyre::eyre!("invalid proof")));
 
     let service = Arc::new(service);
     let client = test_server.create_client(service.clone());

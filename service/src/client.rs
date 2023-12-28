@@ -44,7 +44,6 @@ pub trait PostService {
         &self,
         proof: &post::prove::Proof<'a>,
         metadata: &post::metadata::ProofMetadata,
-        verifier_id: &[u8],
     ) -> eyre::Result<()>;
 }
 
@@ -57,9 +56,8 @@ impl<T: PostService + ?Sized> PostService for std::sync::Arc<T> {
         &self,
         proof: &post::prove::Proof,
         metadata: &post::metadata::ProofMetadata,
-        verifier_id: &[u8],
     ) -> eyre::Result<()> {
-        self.as_ref().verify_proof(proof, metadata, verifier_id)
+        self.as_ref().verify_proof(proof, metadata)
     }
 
     fn get_metadata(&self) -> eyre::Result<PostMetadata> {
@@ -196,7 +194,6 @@ impl<S: PostService> ServiceClient<S> {
                         post_metadata,
                         request.challenge.as_slice().try_into().unwrap(),
                     ),
-                    &post_metadata.node_id, // self-verify
                 ) {
                     log::error!("generated proof is not valid: {err:?}");
                     return ServiceResponse {
