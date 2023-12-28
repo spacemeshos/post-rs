@@ -41,3 +41,17 @@ impl ArrayU8 {
         std::slice::from_raw_parts(self.ptr, self.len)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_array_u8() {
+        let v = vec![1, 2, 3];
+        let array = ArrayU8::from(&v);
+        assert_eq!(array.len, v.len());
+        assert_eq!(array.cap, v.capacity());
+        assert_eq!(unsafe { array.as_slice() }, &v);
+    }
+}
