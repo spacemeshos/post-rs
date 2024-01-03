@@ -34,7 +34,6 @@ pub struct PostService {
     pow_flags: RandomXFlag,
     proof_generation: Mutex<Option<ProofGenProcess>>,
 
-    verifier: Verifier,
     stop: Arc<AtomicBool>,
 }
 
@@ -55,7 +54,6 @@ impl PostService {
             nonces,
             threads,
             pow_flags,
-            verifier: Verifier::new(Box::new(PoW::new(RandomXFlag::get_recommended_flags())?)),
             stop: Arc::new(AtomicBool::new(false)),
         })
     }
@@ -115,7 +113,10 @@ impl crate::client::PostService for PostService {
     }
 
     fn verify_proof(&self, proof: &Proof, metadata: &ProofMetadata) -> eyre::Result<()> {
-        self.verifier
+        let pow_verifier =
+            PoW::new(RandomXFlag::get_recommended_flags()).context("creating PoW verifier")?;
+        let verifier = Verifier::new(Box::new(pow_verifier));
+        verifier
             .verify(proof, metadata, &self.cfg, &self.init_cfg)
             .wrap_err("verifying proof")
     }
