@@ -1,6 +1,7 @@
 mod initialization;
 mod log;
 mod post_impl;
+mod version;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
