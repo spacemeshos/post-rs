@@ -71,3 +71,7 @@ inherits = "release"
 strip = true
 lto = true
 rpath = true
+
+[profile.dev-clib]
+inherits = "dev"
+rpath = true
