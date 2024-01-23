@@ -138,36 +138,6 @@ impl From<post::verification::Error> for VerifyResult {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub enum VerifyMode {
-    /// Verify all indices in proof
-    All,
-    // Verify only one index at the given index
-    One {
-        index: usize,
-    },
-    // Verify a randomly selected subset of k3 indices
-    // The `seed` is used to randomize the selection of indices.
-    Subset {
-        k3: usize,
-        seed: ArrayU8,
-    },
-}
-
-impl<'a> From<VerifyMode> for Mode<'a> {
-    fn from(mode: VerifyMode) -> Self {
-        match mode {
-            VerifyMode::All => Mode::All,
-            VerifyMode::One { index } => Mode::One { index },
-            VerifyMode::Subset { k3, seed: id } => Mode::Subset {
-                k3,
-                seed: unsafe { id.as_slice() },
-            },
-        }
-    }
-}
-
-#[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NewVerifierResult {
     Ok,
@@ -214,10 +184,11 @@ pub extern "C" fn free_verifier(verifier: *mut Verifier) {
     unsafe { drop(Box::from_raw(verifier)) };
 }
 
-/// Verify a proof
+/// Verify the proof
 ///
 /// # Safety
-/// `metadata` must be initialized and properly aligned.
+/// - `verifier` must be initialized and properly aligned.
+/// - `metadata` must be initialized and properly aligned.
 #[no_mangle]
 pub unsafe extern "C" fn verify_proof(
     verifier: *const Verifier,
@@ -225,7 +196,71 @@ pub unsafe extern "C" fn verify_proof(
     metadata: *const ProofMetadata,
     cfg: ProofConfig,
     init_cfg: InitConfig,
-    mode: VerifyMode,
+) -> VerifyResult {
+    _verify_proof(verifier, proof, metadata, cfg, init_cfg, Mode::All)
+}
+
+/// Verify a single index in the proof
+///
+/// # Safety
+/// - `verifier` must be initialized and properly aligned.
+/// - `metadata` must be initialized and properly aligned.
+#[no_mangle]
+pub unsafe extern "C" fn verify_proof_index(
+    verifier: *const Verifier,
+    proof: Proof,
+    metadata: *const ProofMetadata,
+    cfg: ProofConfig,
+    init_cfg: InitConfig,
+    index: usize,
+) -> VerifyResult {
+    _verify_proof(
+        verifier,
+        proof,
+        metadata,
+        cfg,
+        init_cfg,
+        Mode::One { index },
+    )
+}
+
+/// Verify a subset of indexes in the proof
+///
+/// # Safety
+/// - `verifier` must be initialized and properly aligned.
+/// - `metadata` must be initialized and properly aligned.
+/// - the caller must uphold the safety contract for `from_raw_parts`.
+#[no_mangle]
+pub unsafe extern "C" fn verify_proof_subset(
+    verifier: *const Verifier,
+    proof: Proof,
+    metadata: *const ProofMetadata,
+    cfg: ProofConfig,
+    init_cfg: InitConfig,
+    k3: usize,
+    seed_ptr: *const u8,
+    seed_len: usize,
+) -> VerifyResult {
+    _verify_proof(
+        verifier,
+        proof,
+        metadata,
+        cfg,
+        init_cfg,
+        Mode::Subset {
+            k3,
+            seed: std::slice::from_raw_parts(seed_ptr, seed_len),
+        },
+    )
+}
+
+unsafe fn _verify_proof(
+    verifier: *const Verifier,
+    proof: Proof,
+    metadata: *const ProofMetadata,
+    cfg: ProofConfig,
+    init_cfg: InitConfig,
+    mode: Mode,
 ) -> VerifyResult {
     let verifier = match verifier.as_ref() {
         Some(verifier) => verifier,
@@ -240,7 +275,7 @@ pub unsafe extern "C" fn verify_proof(
         None => return VerifyResult::InvalidArgument,
     };
 
-    match verifier.verify(&proof.into(), metadata, &cfg, &init_cfg, mode.into()) {
+    match verifier.verify(&proof.into(), metadata, &cfg, &init_cfg, mode) {
         Ok(_) => VerifyResult::Ok,
         Err(err) => {
             log::error!("Proof is invalid: {err}");
@@ -258,7 +293,7 @@ mod tests {
         pow::randomx::RandomXFlag,
     };
 
-    use crate::post_impl::{free_verifier, verify_proof, VerifyMode};
+    use crate::post_impl::{free_verifier, verify_proof, verify_proof_index, verify_proof_subset};
 
     #[test]
     fn datadir_must_be_utf8() {
@@ -313,8 +348,7 @@ mod tests {
             scrypt: ScryptParams::new(2, 1, 1),
         };
         // null verifier
-        let result =
-            unsafe { super::verify_proof(null(), proof, null(), cfg, init_cfg, VerifyMode::All) };
+        let result = unsafe { verify_proof(null(), proof, null(), cfg, init_cfg) };
         assert_eq!(result, super::VerifyResult::InvalidArgument);
 
         let mut verifier = std::ptr::null_mut();
@@ -323,8 +357,7 @@ mod tests {
         assert!(!verifier.is_null());
 
         // null metadata
-        let result =
-            unsafe { super::verify_proof(verifier, proof, null(), cfg, init_cfg, VerifyMode::All) };
+        let result = unsafe { verify_proof(verifier, proof, null(), cfg, init_cfg) };
         free_verifier(verifier);
         assert_eq!(result, super::VerifyResult::InvalidArgument);
     }
@@ -373,7 +406,7 @@ mod tests {
 
         let challenge = b"hello world, challenge me!!!!!!!";
 
-        // Create proof without miner ID
+        // Create proof
         let data_dir_cstr = std::ffi::CString::new(datadir.path().to_str().unwrap()).unwrap();
         let proof_ptr = crate::post_impl::generate_proof(
             data_dir_cstr.as_ptr(),
@@ -386,8 +419,7 @@ mod tests {
         let proof = unsafe { *proof_ptr };
 
         let metadata = ProofMetadata::new(meta, *challenge);
-        let result =
-            unsafe { verify_proof(verifier, proof, &metadata, cfg, init_cfg, VerifyMode::All) };
+        let result = unsafe { verify_proof(verifier, proof, &metadata, cfg, init_cfg) };
         assert_eq!(result, super::VerifyResult::Ok);
 
         // Modify the proof to have different k2pow
@@ -396,8 +428,25 @@ mod tests {
             ..proof
         };
 
-        let result =
-            unsafe { verify_proof(verifier, proof, &metadata, cfg, init_cfg, VerifyMode::All) };
+        let result = unsafe { verify_proof(verifier, proof, &metadata, cfg, init_cfg) };
+        assert_eq!(result, super::VerifyResult::Invalid);
+
+        let result = unsafe { verify_proof_index(verifier, proof, &metadata, cfg, init_cfg, 0) };
+        assert_eq!(result, super::VerifyResult::Invalid);
+
+        let seed = &[];
+        let result = unsafe {
+            verify_proof_subset(
+                verifier,
+                proof,
+                &metadata,
+                cfg,
+                init_cfg,
+                0,
+                seed.as_ptr(),
+                seed.len(),
+            )
+        };
         assert_eq!(result, super::VerifyResult::Invalid);
 
         unsafe { super::free_proof(proof_ptr) };
