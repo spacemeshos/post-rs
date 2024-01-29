@@ -62,18 +62,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Tests
-        run: cargo test --all-features --release -p post-rs -p certifier -p service
+        run: cargo test --workspace --exclude scrypt-ocl
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
 
       - name: Test scrypt-ocl crate
         if: matrix.os != 'windows-2019'
-        run: cargo test -p scrypt-ocl --all-features --release -- --test-threads=1
-        env:
-          RUSTFLAGS: ${{ matrix.rustflags }}
-
-      - name: Test ffi crate
-        run: cargo test -p post-cbindings --all-features --release -- --test-threads=1
+        run: cargo test -p scrypt-ocl -- --test-threads=1
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
 
@@ -128,7 +123,7 @@ jobs:
       - name: cargo install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: cargo llvm-cov
-        run: cargo llvm-cov --locked --all-features --lcov --output-path lcov.info --workspace --ignore-filename-regex "main.rs" -- --test-threads=1
+        run: cargo llvm-cov --locked --lcov --output-path lcov.info --workspace --ignore-filename-regex "main.rs" -- --test-threads=1
       - name: Upload to codecov.io
         uses: codecov/codecov-action@v3
         with:
