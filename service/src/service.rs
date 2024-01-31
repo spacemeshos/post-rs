@@ -10,7 +10,7 @@ use post::{
     metadata::{PostMetadata, ProofMetadata},
     pow::randomx::{PoW, RandomXFlag},
     prove::Proof,
-    verification::Verifier,
+    verification::{Mode, Verifier},
 };
 
 #[derive(Debug)]
@@ -117,7 +117,7 @@ impl crate::client::PostService for PostService {
             PoW::new(RandomXFlag::get_recommended_flags()).context("creating PoW verifier")?;
         let verifier = Verifier::new(Box::new(pow_verifier));
         verifier
-            .verify(proof, metadata, &self.cfg, &self.init_cfg)
+            .verify(proof, metadata, &self.cfg, &self.init_cfg, Mode::All)
             .wrap_err("verifying proof")
     }
 

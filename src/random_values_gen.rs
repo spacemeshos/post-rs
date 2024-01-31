@@ -26,10 +26,10 @@ pub(crate) struct RandomValuesIterator<T> {
 }
 
 impl<T> RandomValuesIterator<T> {
-    pub(crate) fn new(data: Vec<T>, seed: &[&[u8]]) -> Self {
+    pub(crate) fn new(data: impl IntoIterator<Item = T>, seed: &[&[u8]]) -> Self {
         Self {
             idx: 0,
-            data,
+            data: data.into_iter().collect(),
             rng: Blake3Rng::from_seed(seed),
         }
     }
@@ -69,7 +69,7 @@ mod tests {
     #[test]
     fn gives_each_value_once() {
         let k2 = 1000;
-        let iter = RandomValuesIterator::new((0..k2).collect(), &[]);
+        let iter = RandomValuesIterator::new(0..k2, &[]);
         let mut occurences = HashSet::new();
         for item in iter {
             assert!(occurences.insert(item));
@@ -86,9 +86,8 @@ mod tests {
             62, 46, 30, 89, 33, 54, 9, 29, 7, 90, 38, 5, 49, 61, 93, 99, 22, 6, 64, 24, 76, 85, 37,
             65, 31, 4, 52, 3, 56, 21, 8, 28, 66, 47,
         ];
-        let input = (0..expected.len()).collect();
 
-        let iter = RandomValuesIterator::new(input, &[]);
+        let iter = RandomValuesIterator::new(0..expected.len(), &[]);
         assert_eq!(&expected, iter.collect_vec().as_slice());
     }
 

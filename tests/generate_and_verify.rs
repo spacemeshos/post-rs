@@ -1,12 +1,13 @@
-use std::sync::atomic::AtomicBool;
+use std::{borrow::Cow, sync::atomic::AtomicBool};
 
 use post::{
+    compression::{compress_indices, decompress_indexes, required_bits},
     config::{InitConfig, ScryptParams},
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
-    prove::generate_proof,
-    verification::Verifier,
+    prove::{generate_proof, Proof},
+    verification::{Error, Mode, Verifier},
 };
 use tempfile::tempdir;
 
@@ -19,7 +20,6 @@ fn test_generate_and_verify() {
     let cfg = post::config::ProofConfig {
         k1: 23,
         k2: 32,
-        k3: 10,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = InitConfig {
@@ -50,15 +50,51 @@ fn test_generate_and_verify() {
     let metadata = ProofMetadata::new(metadata, *challenge);
     let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
     verifier
-        .verify(&proof, &metadata, &cfg, &init_cfg)
+        .verify(&proof, &metadata, &cfg, &init_cfg, Mode::All)
         .expect("proof should be valid");
 
     // Check that the proof is invalid if we modify one index
-    let mut invalid_proof = proof;
-    invalid_proof.pow -= 1;
-    verifier
-        .verify(&invalid_proof, &metadata, &cfg, &init_cfg)
-        .expect_err("proof should be invalid");
+    let bits = required_bits(metadata.num_units as u64 * init_cfg.labels_per_unit);
+    let mut indices = decompress_indexes(&proof.indices, bits).collect::<Vec<_>>();
+    indices[7] ^= u64::MAX;
+    let invalid_proof = Proof {
+        indices: Cow::Owned(compress_indices(&indices, bits)),
+        ..proof
+    };
+
+    // verify all indices
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, Mode::All);
+    assert!(matches!(
+        result,
+        Err(Error::InvalidMsb { index_id, .. }) if index_id == 7
+    ));
+
+    // verify subset of all indices
+    let mode = Mode::Subset {
+        k3: cfg.k2 as _,
+        seed: &[],
+    };
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, mode);
+    assert!(matches!(
+        result,
+        Err(Error::InvalidMsb { index_id, .. }) if index_id == 7
+    ));
+
+    // verify subset of 1 index - pass as doesn't hit the invalid index
+    let mode = Mode::Subset { k3: 1, seed: &[] };
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, mode);
+    assert!(result.is_ok());
+
+    // verify subset of indices - fail as hits the invalid index
+    let mode = Mode::Subset {
+        k3: cfg.k2 as usize - 1,
+        seed: &[],
+    };
+    let result = verifier.verify(&invalid_proof, &metadata, &cfg, &init_cfg, mode);
+    assert!(matches!(
+        result,
+        Err(Error::InvalidMsb { index_id, .. }) if index_id == 7
+    ));
 }
 
 #[test]
@@ -72,7 +108,6 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
     let cfg = post::config::ProofConfig {
         k1: 20,
         k2: 30,
-        k3: 30,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = InitConfig {
@@ -103,13 +138,27 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
     let metadata = ProofMetadata::new(metadata, *challenge);
     let verifier = Verifier::new(Box::new(PoW::new(pow_flags).unwrap()));
     verifier
-        .verify(&proof, &metadata, &cfg, &init_cfg)
+        .verify(&proof, &metadata, &cfg, &init_cfg, Mode::All)
         .expect("proof should be valid");
 
     // Check that the proof is invalid if we modify one index
-    let mut invalid_proof = proof;
-    invalid_proof.indices.to_mut()[0] += 1;
-    verifier
-        .verify(&invalid_proof, &metadata, &cfg, &init_cfg)
-        .expect_err("proof should be invalid");
+    let bits = required_bits(metadata.num_units as u64 * init_cfg.labels_per_unit);
+    let mut indices = decompress_indexes(&proof.indices, bits).collect::<Vec<_>>();
+    indices[4] ^= u64::MAX;
+    let invalid_proof = Proof {
+        indices: Cow::Owned(compress_indices(&indices, bits)),
+        ..proof
+    };
+
+    let result = verifier.verify(
+        &invalid_proof,
+        &metadata,
+        &cfg,
+        &init_cfg,
+        Mode::One { index: 4 },
+    );
+    assert!(matches!(
+        result,
+        Err(Error::InvalidMsb { index_id, .. }) if index_id == 4
+    ));
 }

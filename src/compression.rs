@@ -3,7 +3,7 @@ use bitvec::{slice::BitSlice, view::BitView};
 
 /// Compress indexes into a byte slice.
 /// The number of bits used to store each index is `keep_bits`.
-pub(crate) fn compress_indices(indexes: &[u64], keep_bits: usize) -> Vec<u8> {
+pub fn compress_indices(indexes: &[u64], keep_bits: usize) -> Vec<u8> {
     let mut bv = bitvec![u8, Lsb0;];
     for index in indexes {
         bv.extend_from_bitslice(&index.to_le_bytes().view_bits::<Lsb0>()[..keep_bits]);
@@ -13,14 +13,14 @@ pub(crate) fn compress_indices(indexes: &[u64], keep_bits: usize) -> Vec<u8> {
 
 /// Decompress indexes from a byte slice, previously compressed with `compress_indices`.
 /// Might return more indexes than the original, if the last byte contains unused bits.
-pub(crate) fn decompress_indexes(indexes: &[u8], bits: usize) -> impl Iterator<Item = u64> + '_ {
+pub fn decompress_indexes(indexes: &[u8], bits: usize) -> impl Iterator<Item = u64> + '_ {
     BitSlice::<_, Lsb0>::from_slice(indexes)
         .chunks_exact(bits)
         .map(|chunk| chunk.load_le::<u64>())
 }
 
 /// Calculate the number of bits required to store the value.
-pub(crate) fn required_bits(value: u64) -> usize {
+pub fn required_bits(value: u64) -> usize {
     if value == 0 {
         return 0;
     }
