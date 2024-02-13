@@ -65,9 +65,6 @@ struct PostConfig {
     /// K2 is the number of labels below the required difficulty required for a proof
     #[arg(long, default_value_t = 37)]
     k2: u32,
-    /// K3 is the size of the subset of proof indices that is validated
-    #[arg(long, default_value_t = 37)]
-    k3: u32,
     /// difficulty for the nonce proof of work (aka "k2pow")
     #[arg(
         long,
@@ -194,7 +191,6 @@ async fn main() -> eyre::Result<()> {
         post::config::ProofConfig {
             k1: args.post_config.k1,
             k2: args.post_config.k2,
-            k3: args.post_config.k3,
             pow_difficulty: args.post_config.pow_difficulty,
         },
         post::config::InitConfig {

@@ -21,7 +21,6 @@ async fn test_certificate_post_proof() {
     let cfg = ProofConfig {
         k1: 20,
         k2: 10,
-        k3: 10,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = InitConfig {

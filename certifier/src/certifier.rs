@@ -6,7 +6,7 @@ use axum::{routing::post, Router};
 use ed25519_dalek::{Signer, SigningKey};
 use post::config::{InitConfig, ProofConfig};
 use post::pow::randomx::PoW;
-use post::verification::Verifier;
+use post::verification::{Mode, Verifier};
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 use tracing::instrument;
@@ -31,16 +31,17 @@ struct CertifyResponse {
 #[instrument(skip(state))]
 async fn certify(
     State(state): State<Arc<AppState>>,
-    Json(request): Json<CertifyRequest>,
+    Json(req): Json<CertifyRequest>,
 ) -> Result<Json<CertifyResponse>, (StatusCode, String)> {
     tracing::debug!("certifying");
 
-    let pub_key = request.metadata.node_id;
+    let pub_key = req.metadata.node_id;
+    let my_id = state.signer.verifying_key().to_bytes();
     let s = state.clone();
 
     let result = tokio::task::spawn_blocking(move || {
         s.verifier
-            .verify(&request.proof, &request.metadata, &s.cfg, &s.init_cfg)
+            .verify(&req.proof, &req.metadata, &s.cfg, &s.init_cfg, Mode::All)
     })
     .await
     .map_err(|e| {
@@ -56,7 +57,7 @@ async fn certify(
     // Sign the nodeID
     let response = CertifyResponse {
         signature: state.signer.sign(&pub_key).to_vec(),
-        pub_key: state.signer.verifying_key().to_bytes().to_vec(),
+        pub_key: my_id.to_vec(),
     };
     Ok(Json(response))
 }
