@@ -132,10 +132,10 @@ jobs:
   build:
     name: Build library
     runs-on: ${{ matrix.os }}
-    needs:
-      - test
-      - fmt
-      - clippy
+    # needs:
+      # - test
+      # - fmt
+      # - clippy
     strategy:
       fail-fast: false
       matrix:
@@ -203,6 +203,18 @@ jobs:
             ffi/post.h
             target/release-clib/${{ matrix.dylib }}
             target/release-clib/${{ matrix.staticlib }}
+          if-no-files-found: error
+
+      - name: Build initializer tool
+        run: cargo build -p initializer --release
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+      - name: Archive initializer artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: initializer-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
+          path: |
+            target/release/initializer${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
 
       - name: Build profiler tool
