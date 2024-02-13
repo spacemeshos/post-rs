@@ -1,23 +1,15 @@
 //! Operator service for controlling the post service.
 //!
-//! It exposes a GRPC API defined in `spacemesh.v1.post.proto`.
+//! It exposes an HTTP API.
 //! Allows to query the status of the post service.
 
 use std::sync::Arc;
 
+use axum::{extract::State, routing::get, Json, Router};
+use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
-use tokio_stream::wrappers::TcpListenerStream;
-use tonic::{transport::Server, Request, Response, Status};
 
-use post_v1::operator_service_server::OperatorServiceServer;
-use post_v1::{OperatorStatusRequest, OperatorStatusResponse};
-
-pub mod post_v1 {
-    tonic::include_proto!("post.v1");
-    pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
-        tonic::include_file_descriptor_set!("service_descriptor");
-}
-
+#[derive(Debug, Serialize, Deserialize)]
 pub enum ServiceState {
     Idle,
     Proving,
@@ -30,55 +22,26 @@ pub trait Service {
     fn status(&self) -> ServiceState;
 }
 
-#[derive(Debug, Default)]
-pub struct OperatorService<S: Service> {
-    service: Arc<S>,
-}
-
-#[tonic::async_trait]
-impl<S: Service + Sync + Send + 'static> post_v1::operator_service_server::OperatorService
-    for OperatorService<S>
+pub async fn run<S>(listener: TcpListener, service: Arc<S>) -> eyre::Result<()>
+where
+    S: Service + Sync + Send + 'static,
 {
-    async fn status(
-        &self,
-        request: Request<OperatorStatusRequest>,
-    ) -> Result<Response<OperatorStatusResponse>, Status> {
-        log::debug!("got a request from {:?}", request.remote_addr());
+    log::info!("running operator service on {}", listener.local_addr()?);
 
-        let status = match self.service.status() {
-            ServiceState::Idle => post_v1::operator_status_response::Status::Idle,
-            ServiceState::Proving => post_v1::operator_status_response::Status::Proving,
-        };
+    let app = Router::new()
+        .route("/status", get(status))
+        .with_state(service);
 
-        Ok(Response::new(OperatorStatusResponse {
-            status: status as _,
-        }))
-    }
+    axum::serve(listener, app)
+        .await
+        .map_err(|e| eyre::eyre!("failed to serve: {e}"))
 }
 
-#[derive(Debug, Default)]
-pub struct OperatorServer {}
-
-impl OperatorServer {
-    pub async fn run<S>(listener: TcpListener, service: Arc<S>) -> eyre::Result<()>
-    where
-        S: Service + Sync + Send + 'static,
-    {
-        log::info!("running operator service on {}", listener.local_addr()?);
-
-        let reflection_service = tonic_reflection::server::Builder::configure()
-            .register_encoded_file_descriptor_set(post_v1::FILE_DESCRIPTOR_SET)
-            .build()?;
-
-        let operator_service = OperatorServiceServer::new(OperatorService { service });
-
-        Server::builder()
-            .add_service(reflection_service)
-            .add_service(operator_service)
-            .serve_with_incoming(TcpListenerStream::new(listener))
-            .await
-            .map_err(|e| eyre::eyre!("failed to serve: {e}"))
-    }
+async fn status<S>(State(service): State<Arc<S>>) -> Json<ServiceState>
+where
+    S: Service + Sync + Send + 'static,
+{
+    Json(service.status())
 }
 
 #[cfg(test)]
@@ -86,10 +49,6 @@ mod tests {
     use std::sync::Arc;
 
     use tokio::net::TcpListener;
-
-    use super::post_v1::operator_service_client::OperatorServiceClient;
-    use super::post_v1::operator_status_response::Status;
-    use super::post_v1::OperatorStatusRequest;
 
     #[tokio::test]
     async fn test_status() {
@@ -104,16 +63,19 @@ mod tests {
         let listener = TcpListener::bind("localhost:0").await.unwrap();
         let addr: std::net::SocketAddr = listener.local_addr().unwrap();
 
-        tokio::spawn(super::OperatorServer::run(listener, Arc::new(svc)));
+        tokio::spawn(super::run(listener, Arc::new(svc)));
 
-        let mut client = OperatorServiceClient::connect(format!("http://{addr}"))
+        let url = format!("http://{addr}/status");
+        let resp = reqwest::get(&url).await.unwrap();
+        let status: super::ServiceState = resp.json().await.unwrap();
+        assert!(matches!(status, super::ServiceState::Idle));
+
+        let resp = reqwest::get(&url)
             .await
+            .unwrap()
+            .error_for_status()
             .unwrap();
-
-        let response = client.status(OperatorStatusRequest {}).await.unwrap();
-        assert_eq!(response.into_inner().status(), Status::Idle);
-
-        let response = client.status(OperatorStatusRequest {}).await.unwrap();
-        assert_eq!(response.into_inner().status(), Status::Proving);
+        let status: super::ServiceState = resp.json().await.unwrap();
+        assert!(matches!(status, super::ServiceState::Proving));
     }
 }

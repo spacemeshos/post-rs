@@ -1,22 +1,14 @@
 use core::{panic, time};
 use std::{sync::Arc, time::Duration};
 
+use post_service::operator;
 use tokio::{net::TcpListener, time::sleep};
 
 use post::{
     initialize::{CpuInitializer, Initialize},
     pow::randomx::RandomXFlag,
 };
-use post_service::{
-    client::spacemesh_v1::{service_response, GenProofStatus},
-    operator::{
-        post_v1::{
-            operator_service_client::OperatorServiceClient, operator_status_response::Status,
-            OperatorStatusRequest,
-        },
-        OperatorServer,
-    },
-};
+use post_service::client::spacemesh_v1::{service_response, GenProofStatus};
 
 #[allow(dead_code)]
 mod server;
@@ -30,7 +22,6 @@ async fn test_gen_proof_in_progress() {
     let cfg = post::config::ProofConfig {
         k1: 8,
         k2: 4,
-        k3: 4,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = post::config::InitConfig {
@@ -73,18 +64,20 @@ async fn test_gen_proof_in_progress() {
     // Create operator server and client
     let listener = TcpListener::bind("localhost:0").await.unwrap();
     let operator_addr = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(OperatorServer::run(listener, service));
-    let mut client = OperatorServiceClient::connect(operator_addr).await.unwrap();
+    tokio::spawn(operator::run(listener, service));
 
+    let status_url = format!("{operator_addr}/status");
+    let resp = reqwest::get(&status_url).await.unwrap();
+    let status = resp.json().await.unwrap();
     // It starts in idle state
-    let response = client.status(OperatorStatusRequest {}).await.unwrap();
-    assert_eq!(response.into_inner().status(), Status::Idle);
+    assert!(matches!(status, operator::ServiceState::Idle));
 
     // It transforms to Proving when a proof generation starts
     let connected = test_server.connected.recv().await.unwrap();
     TestServer::generate_proof(&connected, vec![0xCA; 32]).await;
-    let response = client.status(OperatorStatusRequest {}).await.unwrap();
-    assert_eq!(response.into_inner().status(), Status::Proving);
+    let resp = reqwest::get(&status_url).await.unwrap();
+    let status = resp.json().await.unwrap();
+    assert!(matches!(status, operator::ServiceState::Proving));
 
     loop {
         let response = TestServer::generate_proof(&connected, vec![0xCA; 32]).await;
@@ -106,6 +99,7 @@ async fn test_gen_proof_in_progress() {
     }
 
     // It transforms back to Idle when the proof generation finishes
-    let response = client.status(OperatorStatusRequest {}).await.unwrap();
-    assert_eq!(response.into_inner().status(), Status::Idle);
+    let resp = reqwest::get(&status_url).await.unwrap();
+    let status = resp.json().await.unwrap();
+    assert!(matches!(status, operator::ServiceState::Idle));
 }

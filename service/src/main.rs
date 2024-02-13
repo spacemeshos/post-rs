@@ -230,7 +230,7 @@ async fn main() -> eyre::Result<()> {
 
     if let Some(address) = args.operator_address {
         let listener = TcpListener::bind(address).await?;
-        tokio::spawn(operator::OperatorServer::run(listener, service.clone()));
+        tokio::spawn(operator::run(listener, service.clone()));
     }
 
     let client = client::ServiceClient::new(args.address, tls, service)?;
