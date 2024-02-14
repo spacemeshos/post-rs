@@ -1,7 +1,7 @@
 use core::{panic, time};
 use std::{sync::Arc, time::Duration};
 
-use post_service::operator;
+use post_service::operator::{self, ServiceState};
 use tokio::{net::TcpListener, time::sleep};
 
 use post::{
@@ -21,13 +21,13 @@ async fn test_gen_proof_in_progress() {
 
     let cfg = post::config::ProofConfig {
         k1: 8,
-        k2: 4,
+        k2: 12,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = post::config::InitConfig {
         min_num_units: 1,
         max_num_units: 100,
-        labels_per_unit: 256,
+        labels_per_unit: 2560,
         scrypt: post::config::ScryptParams::new(2, 1, 1),
     };
 
@@ -70,36 +70,35 @@ async fn test_gen_proof_in_progress() {
     let resp = reqwest::get(&status_url).await.unwrap();
     let status = resp.json().await.unwrap();
     // It starts in idle state
-    assert!(matches!(status, operator::ServiceState::Idle));
+    assert!(matches!(status, ServiceState::Idle));
 
     // It transforms to Proving when a proof generation starts
     let connected = test_server.connected.recv().await.unwrap();
-    TestServer::generate_proof(&connected, vec![0xCA; 32]).await;
-    let resp = reqwest::get(&status_url).await.unwrap();
-    let status = resp.json().await.unwrap();
-    assert!(matches!(status, operator::ServiceState::Proving));
 
     loop {
         let response = TestServer::generate_proof(&connected, vec![0xCA; 32]).await;
+        let status_resp = reqwest::get(&status_url).await.unwrap();
+        let status = status_resp.json().await.unwrap();
+
         if let Some(service_response::Kind::GenProof(resp)) = response.kind {
             match resp.status() {
                 GenProofStatus::Ok => {
                     if resp.proof.is_some() {
+                        assert!(matches!(status, ServiceState::Idle));
                         break;
                     }
+                    assert!(matches!(
+                        status,
+                        ServiceState::Proving { .. } | ServiceState::DoneProving
+                    ));
                 }
                 _ => {
-                    panic!("Got error response from GenProof");
+                    panic!("got error response");
                 }
             }
         } else {
-            unreachable!();
+            panic!("got wrong response kind");
         }
         sleep(Duration::from_millis(10)).await;
     }
-
-    // It transforms back to Idle when the proof generation finishes
-    let resp = reqwest::get(&status_url).await.unwrap();
-    let status = resp.json().await.unwrap();
-    assert!(matches!(status, operator::ServiceState::Idle));
 }

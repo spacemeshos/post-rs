@@ -1,6 +1,7 @@
 //! Post Service
 
 use std::{
+    ops::{Range, RangeInclusive},
     path::PathBuf,
     sync::{atomic::AtomicBool, Arc, Mutex},
 };
@@ -9,9 +10,11 @@ use eyre::Context;
 use post::{
     metadata::{PostMetadata, ProofMetadata},
     pow::randomx::{PoW, RandomXFlag},
-    prove::Proof,
+    prove::{self, Proof},
     verification::{Mode, Verifier},
 };
+
+use crate::operator::ServiceState;
 
 #[derive(Debug)]
 pub enum ProofGenState {
@@ -20,9 +23,87 @@ pub enum ProofGenState {
 }
 
 #[derive(Debug)]
-struct ProofGenProcess {
-    handle: std::thread::JoinHandle<eyre::Result<Proof<'static>>>,
-    challenge: Vec<u8>,
+enum ProofGenProcess {
+    Idle,
+    Running {
+        handle: Option<std::thread::JoinHandle<eyre::Result<Proof<'static>>>>,
+        challenge: Vec<u8>,
+        progress: ProvingProgress,
+    },
+    Done {
+        proof: eyre::Result<Proof<'static>>,
+    },
+}
+
+impl ProofGenProcess {
+    fn check_finished(&mut self) {
+        if let ProofGenProcess::Running { handle, .. } = self {
+            if handle.as_ref().unwrap().is_finished() {
+                let proof = match handle.take().unwrap().join() {
+                    Ok(result) => result,
+                    Err(err) => {
+                        std::panic::resume_unwind(err);
+                    }
+                };
+                *self = ProofGenProcess::Done { proof };
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+struct ProvingProgress {
+    inner: Arc<Mutex<ProvingProgressInner>>,
+}
+
+#[derive(Clone, Debug)]
+struct ProvingProgressInner {
+    nonces: std::ops::Range<u32>,
+    chunks: range_set::RangeSet<[RangeInclusive<u64>; 10]>,
+}
+
+impl Default for ProvingProgressInner {
+    fn default() -> Self {
+        Self {
+            nonces: 0..0,
+            chunks: range_set::RangeSet::new(),
+        }
+    }
+}
+
+impl prove::ProgressReporter for ProvingProgress {
+    fn finished_chunk(&self, pos: u64, len: usize) {
+        if len == 0 {
+            return;
+        }
+
+        self.inner
+            .lock()
+            .unwrap()
+            .chunks
+            .insert_range(pos..=(pos + len as u64 - 1));
+    }
+
+    fn new_nonce_group(&self, nonces: std::ops::Range<u32>) {
+        let mut progress = self.inner.lock().unwrap();
+        progress.nonces = nonces;
+        progress.chunks.clear();
+    }
+}
+
+impl ProvingProgress {
+    fn get(&self) -> (Range<u32>, u64) {
+        let progress = self.inner.lock().unwrap();
+        (
+            progress.nonces.clone(),
+            progress
+                .chunks
+                .as_ref()
+                .iter()
+                .next()
+                .map_or(0, |r| *r.end() + 1),
+        )
+    }
 }
 
 pub struct PostService {
@@ -32,7 +113,7 @@ pub struct PostService {
     nonces: usize,
     threads: usize,
     pow_flags: RandomXFlag,
-    proof_generation: Mutex<Option<ProofGenProcess>>,
+    proof_generation: Mutex<ProofGenProcess>,
 
     stop: Arc<AtomicBool>,
 }
@@ -47,7 +128,7 @@ impl PostService {
         pow_flags: RandomXFlag,
     ) -> eyre::Result<Self> {
         Ok(Self {
-            proof_generation: Mutex::new(None),
+            proof_generation: Mutex::new(ProofGenProcess::Idle),
             datadir,
             cfg,
             init_cfg,
@@ -60,54 +141,53 @@ impl PostService {
 }
 
 impl crate::client::PostService for PostService {
-    fn gen_proof(&self, challenge: Vec<u8>) -> eyre::Result<ProofGenState> {
+    fn gen_proof(&self, ch: Vec<u8>) -> eyre::Result<ProofGenState> {
         let mut proof_gen = self.proof_generation.lock().unwrap();
-        if let Some(process) = proof_gen.as_mut() {
-            eyre::ensure!(
-                process.challenge == challenge,
-                 "proof generation is in progress for a different challenge (current: {:X?}, requested: {:X?})", process.challenge, challenge,
+        proof_gen.check_finished();
+        match &*proof_gen {
+            ProofGenProcess::Running { challenge, .. } => {
+                eyre::ensure!(
+                challenge == &ch,
+                 "proof generation is in progress for a different challenge (current: {:X?}, requested: {:X?})", challenge, ch,
                 );
-
-            if process.handle.is_finished() {
-                log::info!("proof generation is finished");
-                let result = match proof_gen.take().unwrap().handle.join() {
-                    Ok(result) => result,
-                    Err(err) => {
-                        std::panic::resume_unwind(err);
-                    }
-                };
-
-                match result {
-                    Ok(proof) => {
-                        return Ok(ProofGenState::Finished { proof });
-                    }
-                    Err(e) => {
-                        return Err(e);
-                    }
-                }
-            } else {
-                log::info!("proof generation in progress");
                 return Ok(ProofGenState::InProgress);
             }
+            ProofGenProcess::Idle => {
+                let challenge: [u8; 32] = ch
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| eyre::eyre!("invalid challenge format"))?;
+                log::info!("starting proof generation for challenge {challenge:X?}");
+                let pow_flags = self.pow_flags;
+                let cfg = self.cfg;
+                let datadir = self.datadir.clone();
+                let nonces = self.nonces;
+                let threads = self.threads;
+                let stop = self.stop.clone();
+                let progress = ProvingProgress::default();
+                let reporter = progress.clone();
+                *proof_gen = ProofGenProcess::Running {
+                    challenge: ch,
+                    handle: Some(std::thread::spawn(move || {
+                        post::prove::generate_proof(
+                            &datadir, &challenge, cfg, nonces, threads, pow_flags, stop, reporter,
+                        )
+                    })),
+                    progress,
+                };
+            }
+            ProofGenProcess::Done { proof } => {
+                log::info!("proof generation is finished");
+                let result = match proof {
+                    Ok(proof) => Ok(ProofGenState::Finished {
+                        proof: proof.clone(),
+                    }),
+                    Err(e) => Err(eyre::eyre!("proof generation failed: {}", e)),
+                };
+                *proof_gen = ProofGenProcess::Idle;
+                return result;
+            }
         }
-
-        let ch: [u8; 32] = challenge
-            .as_slice()
-            .try_into()
-            .map_err(|_| eyre::eyre!("invalid challenge format"))?;
-        log::info!("starting proof generation for challenge {ch:X?}");
-        let pow_flags = self.pow_flags;
-        let cfg = self.cfg;
-        let datadir = self.datadir.clone();
-        let nonces = self.nonces;
-        let threads = self.threads;
-        let stop = self.stop.clone();
-        *proof_gen = Some(ProofGenProcess {
-            challenge,
-            handle: std::thread::spawn(move || {
-                post::prove::generate_proof(&datadir, &ch, cfg, nonces, threads, pow_flags, stop)
-            }),
-        });
 
         Ok(ProofGenState::InProgress)
     }
@@ -127,12 +207,19 @@ impl crate::client::PostService for PostService {
 }
 
 impl crate::operator::Service for PostService {
-    fn status(&self) -> crate::operator::ServiceState {
-        let proof_gen = self.proof_generation.lock().unwrap();
-        if proof_gen.as_ref().is_some() {
-            crate::operator::ServiceState::Proving
-        } else {
-            crate::operator::ServiceState::Idle
+    fn status(&self) -> ServiceState {
+        let mut proof_gen = self.proof_generation.lock().unwrap();
+        proof_gen.check_finished();
+        match &*proof_gen {
+            ProofGenProcess::Running { progress, .. } => {
+                let (nonces, offset) = progress.get();
+                ServiceState::Proving {
+                    nonces,
+                    position: offset,
+                }
+            }
+            ProofGenProcess::Idle => ServiceState::Idle,
+            ProofGenProcess::Done { .. } => ServiceState::DoneProving,
         }
     }
 }
@@ -140,10 +227,11 @@ impl crate::operator::Service for PostService {
 impl Drop for PostService {
     fn drop(&mut self) {
         log::info!("shutting down post service");
-        if let Some(process) = self.proof_generation.lock().unwrap().take() {
-            log::debug!("killing proof generation process");
+        if let ProofGenProcess::Running { handle, .. } = &mut *self.proof_generation.lock().unwrap()
+        {
+            log::debug!("stopping proof generation process");
             self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
-            let _ = process.handle.join().unwrap();
+            let _ = handle.take().unwrap().join().unwrap();
             log::debug!("proof generation process exited");
         }
     }

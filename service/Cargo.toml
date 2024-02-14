@@ -28,6 +28,7 @@ mockall = "0.11.4"
 sysinfo = "0.29.10"
 axum = "0.7.4"
 serde = "1.0.196"
+range-set = "0.0.11"
 
 [build-dependencies]
 tonic-build = "0.11.0"

@@ -3,16 +3,26 @@
 //! It exposes an HTTP API.
 //! Allows to query the status of the post service.
 
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 
 use axum::{extract::State, routing::get, Json, Router};
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+/// The Post-service state
 pub enum ServiceState {
+    /// The service is idle.
     Idle,
-    Proving,
+    /// The service is currently proving.
+    Proving {
+        /// The range of nonces being proven in the current data pass.
+        nonces: Range<u32>,
+        /// The position (in bytes) in the POST data that is already checked.
+        position: u64,
+    },
+    /// Finished proving, but the proof has not been fetched yet.
+    DoneProving,
 }
 
 #[mockall::automock]
@@ -56,9 +66,13 @@ mod tests {
         svc.expect_status()
             .once()
             .returning(|| super::ServiceState::Idle);
+        let proving_status = super::ServiceState::Proving {
+            nonces: 0..64,
+            position: 1000,
+        };
         svc.expect_status()
             .once()
-            .returning(|| super::ServiceState::Proving);
+            .return_const(proving_status.clone());
 
         let listener = TcpListener::bind("localhost:0").await.unwrap();
         let addr: std::net::SocketAddr = listener.local_addr().unwrap();
@@ -75,7 +89,7 @@ mod tests {
             .unwrap()
             .error_for_status()
             .unwrap();
-        let status: super::ServiceState = resp.json().await.unwrap();
-        assert!(matches!(status, super::ServiceState::Proving));
+
+        assert_eq!(proving_status, resp.json().await.unwrap());
     }
 }
