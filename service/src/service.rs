@@ -58,8 +58,11 @@ struct ProvingProgress {
 
 #[derive(Clone, Debug)]
 struct ProvingProgressInner {
+    // currently processed nonces
     nonces: std::ops::Range<u32>,
-    chunks: range_set::RangeSet<[RangeInclusive<u64>; 10]>,
+    // already finished chunks of data
+    // the chunks are automatically merged when possible
+    chunks: range_set::RangeSet<[RangeInclusive<u64>; 20]>,
 }
 
 impl Default for ProvingProgressInner {
@@ -77,11 +80,8 @@ impl prove::ProgressReporter for ProvingProgress {
             return;
         }
 
-        self.inner
-            .lock()
-            .unwrap()
-            .chunks
-            .insert_range(pos..=(pos + len as u64 - 1));
+        let range = pos..=(pos + len as u64 - 1);
+        self.inner.lock().unwrap().chunks.insert_range(range);
     }
 
     fn new_nonce_group(&self, nonces: std::ops::Range<u32>) {
@@ -96,12 +96,7 @@ impl ProvingProgress {
         let progress = self.inner.lock().unwrap();
         (
             progress.nonces.clone(),
-            progress
-                .chunks
-                .as_ref()
-                .iter()
-                .next()
-                .map_or(0, |r| *r.end() + 1),
+            progress.chunks.as_ref().first().map_or(0, |r| *r.end() + 1),
         )
     }
 }

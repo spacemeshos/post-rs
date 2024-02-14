@@ -21,17 +21,34 @@ service --help
 ```
 
 ## Operator API
-The operator API is a set of GRPC endpoints allowing control of the post service.
-
-The GRPC API supports reflection for easy use with tools like [grpcurl](https://github.com/fullstorydev/grpcurl).
+The operator API is a set of HTTP endpoints allowing control of the post service.
 
 It is enabled by providing `--operator-address=<address>`, i.e. `--operator-address=127.0.0.1:50051` CLI argument.
 
 ### Example usage
 #### Querying post service status
 ```sh
-❯ grpcurl -plaintext  localhost:50051  spacemesh.v1.PostServiceOperator/Status
-{
-  "status": "IDLE"
-}
+# Not doing anything
+❯ curl http://localhost:50051/status
+"Idle"
+
+# Proving
+❯ curl http://localhost:50051/status
+{"Proving":{"nonces":{"start":0,"end":128},"position":0}}
+
+# Proving, read some data already
+❯ curl http://localhost:50051/status
+{"Proving":{"nonces":{"start":0,"end":128},"position":10000}}
+
+# Started second pass
+❯ curl http://localhost:50051/status
+{"Proving":{"nonces":{"start":128,"end":256},"position":10000}}
+
+# Finished proving, but the node has not fetched the proof yet
+❯ curl http://localhost:50051/status
+"DoneProving"
+
+# Finished proving and the node has fetched the proof
+❯ curl http://localhost:50051/status
+"Idle"
 ```

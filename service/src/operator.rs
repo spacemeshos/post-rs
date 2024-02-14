@@ -76,20 +76,14 @@ mod tests {
 
         let listener = TcpListener::bind("localhost:0").await.unwrap();
         let addr: std::net::SocketAddr = listener.local_addr().unwrap();
+        let url = format!("http://{addr}/status");
 
         tokio::spawn(super::run(listener, Arc::new(svc)));
 
-        let url = format!("http://{addr}/status");
         let resp = reqwest::get(&url).await.unwrap();
-        let status: super::ServiceState = resp.json().await.unwrap();
-        assert!(matches!(status, super::ServiceState::Idle));
+        assert_eq!(super::ServiceState::Idle, resp.json().await.unwrap());
 
-        let resp = reqwest::get(&url)
-            .await
-            .unwrap()
-            .error_for_status()
-            .unwrap();
-
+        let resp = reqwest::get(&url).await.unwrap();
         assert_eq!(proving_status, resp.json().await.unwrap());
     }
 }
