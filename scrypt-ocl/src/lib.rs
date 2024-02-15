@@ -1,7 +1,8 @@
 use ocl::{
     builders::ProgramBuilder,
     enums::{DeviceInfo, DeviceInfoResult, KernelWorkGroupInfo, KernelWorkGroupInfoResult},
-    Buffer, Device, DeviceType, Kernel, MemFlags, Platform, ProQue, SpatialDims,
+    Buffer, Context, Device, DeviceType, Event, Kernel, MemFlags, Platform, ProQue, Queue,
+    SpatialDims,
 };
 use post::initialize::{Initialize, VrfNonce, ENTIRE_LABEL_SIZE, LABEL_SIZE};
 use std::{cmp::min, fmt::Display, io::Write, ops::Range};
@@ -155,15 +156,20 @@ impl Scrypter {
             max_mem_alloc_size / 1024 / 1024,
         );
 
+        let context = Context::builder()
+            .platform(platform)
+            .devices(device)
+            .build()?;
+
         let src = include_str!("scrypt-jane.cl");
         let program_builder = ProgramBuilder::new()
             .source(src)
             .cmplr_def("LOOKUP_GAP", LOOKUP_GAP as i32)
             .clone();
 
+        let read_queue = Queue::new(&context, device, None)?;
         let pro_que = ProQue::builder()
-            .platform(platform)
-            .device(device)
+            .context(context)
             .prog_bldr(program_builder)
             .dims(1)
             .build()?;
@@ -203,7 +209,7 @@ impl Scrypter {
         log::info!("Allocating buffer for input: {INPUT_SIZE} bytes");
         let input = Buffer::<u32>::builder()
             .len(INPUT_SIZE / 4)
-            .flags(MemFlags::new().read_only())
+            .flags(MemFlags::new().read_only().host_write_only())
             .queue(pro_que.queue().clone())
             .build()?;
 
@@ -211,8 +217,8 @@ impl Scrypter {
         log::info!("Allocating buffer for output: {output_size} bytes");
         let output = Buffer::<u8>::builder()
             .len(output_size)
-            .flags(MemFlags::new().write_only())
-            .queue(pro_que.queue().clone())
+            .flags(MemFlags::new().write_only().host_read_only())
+            .queue(read_queue)
             .build()?;
 
         let lookup_size = global_work_size * kernel_lookup_mem_size;
@@ -271,13 +277,18 @@ impl Scrypter {
             self.kernel
                 .set_default_global_work_size(SpatialDims::One(gws));
 
+            let mut kernel_event = Event::empty();
             unsafe {
-                self.kernel.enq()?;
+                self.kernel.cmd().enew(&mut kernel_event).enq()?;
             }
 
             let labels_buffer =
                 &mut self.labels_buffer.as_mut_slice()[..labels_to_init * ENTIRE_LABEL_SIZE];
-            self.output.read(labels_buffer.as_mut()).enq()?;
+            self.output
+                .cmd()
+                .ewait(&kernel_event)
+                .read(labels_buffer.as_mut())
+                .enq()?;
 
             // Look for VRF nonce if enabled
             // TODO: run in background / in parallel to GPU
