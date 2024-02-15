@@ -217,7 +217,12 @@ impl Scrypter {
         log::info!("Allocating buffer for output: {output_size} bytes");
         let output = Buffer::<u8>::builder()
             .len(output_size)
-            .flags(MemFlags::new().write_only().host_read_only())
+            .flags(
+                MemFlags::new()
+                    .alloc_host_ptr()
+                    .write_only()
+                    .host_read_only(),
+            )
             .queue(read_queue)
             .build()?;
 
