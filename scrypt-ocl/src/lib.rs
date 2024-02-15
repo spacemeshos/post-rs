@@ -266,7 +266,10 @@ impl Scrypter {
         let mut best_nonce = None;
         let labels_end = labels.end;
 
-        for index in labels.step_by(self.global_work_size) {
+        let mut total_kernel_duration = std::time::Duration::ZERO;
+        let mut last_kernel_duration = std::time::Duration::ZERO;
+
+        for (iter, index) in labels.step_by(self.global_work_size).enumerate() {
             self.kernel.set_arg(1, index)?;
 
             let index_end = min(index + self.global_work_size as u64, labels_end);
@@ -287,6 +290,17 @@ impl Scrypter {
                 self.kernel.cmd().enew(&mut kernel_event).enq()?;
             }
 
+            let read_start = std::time::Instant::now();
+            // On some platforms (eg. Nvidia), the read command will spin CPU 100% until the kernel finishes.
+            // Hence we wait a bit before reading the buffer.
+            // The wait time is based on the average kernel duration, with some margin.
+            if iter > 0 {
+                let average = total_kernel_duration.div_f32(iter as f32);
+                let wait = (last_kernel_duration + average).div_f32(2.0).mul_f32(0.9);
+                log::trace!("waiting for kernel to finish for {wait:?}");
+                std::thread::sleep(wait);
+            }
+
             let labels_buffer =
                 &mut self.labels_buffer.as_mut_slice()[..labels_to_init * ENTIRE_LABEL_SIZE];
             self.output
@@ -294,6 +308,9 @@ impl Scrypter {
                 .ewait(&kernel_event)
                 .read(labels_buffer.as_mut())
                 .enq()?;
+
+            last_kernel_duration = read_start.elapsed();
+            total_kernel_duration += last_kernel_duration;
 
             // Look for VRF nonce if enabled
             // TODO: run in background / in parallel to GPU
