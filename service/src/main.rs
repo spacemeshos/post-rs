@@ -1,13 +1,14 @@
-use std::{fs::read_to_string, path::PathBuf, time::Duration};
+use std::{fs::read_to_string, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
 use sysinfo::{Pid, ProcessExt, ProcessStatus, System, SystemExt};
+use tokio::net::TcpListener;
 use tokio::sync::oneshot::{self, error::TryRecvError, Receiver};
 use tonic::transport::{Certificate, Identity};
 
 use post::pow::randomx::RandomXFlag;
-use post_service::client;
+use post_service::{client, operator};
 
 /// Post Service
 #[derive(Parser, Debug)]
@@ -39,6 +40,11 @@ struct Cli {
     /// watch PID and exit if it dies
     #[arg(long)]
     watch_pid: Option<sysinfo::Pid>,
+
+    /// address to listen on for operator service
+    /// the operator service is disabled if not specified
+    #[arg(long)]
+    operator_address: Option<SocketAddr>,
 }
 
 #[derive(Args, Debug)]
@@ -219,6 +225,13 @@ async fn main() -> eyre::Result<()> {
         log::info!("not configuring TLS");
         None
     };
+
+    let service = Arc::new(service);
+
+    if let Some(address) = args.operator_address {
+        let listener = TcpListener::bind(address).await?;
+        tokio::spawn(operator::run(listener, service.clone()));
+    }
 
     let client = client::ServiceClient::new(args.address, tls, service)?;
     let client_handle = tokio::spawn(client.run(args.max_retries, args.reconnect_interval_s));

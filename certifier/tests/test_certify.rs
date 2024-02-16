@@ -7,7 +7,7 @@ use post::{
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
     pow::randomx::RandomXFlag,
-    prove::generate_proof,
+    prove::{self, generate_proof},
 };
 use reqwest::StatusCode;
 use tokio::net::TcpListener;
@@ -45,7 +45,17 @@ async fn test_certificate_post_proof() {
     // Generate a proof
     let pow_flags = RandomXFlag::get_recommended_flags();
     let stop = AtomicBool::new(false);
-    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags, stop).unwrap();
+    let proof = generate_proof(
+        datadir.path(),
+        challenge,
+        cfg,
+        32,
+        1,
+        pow_flags,
+        stop,
+        prove::NoopProgressReporter {},
+    )
+    .unwrap();
     let metadata = ProofMetadata::new(metadata, *challenge);
 
     // Spawn the certifier service

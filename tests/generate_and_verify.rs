@@ -6,7 +6,7 @@ use post::{
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
-    prove::{generate_proof, Proof},
+    prove::{self, generate_proof, Proof},
     verification::{Error, Mode, Verifier},
 };
 use tempfile::tempdir;
@@ -44,7 +44,21 @@ fn test_generate_and_verify() {
     let pow_flags = RandomXFlag::get_recommended_flags();
     // Generate a proof
     let stop = AtomicBool::new(false);
-    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags, stop).unwrap();
+    let mut reporter = prove::MockProgressReporter::new();
+    reporter.expect_new_nonce_group().once().return_const(());
+    reporter.expect_finished_chunk().times(1..).return_const(());
+
+    let proof = generate_proof(
+        datadir.path(),
+        challenge,
+        cfg,
+        32,
+        1,
+        pow_flags,
+        stop,
+        reporter,
+    )
+    .unwrap();
 
     // Verify the proof
     let metadata = ProofMetadata::new(metadata, *challenge);
@@ -132,7 +146,17 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
     let pow_flags = RandomXFlag::get_recommended_flags();
     // Generate a proof
     let stop = AtomicBool::new(false);
-    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags, stop).unwrap();
+    let proof = generate_proof(
+        datadir.path(),
+        challenge,
+        cfg,
+        32,
+        1,
+        pow_flags,
+        stop,
+        prove::NoopProgressReporter {},
+    )
+    .unwrap();
 
     // Verify the proof
     let metadata = ProofMetadata::new(metadata, *challenge);

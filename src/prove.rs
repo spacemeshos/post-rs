@@ -9,6 +9,7 @@
 //! TODO: explain
 
 use std::borrow::{Borrow, Cow};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Mutex,
@@ -18,6 +19,7 @@ use std::{collections::HashMap, ops::Range, path::Path, time::Instant};
 use aes::cipher::block_padding::NoPadding;
 use aes::cipher::BlockEncrypt;
 use eyre::Context;
+use mockall::automock;
 use primitive_types::U256;
 use randomx_rs::RandomXFlag;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
@@ -75,6 +77,19 @@ impl ProvingParams {
             pow_difficulty,
         })
     }
+}
+
+#[automock]
+pub trait ProgressReporter {
+    fn new_nonce_group(&self, nonces: Range<u32>);
+    fn finished_chunk(&self, position: u64, len: usize);
+}
+
+pub struct NoopProgressReporter {}
+
+impl ProgressReporter for NoopProgressReporter {
+    fn new_nonce_group(&self, _: Range<u32>) {}
+    fn finished_chunk(&self, _: u64, _: usize) {}
 }
 
 pub trait Prover {
@@ -265,17 +280,19 @@ impl Prover for Prover8_56 {
 
 /// Generate a proof that data is still held, given the challenge.
 #[allow(clippy::too_many_arguments)]
-pub fn generate_proof<Stopper>(
+pub fn generate_proof<Reporter, Stopper>(
     datadir: &Path,
     challenge: &[u8; 32],
     cfg: ProofConfig,
-    nonces: usize,
+    nonces_size: usize,
     threads: usize,
     pow_flags: RandomXFlag,
     stop: Stopper,
+    reporter: Reporter,
 ) -> eyre::Result<Proof<'static>>
 where
     Stopper: Borrow<AtomicBool>,
+    Reporter: ProgressReporter + Send + Sync,
 {
     let stop = stop.borrow();
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
@@ -283,8 +300,7 @@ where
     log::info!("generating proof with PoW flags: {pow_flags:?} and params: {params:?}");
     let pow_prover = pow::randomx::PoW::new(pow_flags)?;
 
-    let mut start_nonce = 0;
-    let mut end_nonce = start_nonce + nonces as u32;
+    let mut nonces = 0..nonces_size as u32;
 
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(threads)
@@ -296,33 +312,30 @@ where
         if stop.load(Ordering::Relaxed) {
             eyre::bail!("proof generation was stopped");
         }
+        reporter.new_nonce_group(nonces.clone());
 
         let indexes = Mutex::new(HashMap::<u32, Vec<u64>>::new());
 
         let pow_time = Instant::now();
         let prover = pool.install(|| {
-            Prover8_56::new(
-                challenge,
-                start_nonce..end_nonce,
-                params,
-                &pow_prover,
-                &metadata.node_id,
-            )
-            .wrap_err("creating prover")
+            let miner_id = &metadata.node_id;
+            Prover8_56::new(challenge, nonces.clone(), params, &pow_prover, miner_id)
+                .wrap_err("creating prover")
         })?;
 
-        let pow_mins = pow_time.elapsed().as_secs() / 60;
-        log::info!("Finished k2pow in {} minutes", pow_mins);
+        let pow_secs = pow_time.elapsed().as_secs();
+        let pow_mins = pow_secs / 60;
+        log::info!("finished k2pow in {pow_mins}m {}s", pow_secs % 60);
 
         let read_time = Instant::now();
         let data_reader = read_data(datadir, 1024 * 1024, metadata.max_file_size)?;
-        log::info!("Started reading POST data");
+        log::info!("started reading POST data");
         let result = pool.install(|| {
             data_reader
                 .par_bridge()
                 .take_any_while(|_| !stop.load(Ordering::Relaxed))
                 .find_map_any(|batch| {
-                    prover.prove(
+                    let res = prover.prove(
                         &batch.data,
                         batch.pos / BLOCK_SIZE as u64,
                         |nonce, index| {
@@ -334,24 +347,31 @@ where
                             }
                             None
                         },
-                    )
+                    );
+                    reporter.finished_chunk(batch.pos, batch.data.len());
+
+                    res
                 })
         });
-
-        let read_mins = read_time.elapsed().as_secs() / 60;
-        log::info!("Finished reading POST data in {} minutes", read_mins);
+        let read_secs = read_time.elapsed().as_secs();
+        let read_mins = read_secs / 60;
+        log::info!(
+            "finished reading POST data in {read_mins}m {}s",
+            read_secs % 60
+        );
 
         if let Some((nonce, indices)) = result {
             let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
             let pow = prover.get_pow(nonce).unwrap();
 
-            let total_minutes = total_time.elapsed().as_secs() / 60;
+            let total_secs = total_time.elapsed().as_secs();
+            let total_mins = total_secs / 60;
 
-            log::info!("Found proof for nonce: {nonce}, pow: {pow} with {indices:?} indices. Proof took {total_minutes} minutes");
+            log::info!("found proof for nonce: {nonce}, pow: {pow} with {indices:?} indices. It took {total_mins}m {}s", total_secs % 60);
             return Ok(Proof::new(nonce, &indices, num_labels, pow));
         }
 
-        (start_nonce, end_nonce) = (end_nonce, end_nonce + nonces as u32);
+        nonces = nonces.end..(nonces.end + nonces_size as u32);
     }
 }
 

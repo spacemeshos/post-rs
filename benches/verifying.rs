@@ -6,7 +6,7 @@ use post::{
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
-    prove::generate_proof,
+    prove::{generate_proof, NoopProgressReporter},
     verification::{Mode, Verifier},
 };
 #[cfg(not(windows))]
@@ -44,7 +44,17 @@ fn verifying(c: &mut Criterion) {
     let pow_flags = RandomXFlag::get_recommended_flags();
     // Generate a proof
     let stop = AtomicBool::new(false);
-    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags, stop).unwrap();
+    let proof = generate_proof(
+        datadir.path(),
+        challenge,
+        cfg,
+        32,
+        1,
+        pow_flags,
+        stop,
+        NoopProgressReporter {},
+    )
+    .unwrap();
     let metadata = ProofMetadata::new(metadata, *challenge);
 
     // Bench verifying the proof

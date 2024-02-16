@@ -103,7 +103,16 @@ fn _generate_proof(
     let challenge = challenge.try_into()?;
 
     let stop = AtomicBool::new(false);
-    let proof = prove::generate_proof(datadir, challenge, cfg, nonces, threads, pow_flags, stop)?;
+    let proof = prove::generate_proof(
+        datadir,
+        challenge,
+        cfg,
+        nonces,
+        threads,
+        pow_flags,
+        stop,
+        prove::NoopProgressReporter {},
+    )?;
     Ok(Box::new(Proof::from(proof)))
 }
 
