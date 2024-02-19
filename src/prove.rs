@@ -26,6 +26,7 @@ use rayon::prelude::{ParallelBridge, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 
+use crate::config;
 use crate::{
     cipher::AesCipher,
     compression::{compress_indices, required_bits},
@@ -285,7 +286,7 @@ pub fn generate_proof<Reporter, Stopper>(
     challenge: &[u8; 32],
     cfg: ProofConfig,
     nonces_size: usize,
-    threads: usize,
+    threads: config::Cores,
     pow_flags: RandomXFlag,
     stop: Stopper,
     reporter: Reporter,
@@ -302,10 +303,34 @@ where
 
     let mut nonces = 0..nonces_size as u32;
 
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
-        .build()
-        .wrap_err("building thread pool")?;
+    let pool_builder = rayon::ThreadPoolBuilder::new();
+    let pool = match threads {
+        config::Cores::All => pool_builder.build(),
+        config::Cores::Any(n) => pool_builder.num_threads(n).build(),
+        config::Cores::Pin(mut cores) => pool_builder
+            .num_threads(cores.len())
+            .spawn_handler(move |thread| {
+                let mut b = std::thread::Builder::new();
+                if let Some(name) = thread.name() {
+                    b = b.name(name.to_owned());
+                }
+                if let Some(stack_size) = thread.stack_size() {
+                    b = b.stack_size(stack_size);
+                }
+                let core_id = cores.pop();
+                b.spawn(move || {
+                    if let Some(core_id) = core_id {
+                        if !core_affinity::set_for_current(core_affinity::CoreId { id: core_id }) {
+                            log::warn!("failed to set core affinity for thread to {}", core_id);
+                        }
+                    }
+                    thread.run()
+                })?;
+                Ok(())
+            })
+            .build(),
+    }
+    .wrap_err("building thread pool")?;
 
     let total_time = Instant::now();
     loop {

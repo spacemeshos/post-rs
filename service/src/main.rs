@@ -28,15 +28,6 @@ struct Cli {
     #[arg(long)]
     max_retries: Option<usize>,
 
-    #[command(flatten, next_help_heading = "POST configuration")]
-    post_config: PostConfig,
-
-    #[command(flatten, next_help_heading = "POST settings")]
-    post_settings: PostSettings,
-
-    #[command(flatten, next_help_heading = "TLS configuration")]
-    tls: Option<Tls>,
-
     /// watch PID and exit if it dies
     #[arg(long)]
     watch_pid: Option<sysinfo::Pid>,
@@ -45,6 +36,15 @@ struct Cli {
     /// the operator service is disabled if not specified
     #[arg(long)]
     operator_address: Option<SocketAddr>,
+
+    #[command(flatten, next_help_heading = "POST configuration")]
+    post_config: PostConfig,
+
+    #[command(flatten, next_help_heading = "POST settings")]
+    post_settings: PostSettings,
+
+    #[command(flatten, next_help_heading = "TLS configuration")]
+    tls: Option<Tls>,
 }
 
 #[derive(Args, Debug)]
@@ -94,10 +94,9 @@ struct ScryptParams {
 #[derive(Args, Debug)]
 /// POST proof generation settings
 struct PostSettings {
-    /// number of threads to use
-    /// '0' means use all available threads
-    #[arg(long, default_value_t = 1)]
-    threads: usize,
+    #[command(flatten)]
+    cores: CoresConfig,
+
     /// number of nonces to attempt in single pass over POS data
     ///
     /// Each group of 16 nonces requires a separate PoW. Must be a multiple of 16.
@@ -109,6 +108,24 @@ struct PostSettings {
     /// modes of operation for RandomX
     #[arg(long, default_value_t = RandomXMode::Fast)]
     randomx_mode: RandomXMode,
+}
+
+#[derive(Args, Debug, Clone)]
+#[group(required = true)]
+struct CoresConfig {
+    /// number of threads to use,
+    /// '0' means use all available threads
+    ///
+    /// Can't use with `pinned-cores`
+    #[arg(long, default_value_t = 1)]
+    threads: usize,
+
+    /// list of cores to pin threads to,
+    /// it will use only these cores for proving
+    ///
+    /// Can't use with `threads`
+    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    pinned_cores: Option<Vec<usize>>,
 }
 
 /// RandomX modes of operation
@@ -186,6 +203,27 @@ async fn main() -> eyre::Result<()> {
         args.post_config.scrypt.r,
         args.post_config.scrypt.p,
     );
+
+    let cores_config = if let Some(pinned) = args.post_settings.cores.pinned_cores {
+        log::info!(
+            "using {} threads, pinned to cores: {:?}",
+            pinned.len(),
+            pinned.as_slice()
+        );
+        post::config::Cores::Pin(pinned)
+    } else {
+        match args.post_settings.cores.threads {
+            0 => {
+                log::info!("using all available cores");
+                post::config::Cores::All
+            }
+            n => {
+                log::info!("using {n} cores");
+                post::config::Cores::Any(n)
+            }
+        }
+    };
+
     let service = post_service::service::PostService::new(
         args.dir,
         post::config::ProofConfig {
@@ -200,7 +238,7 @@ async fn main() -> eyre::Result<()> {
             scrypt,
         },
         args.post_settings.nonces,
-        args.post_settings.threads,
+        cores_config,
         args.post_settings.randomx_mode.into(),
     )
     .wrap_err("creating Post Service")?;

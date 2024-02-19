@@ -43,6 +43,7 @@ primitive-types = "0.12.1"
 thiserror = "1.0.40"
 thread_local = "1.1.7"
 mockall = "0.11.4"
+core_affinity = "0.8.1"
 
 [dev-dependencies]
 criterion = "0.5"

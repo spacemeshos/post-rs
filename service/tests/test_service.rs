@@ -45,7 +45,7 @@ fn test_generate_and_verify() {
         cfg,
         init_cfg,
         16,
-        1,
+        post::config::Cores::Any(1),
         pow_flags,
     )
     .unwrap();
@@ -98,7 +98,7 @@ fn reject_invalid_challenge() {
         cfg,
         init_cfg,
         16,
-        1,
+        post::config::Cores::Any(1),
         RandomXFlag::get_recommended_flags(),
     )
     .unwrap();
@@ -140,7 +140,7 @@ fn cannot_run_parallel_proof_gens() {
         cfg,
         init_cfg,
         16,
-        1,
+        post::config::Cores::Any(1),
         RandomXFlag::get_recommended_flags(),
     )
     .unwrap();

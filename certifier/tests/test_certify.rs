@@ -3,7 +3,7 @@ use std::{future::IntoFuture, net::SocketAddr, str::FromStr, sync::atomic::Atomi
 use certifier::{certifier::CertifyRequest, configuration::RandomXMode};
 use ed25519_dalek::SigningKey;
 use post::{
-    config::{InitConfig, ProofConfig, ScryptParams},
+    config::{Cores, InitConfig, ProofConfig, ScryptParams},
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
     pow::randomx::RandomXFlag,
@@ -50,7 +50,7 @@ async fn test_certificate_post_proof() {
         challenge,
         cfg,
         32,
-        1,
+        Cores::Any(1),
         pow_flags,
         stop,
         prove::NoopProgressReporter {},

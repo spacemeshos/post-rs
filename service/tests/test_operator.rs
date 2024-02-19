@@ -51,7 +51,7 @@ async fn test_gen_proof_in_progress() {
             cfg,
             init_cfg,
             16,
-            1,
+            post::config::Cores::Any(1),
             pow_flags,
         )
         .unwrap(),

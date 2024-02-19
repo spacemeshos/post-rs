@@ -8,7 +8,7 @@ use std::{
 };
 
 use post::{
-    config::{InitConfig, ProofConfig},
+    config::{Cores, InitConfig, ProofConfig},
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
     prove,
@@ -108,7 +108,7 @@ fn _generate_proof(
         challenge,
         cfg,
         nonces,
-        threads,
+        Cores::Any(threads),
         pow_flags,
         stop,
         prove::NoopProgressReporter {},
