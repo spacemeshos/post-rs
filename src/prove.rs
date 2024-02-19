@@ -10,6 +10,7 @@
 
 use std::borrow::{Borrow, Cow};
 
+use std::sync::Arc;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Mutex,
@@ -303,7 +304,11 @@ where
 
     let mut nonces = 0..nonces_size as u32;
 
-    let pool = create_thread_pool(cores).wrap_err("building thread pool")?;
+    let pool = create_thread_pool(cores, |id| {
+        log::error!("failed to set core affinity for thread to {id}");
+        std::process::exit(1);
+    })
+    .wrap_err("building thread pool")?;
 
     let total_time = Instant::now();
     loop {
@@ -373,16 +378,21 @@ where
     }
 }
 
-fn create_thread_pool(
+fn create_thread_pool<F>(
     cores: config::Cores,
-) -> Result<rayon::ThreadPool, rayon::ThreadPoolBuildError> {
+    on_affinity_set_error: F,
+) -> Result<rayon::ThreadPool, rayon::ThreadPoolBuildError>
+where
+    F: Fn(usize) + Send + Sync + 'static,
+{
+    let on_fail = Arc::new(on_affinity_set_error);
     let pool_builder = rayon::ThreadPoolBuilder::new();
     match cores {
         config::Cores::All => pool_builder.build(),
         config::Cores::Any(n) => pool_builder.num_threads(n).build(),
         config::Cores::Pin(mut cores) => pool_builder
             .num_threads(cores.len())
-            .spawn_handler(move |thread| {
+            .spawn_handler(|thread| {
                 let mut b = std::thread::Builder::new();
                 if let Some(name) = thread.name() {
                     b = b.name(name.to_owned());
@@ -390,11 +400,12 @@ fn create_thread_pool(
                 if let Some(stack_size) = thread.stack_size() {
                     b = b.stack_size(stack_size);
                 }
-                let core_id = cores.pop();
+                let id = cores.pop();
+                let on_fail = on_fail.clone();
                 b.spawn(move || {
-                    if let Some(core_id) = core_id {
-                        if !core_affinity::set_for_current(core_affinity::CoreId { id: core_id }) {
-                            log::warn!("failed to set core affinity for thread to {}", core_id);
+                    if let Some(id) = id {
+                        if !core_affinity::set_for_current(core_affinity::CoreId { id }) {
+                            on_fail(id);
                         }
                     }
                     thread.run()
@@ -704,14 +715,27 @@ mod tests {
 
     #[test]
     fn creating_thread_pool() {
-        let pool = create_thread_pool(config::Cores::All).unwrap();
+        let pool = create_thread_pool(config::Cores::All, |_| {}).unwrap();
         assert_eq!(
             std::thread::available_parallelism().unwrap().get(),
             pool.current_num_threads()
         );
-        let pool = create_thread_pool(config::Cores::Any(4)).unwrap();
+        let pool = create_thread_pool(config::Cores::Any(4), |_| {}).unwrap();
         assert_eq!(4, pool.current_num_threads());
-        let pool = create_thread_pool(config::Cores::Pin(vec![0, 1, 2])).unwrap();
+        let pool = create_thread_pool(config::Cores::Pin(vec![0, 1, 2]), |_| {}).unwrap();
         assert_eq!(3, pool.current_num_threads());
+    }
+
+    #[test]
+    fn fails_when_cant_set_affinity() {
+        let failed = Arc::new(AtomicBool::new(false));
+        let failed_clone = failed.clone();
+        let pool = create_thread_pool(config::Cores::Pin(vec![500]), move |id| {
+            assert_eq!(500, id);
+            failed_clone.store(true, Ordering::Relaxed);
+        })
+        .unwrap();
+        pool.install(|| {});
+        assert!(failed.load(Ordering::Relaxed));
     }
 }
