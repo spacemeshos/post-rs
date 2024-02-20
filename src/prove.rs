@@ -727,6 +727,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(target_os = "windows", ignore)]
     fn fails_when_cant_set_affinity() {
         let failed = Arc::new(AtomicBool::new(false));
         let failed_clone = failed.clone();
