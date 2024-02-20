@@ -10,6 +10,7 @@
 
 use std::borrow::{Borrow, Cow};
 
+use std::sync::Arc;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Mutex,
@@ -26,6 +27,7 @@ use rayon::prelude::{ParallelBridge, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 
+use crate::config;
 use crate::{
     cipher::AesCipher,
     compression::{compress_indices, required_bits},
@@ -285,7 +287,7 @@ pub fn generate_proof<Reporter, Stopper>(
     challenge: &[u8; 32],
     cfg: ProofConfig,
     nonces_size: usize,
-    threads: usize,
+    cores: config::Cores,
     pow_flags: RandomXFlag,
     stop: Stopper,
     reporter: Reporter,
@@ -302,10 +304,11 @@ where
 
     let mut nonces = 0..nonces_size as u32;
 
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
-        .build()
-        .wrap_err("building thread pool")?;
+    let pool = create_thread_pool(cores, |id| {
+        log::error!("failed to set core affinity for thread to {id}");
+        std::process::exit(1);
+    })
+    .wrap_err("building thread pool")?;
 
     let total_time = Instant::now();
     loop {
@@ -372,6 +375,44 @@ where
         }
 
         nonces = nonces.end..(nonces.end + nonces_size as u32);
+    }
+}
+
+fn create_thread_pool<F>(
+    cores: config::Cores,
+    on_affinity_set_error: F,
+) -> Result<rayon::ThreadPool, rayon::ThreadPoolBuildError>
+where
+    F: Fn(usize) + Send + Sync + 'static,
+{
+    let on_fail = Arc::new(on_affinity_set_error);
+    let pool_builder = rayon::ThreadPoolBuilder::new();
+    match cores {
+        config::Cores::All => pool_builder.build(),
+        config::Cores::Any(n) => pool_builder.num_threads(n).build(),
+        config::Cores::Pin(mut cores) => pool_builder
+            .num_threads(cores.len())
+            .spawn_handler(|thread| {
+                let mut b = std::thread::Builder::new();
+                if let Some(name) = thread.name() {
+                    b = b.name(name.to_owned());
+                }
+                if let Some(stack_size) = thread.stack_size() {
+                    b = b.stack_size(stack_size);
+                }
+                let id = cores.pop();
+                let on_fail = on_fail.clone();
+                b.spawn(move || {
+                    if let Some(id) = id {
+                        if !core_affinity::set_for_current(core_affinity::CoreId { id }) {
+                            on_fail(id);
+                        }
+                    }
+                    thread.run()
+                })?;
+                Ok(())
+            })
+            .build(),
     }
 }
 
@@ -670,5 +711,32 @@ mod tests {
         assert_eq!(1, calc_nonce_group(17, 16));
         assert_eq!(1, calc_nonce_group(31, 16));
         assert_eq!(2, calc_nonce_group(32, 16));
+    }
+
+    #[test]
+    fn creating_thread_pool() {
+        let pool = create_thread_pool(config::Cores::All, |_| {}).unwrap();
+        assert_eq!(
+            std::thread::available_parallelism().unwrap().get(),
+            pool.current_num_threads()
+        );
+        let pool = create_thread_pool(config::Cores::Any(4), |_| {}).unwrap();
+        assert_eq!(4, pool.current_num_threads());
+        let pool = create_thread_pool(config::Cores::Pin(vec![0, 1, 2]), |_| {}).unwrap();
+        assert_eq!(3, pool.current_num_threads());
+    }
+
+    #[test]
+    #[cfg_attr(target_os = "windows", ignore)]
+    fn fails_when_cant_set_affinity() {
+        let failed = Arc::new(AtomicBool::new(false));
+        let failed_clone = failed.clone();
+        let pool = create_thread_pool(config::Cores::Pin(vec![500]), move |id| {
+            assert_eq!(500, id);
+            failed_clone.store(true, Ordering::Relaxed);
+        })
+        .unwrap();
+        pool.install(|| {});
+        assert!(failed.load(Ordering::Relaxed));
     }
 }

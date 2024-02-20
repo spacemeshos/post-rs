@@ -106,7 +106,7 @@ pub struct PostService {
     cfg: post::config::ProofConfig,
     init_cfg: post::config::InitConfig,
     nonces: usize,
-    threads: usize,
+    threads: post::config::Cores,
     pow_flags: RandomXFlag,
     proof_generation: Mutex<ProofGenProcess>,
 
@@ -119,7 +119,7 @@ impl PostService {
         cfg: post::config::ProofConfig,
         init_cfg: post::config::InitConfig,
         nonces: usize,
-        threads: usize,
+        threads: post::config::Cores,
         pow_flags: RandomXFlag,
     ) -> eyre::Result<Self> {
         Ok(Self {
@@ -157,7 +157,7 @@ impl crate::client::PostService for PostService {
                 let cfg = self.cfg;
                 let datadir = self.datadir.clone();
                 let nonces = self.nonces;
-                let threads = self.threads;
+                let threads = self.threads.clone();
                 let stop = self.stop.clone();
                 let progress = ProvingProgress::default();
                 let reporter = progress.clone();

@@ -255,7 +255,7 @@ async fn test_get_metadata(#[case] vrf_difficulty: Option<[u8; 32]>) {
         cfg,
         init_cfg,
         16,
-        1,
+        post::config::Cores::Any(1),
         post::pow::randomx::RandomXFlag::get_recommended_flags(),
     )
     .unwrap();

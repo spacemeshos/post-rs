@@ -56,3 +56,15 @@ impl From<ScryptParams> for scrypt_jane::scrypt::ScryptParams {
         )
     }
 }
+
+#[derive(Debug, Clone, Default)]
+pub enum Cores {
+    #[default]
+    /// Use all cores (maxes out at 64 on Windows)
+    All,
+    /// Use `n` cores
+    Any(usize),
+    /// Pin threads to the cores specified in the vector
+    /// Will use length of vector as the number of cores (threads)
+    Pin(Vec<usize>),
+}

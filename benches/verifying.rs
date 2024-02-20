@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicBool;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use post::{
-    config::{InitConfig, ProofConfig, ScryptParams},
+    config::{self, InitConfig, ProofConfig, ScryptParams},
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
@@ -49,7 +49,7 @@ fn verifying(c: &mut Criterion) {
         challenge,
         cfg,
         32,
-        1,
+        config::Cores::Any(1),
         pow_flags,
         stop,
         NoopProgressReporter {},

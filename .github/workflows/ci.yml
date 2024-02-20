@@ -140,7 +140,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: [self-hosted, linux, x64, intel]
+            runner: self-hosted-linux-intel
             dylib: libpost.so
             staticlib: libpost.a
             artifact-name: linux
@@ -167,8 +168,8 @@ jobs:
             staticlib: post.lib
             artifact-name: windows
     steps:
-      - if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get install -y ocl-icd-opencl-dev
+      - if: matrix.runner == 'self-hosted-linux-intel'
+        run: sudo apt-get update && sudo apt-get install -y ocl-icd-opencl-dev
         name: Install opencl
       - if: matrix.os == 'windows-2019'
         name: Install opencl
