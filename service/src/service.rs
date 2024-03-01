@@ -143,7 +143,9 @@ impl crate::client::PostService for PostService {
             ProofGenProcess::Running { challenge, .. } => {
                 eyre::ensure!(
                 challenge == &ch,
-                 "proof generation is in progress for a different challenge (current: {:X?}, requested: {:X?})", challenge, ch,
+                 "proof generation is in progress for a different challenge (current: {}, requested: {})",
+                  hex::encode_upper(challenge),
+                  hex::encode_upper(ch),
                 );
                 return Ok(ProofGenState::InProgress);
             }
@@ -152,7 +154,10 @@ impl crate::client::PostService for PostService {
                     .as_slice()
                     .try_into()
                     .map_err(|_| eyre::eyre!("invalid challenge format"))?;
-                log::info!("starting proof generation for challenge {challenge:X?}");
+                log::info!(
+                    "starting proof generation for challenge {}",
+                    hex::encode_upper(challenge)
+                );
                 let pow_flags = self.pow_flags;
                 let cfg = self.cfg;
                 let datadir = self.datadir.clone();
@@ -173,14 +178,12 @@ impl crate::client::PostService for PostService {
             }
             ProofGenProcess::Done { proof } => {
                 log::info!("proof generation is finished");
-                let result = match proof {
+                return match proof {
                     Ok(proof) => Ok(ProofGenState::Finished {
                         proof: proof.clone(),
                     }),
                     Err(e) => Err(eyre::eyre!("proof generation failed: {}", e)),
                 };
-                *proof_gen = ProofGenProcess::Idle;
-                return result;
             }
         }
 
@@ -191,9 +194,11 @@ impl crate::client::PostService for PostService {
         let pow_verifier =
             PoW::new(RandomXFlag::get_recommended_flags()).context("creating PoW verifier")?;
         let verifier = Verifier::new(Box::new(pow_verifier));
-        verifier
+        let result = verifier
             .verify(proof, metadata, &self.cfg, &self.init_cfg, Mode::All)
-            .wrap_err("verifying proof")
+            .context("verifying proof");
+        *self.proof_generation.lock().unwrap() = ProofGenProcess::Idle;
+        result
     }
 
     fn get_metadata(&self) -> eyre::Result<PostMetadata> {

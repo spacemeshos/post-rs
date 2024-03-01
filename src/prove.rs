@@ -299,7 +299,11 @@ where
     let stop = stop.borrow();
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
     let params = ProvingParams::new(&metadata, &cfg)?;
-    log::info!("generating proof with PoW flags: {pow_flags:?} and params: {params:?}");
+    log::info!(
+        "generating proof with PoW flags: {pow_flags:?}, difficulty (scaled with SU): {}, K2PoW difficulty (scaled with SU): {}",
+        params.difficulty,
+        hex::encode_upper(params.pow_difficulty)
+    );
     let pow_prover = pow::randomx::PoW::new(pow_flags)?;
 
     let mut nonces = 0..nonces_size as u32;

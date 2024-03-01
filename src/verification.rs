@@ -160,8 +160,8 @@ impl Verifier {
         // Verify K2 PoW
         let nonce_group = proof.nonce / NONCES_PER_AES;
         debug!(
-            "verifying K2 pow for nonce group: {nonce_group} with difficulty: {:x?}",
-            pow_difficulty
+            "verifying K2 pow for nonce group: {nonce_group} with difficulty: {}",
+            hex::encode_upper(pow_difficulty)
         );
         self.pow_verifier.verify(
             proof.pow,
