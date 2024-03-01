@@ -188,6 +188,8 @@ impl<S: PostService> ServiceClient<S> {
                     }
                 };
 
+                log::info!("verifying proof");
+                let started = std::time::Instant::now();
                 if let Err(err) = self.service.verify_proof(
                     &proof,
                     &post::metadata::ProofMetadata::new(
@@ -195,7 +197,10 @@ impl<S: PostService> ServiceClient<S> {
                         request.challenge.as_slice().try_into().unwrap(),
                     ),
                 ) {
-                    log::error!("generated proof is not valid: {err:?}");
+                    log::error!(
+                        "failed proof verification: {err:?} (verification took: {}s)",
+                        started.elapsed().as_secs_f64()
+                    );
                     return ServiceResponse {
                         kind: Some(service_response::Kind::GenProof(GenProofResponse {
                             status: GenProofStatus::Error as i32,
@@ -203,6 +208,10 @@ impl<S: PostService> ServiceClient<S> {
                         })),
                     };
                 }
+                log::info!(
+                    "proof is valid (verification took: {}s)",
+                    started.elapsed().as_secs_f64()
+                );
 
                 ServiceResponse {
                     kind: Some(service_response::Kind::GenProof(GenProofResponse {
