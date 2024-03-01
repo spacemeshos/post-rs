@@ -2,6 +2,7 @@ use std::{fs::read_to_string, net::SocketAddr, path::PathBuf, sync::Arc, time::D
 
 use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
+use serde_with::{formats, hex::Hex, serde_as};
 use sysinfo::{Pid, ProcessExt, ProcessStatus, System, SystemExt};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot::{self, error::TryRecvError, Receiver};
@@ -47,7 +48,8 @@ struct Cli {
     tls: Option<Tls>,
 }
 
-#[derive(Args, Debug)]
+#[serde_as]
+#[derive(Args, Debug, serde::Serialize)]
 /// POST configuration - network parameters
 struct PostConfig {
     /// The minimal number of units that must be initialized.
@@ -71,6 +73,7 @@ struct PostConfig {
         default_value = "000dfb23b0979b4b000000000000000000000000000000000000000000000000",
         value_parser(parse_difficulty)
     )]
+    #[serde_as(as = "Hex<formats::Uppercase>")]
     pow_difficulty: [u8; 32],
     /// scrypt parameters for initialization
     #[command(flatten)]
@@ -78,7 +81,7 @@ struct PostConfig {
 }
 
 /// Scrypt parameters for initialization
-#[derive(Args, Debug)]
+#[derive(Args, Debug, serde::Serialize)]
 struct ScryptParams {
     /// scrypt N parameter
     #[arg(short, default_value_t = 8192)]
@@ -91,7 +94,7 @@ struct ScryptParams {
     p: usize,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, serde::Serialize)]
 /// POST proof generation settings
 struct PostSettings {
     #[command(flatten)]
@@ -110,7 +113,7 @@ struct PostSettings {
     randomx_mode: RandomXMode,
 }
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, serde::Serialize)]
 #[group(required = true)]
 struct CoresConfig {
     /// number of threads to use,
@@ -132,7 +135,7 @@ struct CoresConfig {
 ///
 /// They are interchangeable as they give the same results but have different
 /// purpose and memory requirements.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum, serde::Serialize)]
 enum RandomXMode {
     /// Fast mode for proving. Requires 2080 MiB of memory.
     Fast,
@@ -195,8 +198,14 @@ async fn main() -> eyre::Result<()> {
     let env = env_logger::Env::default().filter_or("RUST_LOG", "info");
     env_logger::init_from_env(env);
 
-    log::info!("POST network parameters: {:?}", args.post_config);
-    log::info!("POST proving settings: {:?}", args.post_settings);
+    log::info!(
+        "POST network parameters: {}",
+        serde_json::to_string(&args.post_config).unwrap()
+    );
+    log::info!(
+        "POST proving settings: {}",
+        serde_json::to_string(&args.post_settings).unwrap()
+    );
 
     let scrypt = post::config::ScryptParams::new(
         args.post_config.scrypt.n,
