@@ -6,7 +6,7 @@
 
 use std::pin::Pin;
 
-use post_service::client::{PostService, ServiceClient};
+use post_service::client::{OnProofDone, PostService, ServiceClient};
 use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::wrappers::TcpListenerStream;
@@ -114,11 +114,21 @@ impl TestServer {
         }
     }
 
-    pub fn create_client<S>(&self, service: S) -> ServiceClient<S>
+    pub fn create_client<S>(
+        &self,
+        service: S,
+        on_proof_done: Option<Box<dyn OnProofDone + Send>>,
+    ) -> ServiceClient<S>
     where
         S: PostService,
     {
-        ServiceClient::new(format!("http://{}", self.addr), None, service).unwrap()
+        ServiceClient::new(
+            format!("http://{}", self.addr),
+            None,
+            service,
+            on_proof_done,
+        )
+        .unwrap()
     }
 
     pub async fn generate_proof(

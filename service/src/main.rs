@@ -1,3 +1,4 @@
+
 use std::{fs::read_to_string, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use clap::{Args, Parser, ValueEnum};
@@ -6,6 +7,7 @@ use serde_with::{formats, hex::Hex, serde_as};
 use sysinfo::{Pid, ProcessExt, ProcessStatus, System, SystemExt};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot::{self, error::TryRecvError, Receiver};
+use tokio::time::sleep;
 use tonic::transport::{Certificate, Identity};
 
 use post::pow::randomx::RandomXFlag;
@@ -46,6 +48,11 @@ struct Cli {
 
     #[command(flatten, next_help_heading = "TLS configuration")]
     tls: Option<Tls>,
+
+    /// If set, will quit after the first successful POST proof generation
+    /// Note: experimental feature and subject to changes or removal.
+    #[arg(long, default_value_t = false)]
+    one_shot: bool,
 }
 
 #[serde_as]
@@ -280,7 +287,21 @@ async fn main() -> eyre::Result<()> {
         tokio::spawn(operator::run(listener, service.clone()));
     }
 
-    let client = client::ServiceClient::new(args.address, tls, service)?;
+    let on_proof_done = args.one_shot.then(|| {
+        struct QuitOnDone;
+
+        #[async_trait::async_trait]
+        impl client::OnProofDone for QuitOnDone {
+            async fn done(&self) {
+                log::info!("exiting after one-shot proof generation");
+                sleep(Duration::from_secs(5)).await;
+                std::process::exit(0);
+            }
+        }
+        Box::new(QuitOnDone) as Box<dyn client::OnProofDone + Send>
+    });
+
+    let client = client::ServiceClient::new(args.address, tls, service, on_proof_done)?;
     let client_handle = tokio::spawn(client.run(args.max_retries, args.reconnect_interval_s));
 
     // A channel to communicate when the blocking task should quit.

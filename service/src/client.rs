@@ -6,6 +6,8 @@
 
 use std::time::Duration;
 
+use async_trait::async_trait;
+use eyre::Context;
 use post::metadata::PostMetadata;
 pub(crate) use spacemesh_v1::post_service_client::PostServiceClient;
 use spacemesh_v1::{node_request, service_response};
@@ -28,9 +30,15 @@ pub mod spacemesh_v1 {
     tonic::include_proto!("spacemesh.v1");
 }
 
+#[async_trait]
+pub trait OnProofDone {
+    async fn done(&self);
+}
+
 pub struct ServiceClient<S: PostService> {
     endpoint: Endpoint,
     service: S,
+    on_proof_done: Option<Box<dyn OnProofDone + Send>>,
 }
 
 #[mockall::automock]
@@ -70,6 +78,7 @@ impl<S: PostService> ServiceClient<S> {
         address: String,
         tls: Option<(Option<String>, Certificate, Identity)>,
         service: S,
+        on_proof_done: Option<Box<dyn OnProofDone + Send>>,
     ) -> eyre::Result<Self> {
         let endpoint = Channel::builder(address.parse()?);
         let endpoint = match tls {
@@ -94,7 +103,11 @@ impl<S: PostService> ServiceClient<S> {
             None => endpoint,
         };
 
-        Ok(Self { endpoint, service })
+        Ok(Self {
+            endpoint,
+            service,
+            on_proof_done,
+        })
     }
 
     pub async fn run(
@@ -147,11 +160,20 @@ impl<S: PostService> ServiceClient<S> {
             match request.kind {
                 Some(node_request::Kind::Metadata(_)) => {
                     let resp = self.get_metadata();
-                    tx.send(resp).await?;
+                    tx.send(resp)
+                        .await
+                        .context("sending response to Metadata")?;
                 }
                 Some(node_request::Kind::GenProof(req)) => {
-                    let resp = self.generate_and_verify_proof(req);
-                    tx.send(resp).await?;
+                    let (resp, done) = self.generate_and_verify_proof(req);
+                    tx.send(resp)
+                        .await
+                        .context("sending response to GenProof")?;
+                    if done {
+                        if let Some(on_done) = &self.on_proof_done {
+                            on_done.done().await;
+                        }
+                    }
                 }
                 None => {
                     log::warn!("Got a request with no kind");
@@ -169,7 +191,7 @@ impl<S: PostService> ServiceClient<S> {
         Ok(())
     }
 
-    fn generate_and_verify_proof(&self, request: GenProofRequest) -> ServiceResponse {
+    fn generate_and_verify_proof(&self, request: GenProofRequest) -> (ServiceResponse, bool) {
         let result = self.service.gen_proof(request.challenge.clone());
 
         match result {
@@ -179,12 +201,15 @@ impl<S: PostService> ServiceClient<S> {
                     Ok(m) => m,
                     Err(err) => {
                         log::error!("failed to get metadata: {err:?}");
-                        return ServiceResponse {
-                            kind: Some(service_response::Kind::GenProof(GenProofResponse {
-                                status: GenProofStatus::Error as i32,
-                                ..Default::default()
-                            })),
-                        };
+                        return (
+                            ServiceResponse {
+                                kind: Some(service_response::Kind::GenProof(GenProofResponse {
+                                    status: GenProofStatus::Error as i32,
+                                    ..Default::default()
+                                })),
+                            },
+                            false,
+                        );
                     }
                 };
 
@@ -201,50 +226,62 @@ impl<S: PostService> ServiceClient<S> {
                         "failed proof verification: {err:?} (verification took: {}s)",
                         started.elapsed().as_secs_f64()
                     );
-                    return ServiceResponse {
-                        kind: Some(service_response::Kind::GenProof(GenProofResponse {
-                            status: GenProofStatus::Error as i32,
-                            ..Default::default()
-                        })),
-                    };
+                    return (
+                        ServiceResponse {
+                            kind: Some(service_response::Kind::GenProof(GenProofResponse {
+                                status: GenProofStatus::Error as i32,
+                                ..Default::default()
+                            })),
+                        },
+                        false,
+                    );
                 }
                 log::info!(
                     "proof is valid (verification took: {}s)",
                     started.elapsed().as_secs_f64()
                 );
 
-                ServiceResponse {
-                    kind: Some(service_response::Kind::GenProof(GenProofResponse {
-                        proof: Some(Proof {
-                            nonce: proof.nonce,
-                            indices: proof.indices.into_owned(),
-                            pow: proof.pow,
-                        }),
-                        metadata: Some(ProofMetadata {
-                            challenge: request.challenge,
-                            meta: Some(convert_metadata(post_metadata)),
-                        }),
-                        status: GenProofStatus::Ok as i32,
-                    })),
-                }
+                (
+                    ServiceResponse {
+                        kind: Some(service_response::Kind::GenProof(GenProofResponse {
+                            proof: Some(Proof {
+                                nonce: proof.nonce,
+                                indices: proof.indices.into_owned(),
+                                pow: proof.pow,
+                            }),
+                            metadata: Some(ProofMetadata {
+                                challenge: request.challenge,
+                                meta: Some(convert_metadata(post_metadata)),
+                            }),
+                            status: GenProofStatus::Ok as i32,
+                        })),
+                    },
+                    true,
+                )
             }
             Ok(ProofGenState::InProgress) => {
                 log::info!("proof generation in progress");
-                ServiceResponse {
-                    kind: Some(service_response::Kind::GenProof(GenProofResponse {
-                        status: GenProofStatus::Ok as i32,
-                        ..Default::default()
-                    })),
-                }
+                (
+                    ServiceResponse {
+                        kind: Some(service_response::Kind::GenProof(GenProofResponse {
+                            status: GenProofStatus::Ok as i32,
+                            ..Default::default()
+                        })),
+                    },
+                    false,
+                )
             }
             Err(e) => {
                 log::error!("failed to generate proof: {e:?}");
-                ServiceResponse {
-                    kind: Some(service_response::Kind::GenProof(GenProofResponse {
-                        status: GenProofStatus::Error as i32,
-                        ..Default::default()
-                    })),
-                }
+                (
+                    ServiceResponse {
+                        kind: Some(service_response::Kind::GenProof(GenProofResponse {
+                            status: GenProofStatus::Error as i32,
+                            ..Default::default()
+                        })),
+                    },
+                    false,
+                )
             }
         }
     }
@@ -302,6 +339,7 @@ mod tests {
                 ),
             )),
             super::MockPostService::new(),
+            None,
         )
         .unwrap();
     }
@@ -312,6 +350,7 @@ mod tests {
             "http://localhost:1234".to_string(),
             None,
             super::MockPostService::new(),
+            None,
         )
         .unwrap();
 

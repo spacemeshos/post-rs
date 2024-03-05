@@ -58,7 +58,7 @@ async fn test_gen_proof_in_progress() {
     );
 
     let mut test_server = TestServer::new().await;
-    let client = test_server.create_client(service.clone());
+    let client = test_server.create_client(service.clone(), None);
     tokio::spawn(client.run(None, time::Duration::from_secs(1)));
 
     // Create operator server and client
