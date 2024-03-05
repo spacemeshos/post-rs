@@ -26,7 +26,7 @@ use server::{TestNodeRequest, TestServer};
 #[tokio::test]
 async fn test_registers() {
     let mut test_server = TestServer::new().await;
-    let client = test_server.create_client(Arc::new(MockPostService::new()));
+    let client = test_server.create_client(Arc::new(MockPostService::new()), None);
     let client_handle = tokio::spawn(client.run(None, std::time::Duration::from_secs(1)));
 
     // Check if client registered
@@ -44,7 +44,7 @@ async fn test_gen_proof_in_progress() {
         .expect_gen_proof()
         .returning(|_| Ok(ProofGenState::InProgress));
     let service = Arc::new(service);
-    let client = test_server.create_client(service.clone());
+    let client = test_server.create_client(service.clone(), None);
     let client_handle = tokio::spawn(client.run(None, std::time::Duration::from_secs(1)));
 
     let connected = test_server.connected.recv().await.unwrap();
@@ -73,7 +73,7 @@ async fn test_gen_proof_failed() {
         .returning(|_| Err(eyre::eyre!("failed to generate proof")));
 
     let service = Arc::new(service);
-    let client = test_server.create_client(service.clone());
+    let client = test_server.create_client(service.clone(), None);
     let client_handle = tokio::spawn(client.run(None, std::time::Duration::from_secs(1)));
 
     let connected = test_server.connected.recv().await.unwrap();
@@ -136,7 +136,7 @@ async fn test_gen_proof_finished() {
         .returning(|_, _| Err(eyre::eyre!("invalid proof")));
 
     let service = Arc::new(service);
-    let client = test_server.create_client(service.clone());
+    let client = test_server.create_client(service.clone(), None);
     let client_handle = tokio::spawn(client.run(None, std::time::Duration::from_secs(1)));
 
     let connected = test_server.connected.recv().await.unwrap();
@@ -190,7 +190,7 @@ async fn test_broken_request_no_kind() {
         .returning(|_| Err(eyre::eyre!("failed to generate proof")));
 
     let service = Arc::new(service);
-    let client = test_server.create_client(service.clone());
+    let client = test_server.create_client(service.clone(), None);
     let client_handle = tokio::spawn(client.run(None, std::time::Duration::from_secs(1)));
 
     let connected = test_server.connected.recv().await.unwrap();
@@ -260,7 +260,7 @@ async fn test_get_metadata(#[case] vrf_difficulty: Option<[u8; 32]>) {
     )
     .unwrap();
 
-    let client = test_server.create_client(Arc::new(service));
+    let client = test_server.create_client(Arc::new(service), None);
     let client_handle = tokio::spawn(client.run(None, std::time::Duration::from_secs(1)));
     let connected = test_server.connected.recv().await.unwrap();
 

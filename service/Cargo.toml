@@ -31,6 +31,7 @@ serde = { version = "1.0.196", features = ["derive"] }
 range-set = "0.0.11"
 serde_with = { version = "3.6.1", features = ["hex"] }
 serde_json = "1.0.114"
+async-trait = "0.1.77"
 
 [build-dependencies]
 tonic-build = "0.11.0"

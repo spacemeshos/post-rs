@@ -3314,6 +3314,7 @@ name = "service"
 version = "0.7.1"
 dependencies = [
  "async-stream",
+ "async-trait",
  "axum 0.7.4",
  "clap",
  "env_logger",
