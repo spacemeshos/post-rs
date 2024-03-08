@@ -24,23 +24,10 @@ async fn test_gen_proof_in_progress() {
         k2: 12,
         pow_difficulty: [0xFF; 32],
     };
-    let init_cfg = post::config::InitConfig {
-        min_num_units: 1,
-        max_num_units: 100,
-        labels_per_unit: 2560,
-        scrypt: post::config::ScryptParams::new(2, 1, 1),
-    };
 
-    CpuInitializer::new(init_cfg.scrypt)
-        .initialize(
-            datadir.path(),
-            &[0xBE; 32],
-            &[0xCE; 32],
-            init_cfg.labels_per_unit,
-            4,
-            256,
-            None,
-        )
+    let scrypt = post::config::ScryptParams::new(2, 1, 1);
+    CpuInitializer::new(scrypt)
+        .initialize(datadir.path(), &[0xBE; 32], &[0xCE; 32], 256, 4, 256, None)
         .unwrap();
 
     let pow_flags = RandomXFlag::get_recommended_flags();
@@ -49,7 +36,7 @@ async fn test_gen_proof_in_progress() {
         post_service::service::PostService::new(
             datadir.into_path(),
             cfg,
-            init_cfg,
+            scrypt,
             16,
             post::config::Cores::Any(1),
             pow_flags,
