@@ -151,8 +151,12 @@ mod tests {
         ];
         let prover = PoW::new(RandomXFlag::get_recommended_flags()).unwrap();
 
-        let pow = prover
-            .prove(nonce, challenge, difficulty, &[1; 32])
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .unwrap();
+        let pow = pool
+            .install(|| prover.prove(nonce, challenge, difficulty, &[1; 32]))
             .unwrap();
         prover
             .verify(pow, nonce, challenge, difficulty, &[2; 32])
