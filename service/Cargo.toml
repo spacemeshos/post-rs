@@ -23,7 +23,7 @@ eyre = "0.6.8"
 env_logger = "0.10.0"
 clap = { version = "4.4.4", features = ["derive"] }
 hex = "0.4.3"
-mockall = "0.11.4"
+mockall = "0.12.1"
 sysinfo = "0.29.10"
 axum = "0.7.4"
 serde = { version = "1.0.197", features = ["derive"] }
