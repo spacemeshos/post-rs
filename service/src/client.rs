@@ -14,6 +14,7 @@ use spacemesh_v1::{
 };
 use tokio::sync::mpsc;
 use tokio::time::sleep;
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::transport::Certificate;
 use tonic::transport::Channel;
 use tonic::transport::ClientTlsConfig;
@@ -132,14 +133,10 @@ impl<S: PostService> ServiceClient<S> {
         &mut self,
         mut client: PostServiceClient<Channel>,
     ) -> eyre::Result<()> {
-        let (tx, mut rx) = mpsc::channel::<ServiceResponse>(1);
-        let outbound = async_stream::stream! {
-            while let Some(msg) = rx.recv().await {
-                yield msg;
-            }
-        };
-
-        let response = client.register(Request::new(outbound)).await?;
+        let (tx, rx) = mpsc::channel::<ServiceResponse>(1);
+        let response = client
+            .register(Request::new(ReceiverStream::from(rx)))
+            .await?;
         let mut inbound = response.into_inner();
 
         while let Some(request) = inbound.message().await? {
