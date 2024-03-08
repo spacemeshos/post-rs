@@ -58,9 +58,6 @@ struct PostConfig {
     /// The maximal number of units that can be initialized.
     #[arg(long, default_value_t = u32::MAX)]
     pub max_num_units: u32,
-    ///  The number of labels per unit.
-    #[arg(long, default_value_t = 4294967296)]
-    pub labels_per_unit: u64,
     /// K1 specifies the difficulty for a label to be a candidate for a proof
     #[arg(long, default_value_t = 26)]
     k1: u32,
@@ -240,17 +237,18 @@ async fn main() -> eyre::Result<()> {
             k2: args.post_config.k2,
             pow_difficulty: args.post_config.pow_difficulty,
         },
-        post::config::InitConfig {
-            min_num_units: args.post_config.min_num_units,
-            max_num_units: args.post_config.max_num_units,
-            labels_per_unit: args.post_config.labels_per_unit,
-            scrypt,
-        },
+        scrypt,
         args.post_settings.nonces,
         cores_config,
         args.post_settings.randomx_mode.into(),
     )
     .wrap_err("creating Post Service")?;
+
+    let post_metadata = client::PostService::get_metadata(&service);
+    verify_num_units(
+        args.post_config.min_num_units..=args.post_config.max_num_units,
+        post_metadata.num_units,
+    )?;
 
     let tls = if let Some(tls) = args.tls {
         log::info!(
@@ -334,6 +332,17 @@ fn watch_pid(pid: Pid, interval: Duration, mut term: Receiver<()>) {
     }
 }
 
+fn verify_num_units(range: std::ops::RangeInclusive<u32>, num_units: u32) -> eyre::Result<()> {
+    if !range.contains(&num_units) {
+        return Err(eyre::eyre!(
+            "number of units in the POST data is out of range: {} not in {}..={}",
+            num_units,
+            range.start(),
+            range.end()
+        ));
+    }
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use std::process::Command;
@@ -420,5 +429,14 @@ mod tests {
 
         proc.kill().unwrap();
         proc.wait().unwrap();
+    }
+
+    #[test]
+    fn verify_num_units() {
+        super::verify_num_units(1..=10, 5).unwrap();
+        super::verify_num_units(1..=10, 1).unwrap();
+        super::verify_num_units(1..=10, 10).unwrap();
+        assert!(super::verify_num_units(1..=10, 0).is_err());
+        assert!(super::verify_num_units(1..=10, 11).is_err());
     }
 }

@@ -27,7 +27,7 @@ enum ProofGenProcess {
     Idle,
     Running {
         handle: Option<std::thread::JoinHandle<eyre::Result<Proof<'static>>>>,
-        challenge: Vec<u8>,
+        challenge: [u8; 32],
         progress: ProvingProgress,
     },
     Done {
@@ -103,8 +103,9 @@ impl ProvingProgress {
 
 pub struct PostService {
     datadir: PathBuf,
+    metadata: post::metadata::PostMetadata,
     cfg: post::config::ProofConfig,
-    init_cfg: post::config::InitConfig,
+    scrypt: post::config::ScryptParams,
     nonces: usize,
     threads: post::config::Cores,
     pow_flags: RandomXFlag,
@@ -117,32 +118,33 @@ impl PostService {
     pub fn new(
         datadir: PathBuf,
         cfg: post::config::ProofConfig,
-        init_cfg: post::config::InitConfig,
+        scrypt: post::config::ScryptParams,
         nonces: usize,
         threads: post::config::Cores,
         pow_flags: RandomXFlag,
     ) -> eyre::Result<Self> {
         Ok(Self {
-            proof_generation: Mutex::new(ProofGenProcess::Idle),
+            metadata: post::metadata::load(&datadir).wrap_err("loading POST metadata")?,
             datadir,
             cfg,
-            init_cfg,
+            scrypt,
             nonces,
             threads,
             pow_flags,
+            proof_generation: Mutex::new(ProofGenProcess::Idle),
             stop: Arc::new(AtomicBool::new(false)),
         })
     }
 }
 
 impl crate::client::PostService for PostService {
-    fn gen_proof(&self, ch: Vec<u8>) -> eyre::Result<ProofGenState> {
+    fn gen_proof(&self, ch: &[u8]) -> eyre::Result<ProofGenState> {
         let mut proof_gen = self.proof_generation.lock().unwrap();
         proof_gen.check_finished();
         match &*proof_gen {
             ProofGenProcess::Running { challenge, .. } => {
                 eyre::ensure!(
-                challenge == &ch,
+                challenge.as_slice() == ch,
                  "proof generation is in progress for a different challenge (current: {}, requested: {})",
                   hex::encode_upper(challenge),
                   hex::encode_upper(ch),
@@ -151,7 +153,6 @@ impl crate::client::PostService for PostService {
             }
             ProofGenProcess::Idle => {
                 let challenge: [u8; 32] = ch
-                    .as_slice()
                     .try_into()
                     .map_err(|_| eyre::eyre!("invalid challenge format"))?;
                 log::info!(
@@ -167,7 +168,7 @@ impl crate::client::PostService for PostService {
                 let progress = ProvingProgress::default();
                 let reporter = progress.clone();
                 *proof_gen = ProofGenProcess::Running {
-                    challenge: ch,
+                    challenge,
                     handle: Some(std::thread::spawn(move || {
                         post::prove::generate_proof(
                             &datadir, &challenge, cfg, nonces, threads, pow_flags, stop, reporter,
@@ -190,19 +191,27 @@ impl crate::client::PostService for PostService {
         Ok(ProofGenState::InProgress)
     }
 
-    fn verify_proof(&self, proof: &Proof, metadata: &ProofMetadata) -> eyre::Result<()> {
+    fn verify_proof(&self, proof: &Proof, challenge: &[u8]) -> eyre::Result<()> {
         let pow_verifier =
             PoW::new(RandomXFlag::get_recommended_flags()).context("creating PoW verifier")?;
         let verifier = Verifier::new(Box::new(pow_verifier));
+        let metadata = &ProofMetadata::new(self.metadata, challenge.try_into()?);
+        let init_cfg = post::config::InitConfig {
+            // we assume our POST is correctly initialized.
+            min_num_units: self.metadata.num_units,
+            max_num_units: self.metadata.num_units,
+            labels_per_unit: self.metadata.labels_per_unit,
+            scrypt: self.scrypt,
+        };
         let result = verifier
-            .verify(proof, metadata, &self.cfg, &self.init_cfg, Mode::All)
+            .verify(proof, metadata, &self.cfg, &init_cfg, Mode::All)
             .context("verifying proof");
         *self.proof_generation.lock().unwrap() = ProofGenProcess::Idle;
         result
     }
 
-    fn get_metadata(&self) -> eyre::Result<PostMetadata> {
-        post::metadata::load(&self.datadir).wrap_err("loading POST metadata")
+    fn get_metadata(&self) -> &PostMetadata {
+        &self.metadata
     }
 }
 

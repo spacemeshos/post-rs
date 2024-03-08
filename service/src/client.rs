@@ -36,31 +36,27 @@ pub struct ServiceClient<S: PostService> {
 #[mockall::automock]
 #[allow(clippy::needless_lifetimes)]
 pub trait PostService {
-    fn get_metadata(&self) -> eyre::Result<PostMetadata>;
+    fn get_metadata(&self) -> &PostMetadata;
 
-    fn gen_proof(&self, challenge: Vec<u8>) -> eyre::Result<ProofGenState>;
+    fn gen_proof(&self, challenge: &[u8]) -> eyre::Result<ProofGenState>;
 
     fn verify_proof<'a>(
         &self,
         proof: &post::prove::Proof<'a>,
-        metadata: &post::metadata::ProofMetadata,
+        challenge: &[u8],
     ) -> eyre::Result<()>;
 }
 
 impl<T: PostService + ?Sized> PostService for std::sync::Arc<T> {
-    fn gen_proof(&self, challenge: Vec<u8>) -> eyre::Result<ProofGenState> {
+    fn gen_proof(&self, challenge: &[u8]) -> eyre::Result<ProofGenState> {
         self.as_ref().gen_proof(challenge)
     }
 
-    fn verify_proof(
-        &self,
-        proof: &post::prove::Proof,
-        metadata: &post::metadata::ProofMetadata,
-    ) -> eyre::Result<()> {
-        self.as_ref().verify_proof(proof, metadata)
+    fn verify_proof(&self, proof: &post::prove::Proof, challenge: &[u8]) -> eyre::Result<()> {
+        self.as_ref().verify_proof(proof, challenge)
     }
 
-    fn get_metadata(&self) -> eyre::Result<PostMetadata> {
+    fn get_metadata(&self) -> &PostMetadata {
         self.as_ref().get_metadata()
     }
 }
@@ -170,33 +166,15 @@ impl<S: PostService> ServiceClient<S> {
     }
 
     fn generate_and_verify_proof(&self, request: GenProofRequest) -> ServiceResponse {
-        let result = self.service.gen_proof(request.challenge.clone());
+        let result = self.service.gen_proof(&request.challenge);
 
         match result {
             Ok(ProofGenState::Finished { proof }) => {
                 log::info!("proof generation finished");
-                let post_metadata = match self.service.get_metadata() {
-                    Ok(m) => m,
-                    Err(err) => {
-                        log::error!("failed to get metadata: {err:?}");
-                        return ServiceResponse {
-                            kind: Some(service_response::Kind::GenProof(GenProofResponse {
-                                status: GenProofStatus::Error as i32,
-                                ..Default::default()
-                            })),
-                        };
-                    }
-                };
-
                 log::info!("verifying proof");
+                let post_metadata = self.service.get_metadata();
                 let started = std::time::Instant::now();
-                if let Err(err) = self.service.verify_proof(
-                    &proof,
-                    &post::metadata::ProofMetadata::new(
-                        post_metadata,
-                        request.challenge.as_slice().try_into().unwrap(),
-                    ),
-                ) {
+                if let Err(err) = self.service.verify_proof(&proof, &request.challenge) {
                     log::error!(
                         "failed proof verification: {err:?} (verification took: {}s)",
                         started.elapsed().as_secs_f64()
@@ -222,7 +200,7 @@ impl<S: PostService> ServiceClient<S> {
                         }),
                         metadata: Some(ProofMetadata {
                             challenge: request.challenge,
-                            meta: Some(convert_metadata(post_metadata)),
+                            meta: Some(convert_metadata(*post_metadata)),
                         }),
                         status: GenProofStatus::Ok as i32,
                     })),
@@ -250,23 +228,12 @@ impl<S: PostService> ServiceClient<S> {
     }
 
     fn get_metadata(&self) -> ServiceResponse {
-        match self.service.get_metadata() {
-            Ok(meta) => {
-                log::info!("obtained metadata: {meta:?}");
-                ServiceResponse {
-                    kind: Some(service_response::Kind::Metadata(MetadataResponse {
-                        meta: Some(convert_metadata(meta)),
-                    })),
-                }
-            }
-            Err(e) => {
-                log::error!("failed to get metadata: {e:?}");
-                ServiceResponse {
-                    kind: Some(service_response::Kind::Metadata(MetadataResponse {
-                        meta: None,
-                    })),
-                }
-            }
+        let meta = self.service.get_metadata();
+        log::info!("obtained metadata: {meta:?}");
+        ServiceResponse {
+            kind: Some(service_response::Kind::Metadata(MetadataResponse {
+                meta: Some(convert_metadata(*meta)),
+            })),
         }
     }
 }
