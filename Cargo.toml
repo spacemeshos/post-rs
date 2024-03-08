@@ -18,7 +18,7 @@ edition = "2021"
 name = "post"
 
 [dependencies]
-aes = "0.8.3"
+aes = "0.8.4"
 # Take a dependency on cipher to enable block-padding feature
 # as `aes` doesn't expose it.
 cipher = { version = "*", features = ["block-padding"] }
