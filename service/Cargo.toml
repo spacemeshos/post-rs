@@ -19,7 +19,7 @@ tokio = { version = "1.0", features = [
 ] }
 tokio-stream = { version = "0.1", features = ["net"] }
 log = "0.4.20"
-eyre = "0.6.8"
+eyre = "0.6.12"
 env_logger = "0.10.0"
 clap = { version = "4.4.4", features = ["derive"] }
 hex = "0.4.3"
