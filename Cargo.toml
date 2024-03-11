@@ -22,7 +22,7 @@ aes = "0.8.4"
 # Take a dependency on cipher to enable block-padding feature
 # as `aes` doesn't expose it.
 cipher = { version = "*", features = ["block-padding"] }
-eyre = "0.6.8"
+eyre = "0.6.12"
 regex = "1.7.1"
 itertools = "0.12.0"
 serde = { version = "1.0.197", features = ["derive"] }
