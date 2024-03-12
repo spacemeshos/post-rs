@@ -27,9 +27,7 @@ pub(crate) fn open_without_cache(path: &Path) -> eyre::Result<File> {
     }
     .wrap_err("opening file to drop cache")?;
 
-    unsafe { CloseHandle(handle) }
-        .ok()
-        .wrap_err("closing handle")?;
+    unsafe { CloseHandle(handle) }.wrap_err("closing handle")?;
 
     File::open(path).wrap_err("opening file")
 }
