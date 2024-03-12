@@ -170,6 +170,7 @@ impl Scrypter {
         let read_queue = Queue::new(&context, device, None)?;
         let pro_que = ProQue::builder()
             .context(context)
+            .device(device)
             .prog_bldr(program_builder)
             .dims(1)
             .build()?;
