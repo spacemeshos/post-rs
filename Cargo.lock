@@ -486,7 +486,7 @@ dependencies = [
 
 [[package]]
 name = "certifier"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "axum 0.7.4",
  "axum-prometheus",
@@ -1641,7 +1641,7 @@ dependencies = [
 
 [[package]]
 name = "initializer"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "base64",
  "clap",
@@ -2386,7 +2386,7 @@ checksum = "7170ef9988bc169ba16dd36a7fa041e5c4cbeb6a35b76d4c03daded371eae7c0"
 
 [[package]]
 name = "post-cbindings"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "cbindgen",
  "log",
@@ -2397,7 +2397,7 @@ dependencies = [
 
 [[package]]
 name = "post-rs"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "aes",
  "bitvec",
@@ -2529,7 +2529,7 @@ dependencies = [
 
 [[package]]
 name = "profiler"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "clap",
  "env_logger",
@@ -3145,7 +3145,7 @@ dependencies = [
 
 [[package]]
 name = "scrypt-ocl"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "log",
  "ocl",
@@ -3288,7 +3288,7 @@ dependencies = [
 
 [[package]]
 name = "service"
-version = "0.7.2"
+version = "0.7.3"
 dependencies = [
  "async-stream",
  "axum 0.7.4",
