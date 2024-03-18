@@ -310,7 +310,7 @@ impl Scrypter {
                 let average = total_kernel_duration.div_f32((iter - warmup_iters) as f32);
                 let wait = (last_kernel_duration + average).div_f32(2.0).mul_f32(0.9);
 
-                // #[cfg(windows)]
+                #[cfg(windows)]
                 // Don't wait longer than `average - 5m`s. This is required because time resolution on Windows is bad.
                 let wait = min(
                     average
