@@ -21,7 +21,7 @@ tokio-stream = { version = "0.1", features = ["net"] }
 log = "0.4.20"
 eyre = "0.6.12"
 env_logger = "0.10.0"
-clap = { version = "4.4.4", features = ["derive"] }
+clap = { version = "4.5.3", features = ["derive"] }
 hex = "0.4.3"
 mockall = "0.12.1"
 sysinfo = "0.29.10"
