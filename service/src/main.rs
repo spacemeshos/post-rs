@@ -3,7 +3,7 @@ use std::{fs::read_to_string, net::SocketAddr, path::PathBuf, sync::Arc, time::D
 use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
 use serde_with::{formats, hex::Hex, serde_as};
-use sysinfo::{Pid, ProcessExt, ProcessStatus, System, SystemExt};
+use sysinfo::{Pid, ProcessStatus, System};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot::{self, error::TryRecvError, Receiver};
 use tonic::transport::{Certificate, Identity};
@@ -347,7 +347,7 @@ fn verify_num_units(range: std::ops::RangeInclusive<u32>, num_units: u32) -> eyr
 mod tests {
     use std::process::Command;
 
-    use sysinfo::{Pid, PidExt};
+    use sysinfo::Pid;
     use tokio::sync::oneshot;
 
     #[tokio::test]
