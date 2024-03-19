@@ -5,7 +5,13 @@ use ocl::{
     SpatialDims,
 };
 use post::initialize::{Initialize, VrfNonce, ENTIRE_LABEL_SIZE, LABEL_SIZE};
-use std::{cmp::min, fmt::Display, io::Write, ops::Range};
+use std::{
+    cmp::min,
+    fmt::Display,
+    io::Write,
+    ops::Range,
+    time::{Duration, Instant},
+};
 use thiserror::Error;
 
 pub use ocl;
@@ -267,8 +273,8 @@ impl Scrypter {
         let mut best_nonce = None;
         let labels_end = labels.end;
 
-        let mut total_kernel_duration = std::time::Duration::ZERO;
-        let mut last_kernel_duration = std::time::Duration::ZERO;
+        let mut total_kernel_duration = Duration::ZERO;
+        let mut last_kernel_duration = Duration::ZERO;
 
         for (iter, index) in labels.step_by(self.global_work_size).enumerate() {
             self.kernel.set_arg(1, index)?;
@@ -291,15 +297,32 @@ impl Scrypter {
                 self.kernel.cmd().enew(&mut kernel_event).enq()?;
             }
 
-            let read_start = std::time::Instant::now();
+            let read_start = Instant::now();
             // On some platforms (eg. Nvidia), the read command will spin CPU 100% until the kernel finishes.
             // Hence we wait a bit before reading the buffer.
             // The wait time is based on the average kernel duration, with some margin.
-            if iter > 0 {
-                let average = total_kernel_duration.div_f32(iter as f32);
-                let wait = (last_kernel_duration + average).div_f32(2.0).mul_f32(0.9);
-                log::trace!("waiting for kernel to finish for {wait:?}");
-                std::thread::sleep(wait);
+            // It's weighted 50% of last kernel duration and 50% of average kernel duration
+            // to speed up convergence to the optimal wait time.
+            //
+            // We skip few 'warmup iterations', as the average kernel duration is not yet reliable.
+            let warmup_iters = 10;
+            if iter > warmup_iters {
+                let average = total_kernel_duration.div_f32((iter - warmup_iters) as f32);
+                log::trace!("last execution time: {last_kernel_duration:?}, average: {average:?})");
+
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let wait = (last_kernel_duration + average).div_f32(2.0).mul_f32(0.9);
+                    // Don't wait longer than `average - 5ms` to give the scheduler time to switch back to this thread.
+                    let wait = min(
+                        average
+                            .checked_sub(Duration::from_millis(5))
+                            .unwrap_or_default(),
+                        wait,
+                    );
+                    log::trace!("waiting for kernel to finish for {wait:?}");
+                    std::thread::sleep(wait);
+                }
             }
 
             let labels_buffer =
@@ -310,8 +333,10 @@ impl Scrypter {
                 .read(labels_buffer.as_mut())
                 .enq()?;
 
-            last_kernel_duration = read_start.elapsed();
-            total_kernel_duration += last_kernel_duration;
+            if iter >= warmup_iters {
+                last_kernel_duration = read_start.elapsed();
+                total_kernel_duration += last_kernel_duration;
+            }
 
             // Look for VRF nonce if enabled
             // TODO: run in background / in parallel to GPU
