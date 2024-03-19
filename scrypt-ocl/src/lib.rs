@@ -308,19 +308,21 @@ impl Scrypter {
             let warmup_iters = 10;
             if iter > warmup_iters {
                 let average = total_kernel_duration.div_f32((iter - warmup_iters) as f32);
-                let wait = (last_kernel_duration + average).div_f32(2.0).mul_f32(0.9);
+                log::trace!("last execution time: {last_kernel_duration:?}, average: {average:?})");
 
-                #[cfg(target_os = "windows")]
-                // Don't wait longer than `average - 5m`s. This is required because time resolution on Windows is bad.
-                let wait = min(
-                    average
-                        .checked_sub(Duration::from_millis(5))
-                        .unwrap_or_default(),
-                    wait,
-                );
-
-                log::trace!("waiting for kernel to finish for {wait:?} (last execution: {last_kernel_duration:?}, average: {average:?})");
-                std::thread::sleep(wait);
+                #[cfg(not(target_os = "windows"))]
+                {
+                    let wait = (last_kernel_duration + average).div_f32(2.0).mul_f32(0.9);
+                    // Don't wait longer than `average - 5ms` to give the scheduler time to switch back to this thread.
+                    let wait = min(
+                        average
+                            .checked_sub(Duration::from_millis(5))
+                            .unwrap_or_default(),
+                        wait,
+                    );
+                    log::trace!("waiting for kernel to finish for {wait:?}");
+                    std::thread::sleep(wait);
+                }
             }
 
             let labels_buffer =
