@@ -122,6 +122,13 @@ struct PowArgs {
     /// purpose and memory requirements.
     #[arg(long, default_value_t = RandomXMode::Fast)]
     randomx_mode: RandomXMode,
+
+    /// Use large pages for RandomX.
+    ///
+    /// This requires enabling large pages in the OS.
+    /// Follow instructions here: https://xmrig.com/docs/miner/hugepages
+    #[arg(long, default_value_t = false)]
+    randomx_large_pages: bool,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum)]
@@ -265,12 +272,16 @@ fn pow(args: PowArgs) -> eyre::Result<()> {
         args.num_units, args.nonces,
     );
 
-    let randomx_flags = match args.randomx_mode {
+    let mut randomx_flags = match args.randomx_mode {
         RandomXMode::Fast => {
             randomx::RandomXFlag::get_recommended_flags() | randomx::RandomXFlag::FLAG_FULL_MEM
         }
         RandomXMode::Light => randomx::RandomXFlag::get_recommended_flags(),
     };
+    if args.randomx_large_pages {
+        eprintln!("Using large pages for RandomX");
+        randomx_flags |= randomx::RandomXFlag::FLAG_LARGE_PAGES;
+    }
     eprintln!("RandomX flags: {}", randomx_flags);
 
     eprintln!("Initializing RandomX VMs...");
