@@ -81,12 +81,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "max concurrent requests: {}",
         config.max_concurrent_requests
     );
+    if let Some(expiry) = config.certificate_expiration {
+        info!("generated certificates will expire after {expiry:?}");
+    } else {
+        info!("generated certificates won't expire");
+    }
 
     let mut app = certifier::certifier::new(
         config.post_cfg,
         config.init_cfg,
         signer,
         config.randomx_mode,
+        config.certificate_expiration,
     )
     .layer(ConcurrencyLimitLayer::new(config.max_concurrent_requests));
 
