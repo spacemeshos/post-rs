@@ -82,7 +82,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.max_concurrent_requests
     );
     if let Some(expiry) = config.certificate_expiration {
-        info!("generated certificates will expire after {expiry}");
+        info!("generated certificates will expire after {expiry:?}");
     } else {
         info!("generated certificates won't expire");
     }

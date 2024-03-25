@@ -1,8 +1,15 @@
-use std::{future::IntoFuture, net::SocketAddr, str::FromStr, sync::atomic::AtomicBool};
+use std::{
+    future::IntoFuture,
+    net::SocketAddr,
+    str::FromStr,
+    sync::atomic::AtomicBool,
+    time::{Duration, SystemTime},
+};
 
 use certifier::{
     certifier::{Certificate, CertifyRequest},
     configuration::RandomXMode,
+    time::unix_timestamp,
 };
 use ed25519_dalek::SigningKey;
 use parity_scale_codec::Decode;
@@ -137,7 +144,7 @@ async fn test_certificate_post_proof_with_expiration() {
     };
     // Spawn the certifier service
     let signer = SigningKey::generate(&mut rand::rngs::OsRng);
-    let expiry = chrono::Duration::try_days(1).unwrap();
+    let expiry = Duration::from_secs(60 * 60);
     let app = certifier::certifier::new(
         cfg,
         init_cfg,
@@ -158,7 +165,7 @@ async fn test_certificate_post_proof_with_expiration() {
     let (proof, metadata) = gen_proof(cfg, init_cfg, node_id);
 
     // Certify with a valid proof
-    let req_time = chrono::Utc::now();
+    let req_time = SystemTime::now();
     let req = CertifyRequest { proof, metadata };
     let response = client
         .post(format!("http://{addr}/certify"))
@@ -172,8 +179,8 @@ async fn test_certificate_post_proof_with_expiration() {
     let data = response.bytes().await.unwrap();
     let cert_resp = serde_json::from_slice::<certifier::certifier::CertifyResponse>(&data).unwrap();
     let cert = Certificate::decode(&mut cert_resp.certificate.as_slice()).unwrap();
-    assert!(cert.expiration.unwrap().0 >= (req_time + expiry).timestamp() as u64);
-    assert!(cert.expiration.unwrap().0 <= (chrono::Utc::now() + expiry).timestamp() as u64);
+    assert!(cert.expiration.unwrap().0 >= unix_timestamp(req_time + expiry));
+    assert!(cert.expiration.unwrap().0 <= unix_timestamp(SystemTime::now() + expiry));
 
     let signature = ed25519_dalek::Signature::from_slice(&cert_resp.signature).unwrap();
     assert!(signer.verify(&cert_resp.certificate, &signature).is_ok());

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use ed25519_dalek::SecretKey;
 use post::pow::randomx::RandomXFlag;
@@ -56,10 +56,10 @@ pub struct Config {
 
     #[serde(
         default,
-        deserialize_with = "duration_str::deserialize_option_duration_chrono"
+        deserialize_with = "duration_str::deserialize_option_duration"
     )]
     /// The time after which the certificates expire.
-    pub certificate_expiration: Option<chrono::Duration>,
+    pub certificate_expiration: Option<Duration>,
 
     /// Address to expose metrics on.
     /// Metrics are disabled if not configured.

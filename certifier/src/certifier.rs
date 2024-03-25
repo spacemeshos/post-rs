@@ -1,9 +1,9 @@
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use axum::http::StatusCode;
 use axum::{extract::State, Json};
 use axum::{routing::post, Router};
-use chrono::Utc;
 use ed25519_dalek::{Signature, Signer, SigningKey};
 use parity_scale_codec::{Compact, Decode, Encode};
 use post::config::{InitConfig, ProofConfig};
@@ -14,6 +14,7 @@ use serde_with::{base64::Base64, serde_as};
 use tracing::instrument;
 
 use crate::configuration::RandomXMode;
+use crate::time::unix_timestamp;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CertifyRequest {
@@ -106,7 +107,7 @@ impl Verifier for PostVerifier {
 struct Certifier {
     verifier: Arc<dyn Verifier + Send + Sync>,
     signer: SigningKey,
-    expiry: Option<chrono::Duration>,
+    expiry: Option<Duration>,
 }
 
 impl Certifier {
@@ -125,7 +126,9 @@ impl Certifier {
     }
 
     fn create_certificate(&self, id: &[u8; 32]) -> Certificate {
-        let expiration = self.expiry.map(|exp| (Utc::now() + exp).timestamp() as u64);
+        let expiration = self
+            .expiry
+            .map(|exp| unix_timestamp(SystemTime::now() + exp));
         Certificate {
             pub_key: id.to_vec(),
             expiration: expiration.map(Compact),
@@ -138,7 +141,7 @@ pub fn new(
     init_cfg: InitConfig,
     signer: SigningKey,
     randomx_mode: RandomXMode,
-    expiry: Option<chrono::Duration>,
+    expiry: Option<Duration>,
 ) -> Router {
     let verifier = Arc::new(PostVerifier {
         verifier: post::verification::Verifier::new(Box::new(
@@ -160,36 +163,17 @@ pub fn new(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{
+        sync::Arc,
+        time::{Duration, SystemTime},
+    };
+
+    use crate::time::unix_timestamp;
 
     use super::{Certificate, Certifier, MockVerifier};
-    use chrono::{DateTime, Duration, Utc};
     use ed25519_dalek::SigningKey;
-    use parity_scale_codec::{Compact, Decode, Encode};
+    use parity_scale_codec::Decode;
     use post::{metadata::ProofMetadata, prove::Proof};
-    #[test]
-    fn serialize() {
-        let cert = Certificate {
-            pub_key: vec![
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1, 2, 3, 4, 5, 6, 7, 8, 9,
-                10, 11, 12, 13, 14, 15, 16,
-            ],
-            expiration: Some(Compact(
-                DateTime::parse_from_rfc3339("1996-12-19T16:39:57-08:00")
-                    .unwrap()
-                    .to_utc()
-                    .timestamp() as u64,
-            )),
-        };
-        let b = &cert.encode();
-        println!("{}", base64::encode(b));
-
-        let val: u64 = 0x123456789abcdef0;
-
-        let compact = Compact(val);
-        let encoded = compact.encode();
-        println!("{}", base64::encode(&encoded));
-    }
 
     #[test]
     fn certify_invalid_post() {
@@ -261,18 +245,18 @@ mod tests {
 
     #[test]
     fn create_cert_with_expiry() {
-        let expiry = Duration::try_days(1).unwrap();
+        let expiry = Duration::from_secs(60 * 60);
         let certifier = Certifier {
             verifier: Arc::new(MockVerifier::new()),
             signer: SigningKey::generate(&mut rand::rngs::OsRng),
             expiry: Some(expiry),
         };
 
-        let started = Utc::now();
+        let started = SystemTime::now();
         let cert = certifier.create_certificate(&[7u8; 32]);
 
         let expiration = cert.expiration.unwrap().0;
-        assert!(expiration >= (started + expiry).timestamp() as u64);
-        assert!(expiration <= (chrono::Utc::now() + expiry).timestamp() as u64);
+        assert!(expiration >= unix_timestamp(started + expiry));
+        assert!(expiration <= unix_timestamp(SystemTime::now() + expiry));
     }
 }
