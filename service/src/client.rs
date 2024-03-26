@@ -70,7 +70,7 @@ impl<S: PostService> ServiceClient<S> {
     ) -> eyre::Result<Self> {
         let endpoint = Channel::builder(address.parse()?)
             .keep_alive_timeout(Duration::from_secs(20))
-            .http2_keep_alive_interval(Duration::from_secs(60));
+            .http2_keep_alive_interval(Duration::from_secs(10 * 60));
         let endpoint = match tls {
             Some((domain, cert, identity)) => {
                 let domain = match domain {
