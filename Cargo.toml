@@ -11,7 +11,7 @@ members = [
 
 [package]
 name = "post-rs"
-version = "0.7.5"
+version = "0.7.6"
 edition = "2021"
 
 [lib]
