@@ -36,7 +36,7 @@ tonic-build = "0.11.0"
 
 [dev-dependencies]
 async-stream = "0.3.5"
-rcgen = "0.11.3"
+rcgen = "0.12.1"
 reqwest = { version = "0.12.2", features = ["json"] }
 rstest = "0.18.2"
 tempfile = "3.8.0"
