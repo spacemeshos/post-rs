@@ -29,5 +29,5 @@ axum-prometheus = "0.6.1"
 tower = { version = "0.4.13", features = ["limit"] }
 
 [dev-dependencies]
-reqwest = { version = "0.11.26", features = ["json"] }
+reqwest = { version = "0.12.2", features = ["json"] }
 tempfile = "3.8.1"
