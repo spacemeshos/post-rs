@@ -167,6 +167,7 @@ fn prepare_data_file(path: &Path, size: u64) -> eyre::Result<()> {
     let file = OpenOptions::new()
         .write(true)
         .create(true)
+        .truncate(false)
         .open(path)
         .wrap_err_with(|| format!("opening profiler data file {}", path.display()))?;
 
