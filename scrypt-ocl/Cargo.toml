@@ -4,7 +4,7 @@ version = "0.7.6"
 edition = "2021"
 
 [dependencies]
-ocl = "0.19.4"
+ocl = "0.19.7"
 thiserror = "1.0.57"
 post-rs = { path = "../" }
 log = "0.4.17"
