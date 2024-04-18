@@ -1,39 +1,41 @@
-use std::{future::IntoFuture, net::SocketAddr, str::FromStr, sync::atomic::AtomicBool};
+use std::{
+    future::IntoFuture,
+    net::SocketAddr,
+    str::FromStr,
+    sync::atomic::AtomicBool,
+    time::{Duration, SystemTime},
+};
 
-use certifier::{certifier::CertifyRequest, configuration::RandomXMode};
+use certifier::{
+    certifier::{Certificate, CertifyRequest},
+    configuration::RandomXMode,
+    time::unix_timestamp,
+};
 use ed25519_dalek::SigningKey;
+use parity_scale_codec::Decode;
 use post::{
     config::{Cores, InitConfig, ProofConfig, ScryptParams},
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
     pow::randomx::RandomXFlag,
-    prove::{self, generate_proof},
+    prove::{self, generate_proof, Proof},
 };
 use reqwest::StatusCode;
 use tokio::net::TcpListener;
 
-#[tokio::test]
-async fn test_certificate_post_proof() {
+fn gen_proof(
+    cfg: ProofConfig,
+    init_cfg: InitConfig,
+    id: [u8; 32],
+) -> (Proof<'static>, ProofMetadata) {
     // Initialize some data
     let challenge = b"hello world, challenge me!!!!!!!";
     let datadir = tempfile::tempdir().unwrap();
 
-    let cfg = ProofConfig {
-        k1: 20,
-        k2: 10,
-        pow_difficulty: [0xFF; 32],
-    };
-    let init_cfg = InitConfig {
-        min_num_units: 1,
-        max_num_units: 1000,
-        labels_per_unit: 200,
-        scrypt: ScryptParams::new(2, 1, 1),
-    };
-
     let metadata = CpuInitializer::new(init_cfg.scrypt)
         .initialize(
             datadir.path(),
-            &[0u8; 32],
+            &id,
             &[0u8; 32],
             init_cfg.labels_per_unit,
             2,
@@ -58,9 +60,25 @@ async fn test_certificate_post_proof() {
     .unwrap();
     let metadata = ProofMetadata::new(metadata, *challenge);
 
+    (proof, metadata)
+}
+
+#[tokio::test]
+async fn test_certificate_post_proof() {
+    let cfg = ProofConfig {
+        k1: 20,
+        k2: 10,
+        pow_difficulty: [0xFF; 32],
+    };
+    let init_cfg = InitConfig {
+        min_num_units: 1,
+        max_num_units: 1000,
+        labels_per_unit: 200,
+        scrypt: ScryptParams::new(2, 1, 1),
+    };
     // Spawn the certifier service
     let signer = SigningKey::generate(&mut rand::rngs::OsRng);
-    let app = certifier::certifier::new(cfg, init_cfg, signer, RandomXMode::Light);
+    let app = certifier::certifier::new(cfg, init_cfg, signer.clone(), RandomXMode::Light, None);
     let listener = TcpListener::bind(SocketAddr::from_str("127.0.0.1:0").unwrap())
         .await
         .unwrap();
@@ -70,8 +88,19 @@ async fn test_certificate_post_proof() {
 
     let client = reqwest::Client::new();
 
+    let node_id = [
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11,
+        12, 13, 14, 15, 16,
+    ];
+    let (proof, metadata) = gen_proof(cfg, init_cfg, node_id);
+
     // Certify with a valid proof
     let req = CertifyRequest { proof, metadata };
+
+    // save as json to file
+    let json = serde_json::to_string(&req).unwrap();
+    std::fs::write("certify_request.json", json).unwrap();
+
     let response = client
         .post(format!("http://{addr}/certify"))
         .json(&req)
@@ -79,6 +108,14 @@ async fn test_certificate_post_proof() {
         .await
         .unwrap();
     assert!(response.status().is_success());
+
+    // verify the certificate
+    let data = response.bytes().await.unwrap();
+    let cert_resp = serde_json::from_slice::<certifier::certifier::CertifyResponse>(&data).unwrap();
+    let cert = Certificate::decode(&mut cert_resp.certificate.as_slice()).unwrap();
+    assert!(cert.expiration.is_none());
+    let signature = ed25519_dalek::Signature::from_slice(&cert_resp.signature).unwrap();
+    assert!(signer.verify(&cert_resp.certificate, &signature).is_ok());
 
     // Try to certify with an invalid proof
     let mut invalid_req = req;
@@ -90,4 +127,61 @@ async fn test_certificate_post_proof() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_certificate_post_proof_with_expiration() {
+    let cfg = ProofConfig {
+        k1: 20,
+        k2: 10,
+        pow_difficulty: [0xFF; 32],
+    };
+    let init_cfg = InitConfig {
+        min_num_units: 1,
+        max_num_units: 1000,
+        labels_per_unit: 200,
+        scrypt: ScryptParams::new(2, 1, 1),
+    };
+    // Spawn the certifier service
+    let signer = SigningKey::generate(&mut rand::rngs::OsRng);
+    let expiry = Duration::from_secs(60 * 60);
+    let app = certifier::certifier::new(
+        cfg,
+        init_cfg,
+        signer.clone(),
+        RandomXMode::Light,
+        Some(expiry),
+    );
+    let listener = TcpListener::bind(SocketAddr::from_str("127.0.0.1:0").unwrap())
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = axum::serve(listener, app.into_make_service());
+    tokio::spawn(server.into_future());
+
+    let client = reqwest::Client::new();
+
+    let node_id = [0u8; 32];
+    let (proof, metadata) = gen_proof(cfg, init_cfg, node_id);
+
+    // Certify with a valid proof
+    let req_time = SystemTime::now();
+    let req = CertifyRequest { proof, metadata };
+    let response = client
+        .post(format!("http://{addr}/certify"))
+        .json(&req)
+        .send()
+        .await
+        .unwrap();
+    assert!(response.status().is_success());
+
+    // verify the certificate
+    let data = response.bytes().await.unwrap();
+    let cert_resp = serde_json::from_slice::<certifier::certifier::CertifyResponse>(&data).unwrap();
+    let cert = Certificate::decode(&mut cert_resp.certificate.as_slice()).unwrap();
+    assert!(cert.expiration.unwrap().0 >= unix_timestamp(req_time + expiry));
+    assert!(cert.expiration.unwrap().0 <= unix_timestamp(SystemTime::now() + expiry));
+
+    let signature = ed25519_dalek::Signature::from_slice(&cert_resp.signature).unwrap();
+    assert!(signer.verify(&cert_resp.certificate, &signature).is_ok());
 }
