@@ -11,7 +11,7 @@ members = [
 
 [package]
 name = "post-rs"
-version = "0.7.5"
+version = "0.7.6"
 edition = "2021"
 
 [lib]
@@ -23,17 +23,17 @@ aes = "0.8.4"
 # as `aes` doesn't expose it.
 cipher = { version = "*", features = ["block-padding"] }
 eyre = "0.6.12"
-regex = "1.7.1"
+regex = "1.10.4"
 itertools = "0.12.0"
 serde = { version = "1.0.197", features = ["derive"] }
-serde_json = "1.0.93"
+serde_json = "1.0.115"
 bytemuck = "1.14.3"
 serde_with = { version = "3.4.0", features = ["base64", "hex"] }
 
 scrypt-jane = { git = "https://github.com/spacemeshos/scrypt-jane-rs", branch = "main" }
 blake3 = "1.3.3"
 bitvec = "1.0.1"
-rayon = "1.6.1"
+rayon = "1.10.0"
 rand = "0.8.5"
 log = "0.4.17"
 randomx-rs = { git = "https://github.com/spacemeshos/randomx-rs", rev = "d46bcd90e09428883e253b8203d6b311b0a07b91" }
@@ -51,7 +51,7 @@ criterion = "0.5"
 tempfile = "3.3.0"
 rand = "0.8.5"
 proptest = "1.1.0"
-rstest = "0.18.2"
+rstest = "0.19.0"
 
 [target.'cfg(not(windows))'.dev-dependencies]
 pprof = { version = "0.13.0", features = ["flamegraph", "criterion"] }
