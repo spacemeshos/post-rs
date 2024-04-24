@@ -35,5 +35,5 @@ parity-scale-codec = { version = "3.6.9", features = ["derive", "serde"] }
 mockall = "0.12.1"
 
 [dev-dependencies]
-reqwest = { version = "0.12.3", features = ["json"] }
+reqwest = { version = "0.12.4", features = ["json"] }
 tempfile = "3.8.1"
