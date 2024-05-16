@@ -332,11 +332,12 @@ mod tests {
             vrf_difficulty: None,
         });
 
+        let mut labels = vec![0u8; 100 * 16];
         let result = super::initialize(
             initializer.as_mut() as *mut InitializerWrapper as *mut Initializer,
             0,
             99,
-            null_mut(),
+            labels.as_mut_ptr(),
             null_mut(),
         );
         assert_eq!(InitializeResult::Error, result);
