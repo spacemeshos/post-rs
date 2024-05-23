@@ -45,6 +45,15 @@ init_cfg:
 
 metrics: "127.0.0.1:9090"
 randomx_mode: Fast
+
+limits:
+  # How many requests can be processed in parallel.
+  # As PoST verification is CPU-bound, it defaults to the number of CPUs.
+  max_concurrent_requests: 4
+  # How many requests can be queued, waiting to be processed.
+  max_pending_requests: 1000
+  # Maximum size of request body (the proof JSON)
+  max_body_size: 1024
 ```
 
 Each field can also be provided as env variable prefixed with CERTIFIER. For example, `CERTIFIER_SIGNING_KEY`.

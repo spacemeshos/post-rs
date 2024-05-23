@@ -3,10 +3,10 @@ use std::{future::IntoFuture, path::PathBuf};
 use axum::routing::get;
 use axum_prometheus::PrometheusMetricLayerBuilder;
 use base64::{engine::general_purpose, Engine as _};
+use certifier::certifier::RouterLimiter;
 use clap::{arg, Parser, Subcommand};
 use ed25519_dalek::SigningKey;
 use tokio::net::TcpListener;
-use tower::limit::ConcurrencyLimitLayer;
 use tracing::info;
 use tracing_log::LogTracer;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
@@ -77,10 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("POST proof configuration: {:?}", config.post_cfg);
     info!("POST init configuration: {:?}", config.init_cfg);
     info!("RandomX mode: {:?}", config.randomx_mode);
-    info!(
-        "max concurrent requests: {}",
-        config.max_concurrent_requests
-    );
+    info!("{:?}", config.limits);
     if let Some(expiry) = config.certificate_expiration {
         info!("generated certificates will expire after {expiry:?}");
     } else {
@@ -94,7 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.randomx_mode,
         config.certificate_expiration,
     )
-    .layer(ConcurrencyLimitLayer::new(config.max_concurrent_requests));
+    .apply_limits(config.limits);
 
     if let Some(addr) = config.metrics {
         info!("metrics enabled on: http://{addr:?}/metrics");

@@ -1,7 +1,11 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use axum::error_handling::HandleErrorLayer;
+use axum::extract::DefaultBodyLimit;
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use axum::BoxError;
 use axum::{extract::State, Json};
 use axum::{routing::post, Router};
 use ed25519_dalek::{Signature, Signer, SigningKey};
@@ -11,9 +15,14 @@ use post::pow::randomx::PoW;
 use post::verification::Mode;
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
+use tower::buffer::BufferLayer;
+use tower::limit::ConcurrencyLimitLayer;
+use tower::load_shed::error::Overloaded;
+use tower::load_shed::LoadShedLayer;
+use tower::ServiceBuilder;
 use tracing::instrument;
 
-use crate::configuration::RandomXMode;
+use crate::configuration::{Limits, RandomXMode};
 use crate::time::unix_timestamp;
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -161,6 +170,32 @@ pub fn new(
         .with_state(Arc::new(certifier))
 }
 
+pub trait RouterLimiter {
+    fn apply_limits(self, limits: Limits) -> Self;
+}
+
+impl RouterLimiter for Router {
+    fn apply_limits(self, limits: Limits) -> Self {
+        self.layer(
+            ServiceBuilder::new()
+                .layer(DefaultBodyLimit::max(limits.max_body_size))
+                .layer(HandleErrorLayer::new(handle_error))
+                .layer(LoadShedLayer::new())
+                .layer(BufferLayer::new(limits.max_pending_requests))
+                .layer(ConcurrencyLimitLayer::new(limits.max_concurrent_requests))
+                .into_inner(),
+        )
+    }
+}
+
+async fn handle_error(error: BoxError) -> Response {
+    if error.is::<Overloaded>() {
+        StatusCode::TOO_MANY_REQUESTS.into_response()
+    } else {
+        StatusCode::INTERNAL_SERVER_ERROR.into_response()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{
@@ -168,13 +203,14 @@ mod tests {
         time::{Duration, SystemTime},
     };
 
-    use crate::time::unix_timestamp;
+    use crate::{certifier::RouterLimiter, configuration::Limits, time::unix_timestamp};
 
     use super::{Certificate, Certifier, MockVerifier};
+    use axum::{body::Bytes, routing::post, Router};
+    use axum_test::TestServer;
     use ed25519_dalek::SigningKey;
     use parity_scale_codec::Decode;
     use post::{metadata::ProofMetadata, prove::Proof};
-
     #[test]
     fn certify_invalid_post() {
         let mut verifier = MockVerifier::new();
@@ -258,5 +294,21 @@ mod tests {
         let expiration = cert.expiration.unwrap().0;
         assert!(expiration >= unix_timestamp(started + expiry));
         assert!(expiration <= unix_timestamp(SystemTime::now() + expiry));
+    }
+
+    #[tokio::test]
+    async fn limit_max_body_size() {
+        let my_app = Router::new()
+            .route("/", post(|_: Bytes| async {}))
+            .apply_limits(Limits {
+                max_concurrent_requests: 1,
+                max_pending_requests: 1,
+                max_body_size: 5,
+            });
+
+        let server = TestServer::new(my_app).unwrap();
+
+        let response = server.post("/").text("i'm a very long text").await;
+        assert_eq!(response.status_code(), 413);
     }
 }

@@ -26,8 +26,8 @@ rand = "0.8.5"
 serde_json = "1.0.117"
 base64 = "0.22.1"
 axum-prometheus = "0.6.1"
-tower = { version = "0.4.13", features = ["limit"] }
-duration-str = { version = "0.7.1", default-features = false, features = [
+tower = { version = "0.4.13", features = ["limit", "load-shed", "buffer"] }
+duration-str = { version = "0.10.0", default-features = false, features = [
     "serde",
     "time",
 ] }
@@ -35,5 +35,6 @@ parity-scale-codec = { version = "3.6.12", features = ["derive", "serde"] }
 mockall = "0.12.1"
 
 [dev-dependencies]
+axum-test = "14.9.1"
 reqwest = { version = "0.12.4", features = ["json"] }
 tempfile = "3.8.1"
