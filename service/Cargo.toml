@@ -3,6 +3,10 @@ name = "service"
 version = "0.7.8"
 edition = "2021"
 
+[[bin]]
+name = "post-service"
+path = "src/main.rs"
+
 [lib]
 name = "post_service"
 path = "src/lib.rs"

@@ -229,9 +229,9 @@ jobs:
       - name: Archive service artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: service-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
+          name: post-service-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
           path: |
-            target/release/service${{ matrix.os == 'windows-2019' && '.exe' || '' }}
+            target/release/post-service${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
 
   release:
