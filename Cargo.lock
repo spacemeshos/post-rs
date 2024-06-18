@@ -306,9 +306,9 @@ dependencies = [
 
 [[package]]
 name = "axum-test"
-version = "15.0.1"
+version = "15.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6eaf3651cc3b15185c6033db9cc40676b02ffaa69278679c5f018de2bcae598"
+checksum = "0882240a5cff2c0af7b01a684cb4048629841ccbd20305948e12ddc25f1c36c2"
 dependencies = [
  "anyhow",
  "auto-future",
@@ -316,6 +316,7 @@ dependencies = [
  "bytes",
  "cookie",
  "http 1.1.0",
+ "http-body 1.0.0",
  "http-body-util",
  "hyper 1.3.1",
  "hyper-util",
