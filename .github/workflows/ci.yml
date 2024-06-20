@@ -34,8 +34,7 @@ jobs:
       matrix:
         include:
           - os: [self-hosted, linux, x64, intel]
-            runner: self-hosted-linux-intel
-          - os: [self-hosted, linux, arm64]
+          - os: ubuntu-latest-arm-8-cores
             rustflags: --cfg=aes_armv8
           - os: [self-hosted, macos, arm64]
             rustflags: --cfg=aes_armv8
@@ -51,7 +50,7 @@ jobs:
         with:
           submodules: true
       - uses: dtolnay/rust-toolchain@1.78
-      - if: matrix.runner == 'self-hosted-linux-intel'
+      - if: matrix.os == 'ubuntu-latest-arm-8-cores'
         run: sudo apt-get update && sudo apt-get install -y libpocl2 pocl-opencl-icd ocl-icd-opencl-dev
         name: Install dependencies for testing openCL on Linux
       - if: matrix.os == 'windows-2019'
@@ -142,12 +141,11 @@ jobs:
       matrix:
         include:
           - os: [self-hosted, linux, x64, intel]
-            runner: self-hosted-linux-intel
             dylib: libpost.so
             staticlib: libpost.a
             artifact-name: linux
 
-          - os: [self-hosted, linux, arm64]
+          - os: ubuntu-latest-arm-8-cores
             dylib: libpost.so
             staticlib: libpost.a
             rustflags: --cfg=aes_armv8
@@ -169,7 +167,7 @@ jobs:
             staticlib: post.lib
             artifact-name: windows
     steps:
-      - if: matrix.runner == 'self-hosted-linux-intel'
+      - if: matrix.os == 'ubuntu-latest-arm-8-cores'
         run: sudo apt-get update && sudo apt-get install -y ocl-icd-opencl-dev
         name: Install opencl
       - if: matrix.os == 'windows-2019'
