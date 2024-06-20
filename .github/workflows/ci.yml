@@ -51,7 +51,7 @@ jobs:
         with:
           submodules: true
       - uses: dtolnay/rust-toolchain@1.78
-      - if: matrix.runner == 'self-hosted-linux-intel'
+      - if: ${{ matrix.runner == 'self-hosted-linux-intel' || matrix.os == 'ubuntu-latest-arm-8-cores' }}
         run: sudo apt-get update && sudo apt-get install -y libpocl2 pocl-opencl-icd ocl-icd-opencl-dev
         name: Install dependencies for testing openCL on Linux
       - if: matrix.os == 'windows-2019'
