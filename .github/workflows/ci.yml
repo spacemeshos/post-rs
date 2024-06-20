@@ -35,7 +35,7 @@ jobs:
         include:
           - os: [self-hosted, linux, x64, intel]
             runner: self-hosted-linux-intel
-          - os: [self-hosted, linux, arm64]
+          - os: ubuntu-latest-arm-8-cores
             rustflags: --cfg=aes_armv8
           - os: [self-hosted, macos, arm64]
             rustflags: --cfg=aes_armv8
@@ -147,7 +147,7 @@ jobs:
             staticlib: libpost.a
             artifact-name: linux
 
-          - os: [self-hosted, linux, arm64]
+          - os: ubuntu-latest-arm-8-cores
             dylib: libpost.so
             staticlib: libpost.a
             rustflags: --cfg=aes_armv8
