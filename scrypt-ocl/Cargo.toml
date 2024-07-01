@@ -7,7 +7,7 @@ edition = "2021"
 ocl = "0.19.7"
 thiserror = "1.0.61"
 post-rs = { path = "../" }
-log = "0.4.17"
+log = "0.4.22"
 regex = "1.10.5"
 
 [dev-dependencies]
