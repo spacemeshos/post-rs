@@ -13,7 +13,7 @@ tokio = { version = "1.38", features = [
     "time",
 ] }
 post-rs = { path = "../" }
-serde_with = { version = "3.8.1", features = ["base64", "hex"] }
+serde_with = { version = "3.8.2", features = ["base64", "hex"] }
 ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
 clap = { version = "4.5.7", features = ["derive", "env"] }
 hex = "0.4.3"
