@@ -26,7 +26,7 @@ eyre = "0.6.12"
 regex = "1.10.5"
 itertools = "0.13.0"
 serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.117"
+serde_json = "1.0.120"
 bytemuck = "1.16.1"
 serde_with = { version = "3.8.2", features = ["base64", "hex"] }
 
