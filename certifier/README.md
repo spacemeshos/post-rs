@@ -28,10 +28,10 @@ The config structure is defined [here](src/configuration.rs). An example config:
 ```yaml
 listen: "127.0.0.1:8080"
 signing_key: <BASE64-encoded ed25519 private key>
+certificate_expiration: 2w
 post_cfg:
   k1: 26
   k2: 37
-  k3: 37
   pow_difficulty: "000dfb23b0979b4b000000000000000000000000000000000000000000000000"
 
 init_cfg:
@@ -45,9 +45,22 @@ init_cfg:
 
 metrics: "127.0.0.1:9090"
 randomx_mode: Fast
+
+limits:
+  # How many requests can be processed in parallel.
+  # As PoST verification is CPU-bound, it defaults to the number of CPUs.
+  max_concurrent_requests: 4
+  # How many requests can be queued, waiting to be processed.
+  max_pending_requests: 1000
+  # Maximum size of request body (the proof JSON)
+  max_body_size: 1024
 ```
 
 Each field can also be provided as env variable prefixed with CERTIFIER. For example, `CERTIFIER_SIGNING_KEY`.
+
+##### Expiring certificates
+The certificates don't expire by default. To create certificates that expire after certain time duration,
+set `certificate_expiration` field in the config. It understands units supported by the [duration_str](https://docs.rs/duration-str/0.7.1/duration_str/index.html) crate (i.e "1d", "2w").
 
 ##### Concurrency limit
 It's important to configure the maximum number of requests that will be processed in parallel.

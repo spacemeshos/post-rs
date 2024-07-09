@@ -1,15 +1,15 @@
 [package]
 name = "scrypt-ocl"
-version = "0.6.6"
+version = "0.7.9"
 edition = "2021"
 
 [dependencies]
-ocl = "0.19.4"
-thiserror = "1.0.40"
+ocl = "0.19.7"
+thiserror = "1.0.61"
 post-rs = { path = "../" }
-log = "0.4.17"
-regex = "1.8.4"
+log = "0.4.22"
+regex = "1.10.5"
 
 [dev-dependencies]
 post-rs = { path = "../" }
-rstest = "0.17.0"
+rstest = "0.21.0"

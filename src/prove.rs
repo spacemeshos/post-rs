@@ -9,6 +9,8 @@
 //! TODO: explain
 
 use std::borrow::{Borrow, Cow};
+
+use std::sync::Arc;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Mutex,
@@ -18,12 +20,14 @@ use std::{collections::HashMap, ops::Range, path::Path, time::Instant};
 use aes::cipher::block_padding::NoPadding;
 use aes::cipher::BlockEncrypt;
 use eyre::Context;
+use mockall::automock;
 use primitive_types::U256;
 use randomx_rs::RandomXFlag;
 use rayon::prelude::{ParallelBridge, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 
+use crate::config;
 use crate::{
     cipher::AesCipher,
     compression::{compress_indices, required_bits},
@@ -75,6 +79,19 @@ impl ProvingParams {
             pow_difficulty,
         })
     }
+}
+
+#[automock]
+pub trait ProgressReporter {
+    fn new_nonce_group(&self, nonces: Range<u32>);
+    fn finished_chunk(&self, position: u64, len: usize);
+}
+
+pub struct NoopProgressReporter {}
+
+impl ProgressReporter for NoopProgressReporter {
+    fn new_nonce_group(&self, _: Range<u32>) {}
+    fn finished_chunk(&self, _: u64, _: usize) {}
 }
 
 pub trait Prover {
@@ -265,64 +282,67 @@ impl Prover for Prover8_56 {
 
 /// Generate a proof that data is still held, given the challenge.
 #[allow(clippy::too_many_arguments)]
-pub fn generate_proof<Stopper>(
+pub fn generate_proof<Reporter, Stopper>(
     datadir: &Path,
     challenge: &[u8; 32],
     cfg: ProofConfig,
-    nonces: usize,
-    threads: usize,
+    nonces_size: usize,
+    cores: config::Cores,
     pow_flags: RandomXFlag,
     stop: Stopper,
+    reporter: Reporter,
 ) -> eyre::Result<Proof<'static>>
 where
     Stopper: Borrow<AtomicBool>,
+    Reporter: ProgressReporter + Send + Sync,
 {
     let stop = stop.borrow();
     let metadata = metadata::load(datadir).wrap_err("loading metadata")?;
     let params = ProvingParams::new(&metadata, &cfg)?;
-    log::info!("generating proof with PoW flags: {pow_flags:?} and params: {params:?}");
+    log::info!(
+        "generating proof with PoW flags: {pow_flags:?}, difficulty (scaled with SU): {}, K2PoW difficulty (scaled with SU): {}",
+        params.difficulty,
+        hex::encode_upper(params.pow_difficulty)
+    );
     let pow_prover = pow::randomx::PoW::new(pow_flags)?;
 
-    let mut start_nonce = 0;
-    let mut end_nonce = start_nonce + nonces as u32;
+    let mut nonces = 0..nonces_size as u32;
 
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(threads)
-        .build()
-        .wrap_err("building thread pool")?;
+    let pool = create_thread_pool(cores, |id| {
+        log::error!("failed to set core affinity for thread to {id}");
+        std::process::exit(1);
+    })
+    .wrap_err("building thread pool")?;
 
     let total_time = Instant::now();
     loop {
         if stop.load(Ordering::Relaxed) {
             eyre::bail!("proof generation was stopped");
         }
+        reporter.new_nonce_group(nonces.clone());
 
         let indexes = Mutex::new(HashMap::<u32, Vec<u64>>::new());
 
         let pow_time = Instant::now();
         let prover = pool.install(|| {
-            Prover8_56::new(
-                challenge,
-                start_nonce..end_nonce,
-                params,
-                &pow_prover,
-                &metadata.node_id,
-            )
-            .wrap_err("creating prover")
+            let miner_id = &metadata.node_id;
+            Prover8_56::new(challenge, nonces.clone(), params, &pow_prover, miner_id)
+                .wrap_err("creating prover")
         })?;
 
-        let pow_mins = pow_time.elapsed().as_secs() / 60;
-        log::info!("Finished k2pow in {} minutes", pow_mins);
+        let pow_secs = pow_time.elapsed().as_secs();
+        let pow_mins = pow_secs / 60;
+        log::info!("finished k2pow in {pow_mins}m {}s", pow_secs % 60);
 
         let read_time = Instant::now();
         let data_reader = read_data(datadir, 1024 * 1024, metadata.max_file_size)?;
-        log::info!("Started reading POST data");
+        log::info!("started reading POST data");
         let result = pool.install(|| {
             data_reader
                 .par_bridge()
                 .take_any_while(|_| !stop.load(Ordering::Relaxed))
                 .find_map_any(|batch| {
-                    prover.prove(
+                    let res = prover.prove(
                         &batch.data,
                         batch.pos / BLOCK_SIZE as u64,
                         |nonce, index| {
@@ -334,24 +354,69 @@ where
                             }
                             None
                         },
-                    )
+                    );
+                    reporter.finished_chunk(batch.pos, batch.data.len());
+
+                    res
                 })
         });
-
-        let read_mins = read_time.elapsed().as_secs() / 60;
-        log::info!("Finished reading POST data in {} minutes", read_mins);
+        let read_secs = read_time.elapsed().as_secs();
+        let read_mins = read_secs / 60;
+        log::info!(
+            "finished reading POST data in {read_mins}m {}s",
+            read_secs % 60
+        );
 
         if let Some((nonce, indices)) = result {
             let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
             let pow = prover.get_pow(nonce).unwrap();
 
-            let total_minutes = total_time.elapsed().as_secs() / 60;
+            let total_secs = total_time.elapsed().as_secs();
+            let total_mins = total_secs / 60;
 
-            log::info!("Found proof for nonce: {nonce}, pow: {pow} with {indices:?} indices. Proof took {total_minutes} minutes");
+            log::info!("found proof for nonce: {nonce}, pow: {pow} with {indices:?} indices. It took {total_mins}m {}s", total_secs % 60);
             return Ok(Proof::new(nonce, &indices, num_labels, pow));
         }
 
-        (start_nonce, end_nonce) = (end_nonce, end_nonce + nonces as u32);
+        nonces = nonces.end..(nonces.end + nonces_size as u32);
+    }
+}
+
+fn create_thread_pool<F>(
+    cores: config::Cores,
+    on_affinity_set_error: F,
+) -> Result<rayon::ThreadPool, rayon::ThreadPoolBuildError>
+where
+    F: Fn(usize) + Send + Sync + 'static,
+{
+    let on_fail = Arc::new(on_affinity_set_error);
+    let pool_builder = rayon::ThreadPoolBuilder::new();
+    match cores {
+        config::Cores::All => pool_builder.build(),
+        config::Cores::Any(n) => pool_builder.num_threads(n).build(),
+        config::Cores::Pin(mut cores) => pool_builder
+            .num_threads(cores.len())
+            .spawn_handler(|thread| {
+                let mut b = std::thread::Builder::new();
+                if let Some(name) = thread.name() {
+                    b = b.name(name.to_owned());
+                }
+                if let Some(stack_size) = thread.stack_size() {
+                    b = b.stack_size(stack_size);
+                }
+                let id = cores.pop();
+                let on_fail = on_fail.clone();
+                b.spawn(move || {
+                    if let Some(id) = id {
+                        if !core_affinity::set_for_current(core_affinity::CoreId { id }) {
+                            on_fail(id);
+                        }
+                    }
+                    thread.run()
+                })?;
+                Ok(())
+            })
+            .build(),
     }
 }
 
@@ -389,7 +454,6 @@ mod tests {
         let cfg = ProofConfig {
             k1: 279,
             k2: 300,
-            k3: 65,
             pow_difficulty: [0xFF; 32],
         };
         let params = ProvingParams::new(&meta, &cfg).unwrap();
@@ -424,7 +488,6 @@ mod tests {
         let cfg = ProofConfig {
             k1: 279,
             k2: 300,
-            k3: 65,
             pow_difficulty: [0xFF; 32],
         };
         let mut pow_prover = pow::MockProver::new();
@@ -442,7 +505,6 @@ mod tests {
         let cfg = ProofConfig {
             k1: 32,
             k2: 32,
-            k3: 10,
             pow_difficulty: [0x0F; 32],
         };
         let metadata = PostMetadata {
@@ -653,5 +715,32 @@ mod tests {
         assert_eq!(1, calc_nonce_group(17, 16));
         assert_eq!(1, calc_nonce_group(31, 16));
         assert_eq!(2, calc_nonce_group(32, 16));
+    }
+
+    #[test]
+    fn creating_thread_pool() {
+        let pool = create_thread_pool(config::Cores::All, |_| {}).unwrap();
+        assert_eq!(
+            std::thread::available_parallelism().unwrap().get(),
+            pool.current_num_threads()
+        );
+        let pool = create_thread_pool(config::Cores::Any(4), |_| {}).unwrap();
+        assert_eq!(4, pool.current_num_threads());
+        let pool = create_thread_pool(config::Cores::Pin(vec![0, 1, 2]), |_| {}).unwrap();
+        assert_eq!(3, pool.current_num_threads());
+    }
+
+    #[test]
+    #[cfg_attr(target_os = "windows", ignore)]
+    fn fails_when_cant_set_affinity() {
+        let failed = Arc::new(AtomicBool::new(false));
+        let failed_clone = failed.clone();
+        let pool = create_thread_pool(config::Cores::Pin(vec![500]), move |id| {
+            assert_eq!(500, id);
+            failed_clone.store(true, Ordering::Relaxed);
+        })
+        .unwrap();
+        pool.install(|| {});
+        assert!(failed.load(Ordering::Relaxed));
     }
 }

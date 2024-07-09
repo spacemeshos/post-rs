@@ -22,14 +22,12 @@ pub(crate) fn open_without_cache(path: &Path) -> eyre::Result<File> {
             None,
             OPEN_EXISTING,
             FILE_FLAG_NO_BUFFERING, // <- drops cache
-            HANDLE(0),
+            HANDLE(std::ptr::null_mut()),
         )
     }
     .wrap_err("opening file to drop cache")?;
 
-    unsafe { CloseHandle(handle) }
-        .ok()
-        .wrap_err("closing handle")?;
+    unsafe { CloseHandle(handle) }.wrap_err("closing handle")?;
 
     File::open(path).wrap_err("opening file")
 }

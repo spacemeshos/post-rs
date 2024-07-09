@@ -7,8 +7,6 @@ use post::{
 };
 use scrypt_ocl::{ocl::DeviceType, OpenClInitializer, ProviderId};
 
-use crate::post_impl::VerifyResult;
-
 pub enum Initializer {}
 
 struct InitializerWrapper {
@@ -19,14 +17,13 @@ struct InitializerWrapper {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[allow(clippy::enum_variant_names)]
 pub enum InitializeResult {
-    InitializeOk = 0,
-    InitializeOkNonceNotFound = 1,
-    InitializeInvalidLabelsRange = 2,
-    InitializeError = 3,
-    InitializeInvalidArgument = 4,
-    InitializeFailedToGetProviders = 5,
+    Ok = 0,
+    OkNonceNotFound = 1,
+    InvalidLabelsRange = 2,
+    Error = 3,
+    InvalidArgument = 4,
+    FailedToGetProviders = 5,
 }
 
 #[repr(C)]
@@ -59,14 +56,14 @@ pub extern "C" fn get_providers_count() -> usize {
 pub extern "C" fn get_providers(out: *mut Provider, out_len: usize) -> InitializeResult {
     if out.is_null() {
         log::error!("out is null");
-        return InitializeResult::InitializeInvalidArgument;
+        return InitializeResult::InvalidArgument;
     }
 
     let providers = match scrypt_ocl::get_providers(Some(DeviceType::GPU)) {
         Ok(providers) => providers,
         Err(e) => {
             log::error!("failed to get providers: {e}");
-            return InitializeResult::InitializeFailedToGetProviders;
+            return InitializeResult::FailedToGetProviders;
         }
     };
 
@@ -96,7 +93,7 @@ pub extern "C" fn get_providers(out: *mut Provider, out_len: usize) -> Initializ
         out[id].name[..name.len()].copy_from_slice(&name.map(|b| b as c_char));
     }
 
-    InitializeResult::InitializeOk
+    InitializeResult::Ok
 }
 
 /// Initializes labels for the given range.
@@ -113,7 +110,7 @@ pub extern "C" fn initialize(
     // Convert end to exclusive
     if end == u64::MAX {
         log::error!("end must be < u64::MAX");
-        return InitializeResult::InitializeInvalidLabelsRange;
+        return InitializeResult::InvalidLabelsRange;
     }
     let end = end + 1;
 
@@ -122,7 +119,7 @@ pub extern "C" fn initialize(
         Ok(len) => len * 16,
         Err(e) => {
             log::error!("failed to calculate number of labels to initialize: {e}");
-            return InitializeResult::InitializeInvalidLabelsRange;
+            return InitializeResult::InvalidLabelsRange;
         }
     };
 
@@ -136,7 +133,7 @@ pub extern "C" fn initialize(
         Ok(nonce) => nonce,
         Err(e) => {
             log::error!("error initializing labels: {e:?}");
-            return InitializeResult::InitializeError;
+            return InitializeResult::Error;
         }
     };
 
@@ -144,10 +141,10 @@ pub extern "C" fn initialize(
         if let Some(nonce) = vrf_nonce {
             unsafe { *out_nonce = nonce.index };
         } else {
-            return InitializeResult::InitializeOkNonceNotFound;
+            return InitializeResult::OkNonceNotFound;
         }
     }
-    InitializeResult::InitializeOk
+    InitializeResult::Ok
 }
 
 #[no_mangle]
@@ -207,6 +204,15 @@ pub extern "C" fn free_initializer(initializer: *mut Initializer) {
     unsafe { drop(Box::from_raw(initializer as *mut InitializerWrapper)) };
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerifyPosResult {
+    Ok,
+    Invalid { file: usize, offset: u64 },
+    InvalidArgument,
+    Failed,
+}
+
 #[no_mangle]
 pub extern "C" fn verify_pos(
     datadir: *const c_char,
@@ -214,13 +220,13 @@ pub extern "C" fn verify_pos(
     to_file: *const u32,
     fraction: f64,
     scrypt: ScryptParams,
-) -> VerifyResult {
+) -> VerifyPosResult {
     let datadir = unsafe { std::ffi::CStr::from_ptr(datadir) };
     let datadir = match datadir.to_str() {
         Ok(s) => s,
         Err(e) => {
             log::error!("invalid datadir: {e}");
-            return VerifyResult::Failed;
+            return VerifyPosResult::InvalidArgument;
         }
     };
     let from_file = unsafe { from_file.as_ref() }.map(|f| *f as usize);
@@ -233,17 +239,17 @@ pub extern "C" fn verify_pos(
         to_file,
         scrypt,
     ) {
-        Ok(_) => VerifyResult::Ok,
+        Ok(_) => VerifyPosResult::Ok,
         Err(VerificationError::InvalidLabel { idx, offset }) => {
             log::info!(
                 "POS data is invalid: {}",
                 VerificationError::InvalidLabel { idx, offset }
             );
-            VerifyResult::Invalid
+            VerifyPosResult::Invalid { file: idx, offset }
         }
         Err(e) => {
             log::error!("Error verifying POS data: {e:?}");
-            VerifyResult::Failed
+            VerifyPosResult::Failed
         }
     }
 }
@@ -261,12 +267,15 @@ mod tests {
     };
     use tempfile::tempdir;
 
-    use crate::{
-        initialization::{Initializer, InitializerWrapper},
-        post_impl::VerifyResult,
-    };
+    use crate::initialization::{Initializer, InitializerWrapper, VerifyPosResult};
 
     use super::{verify_pos, InitializeResult, CPU_PROVIDER_ID};
+
+    #[test]
+    fn get_providers_null_out() {
+        let result = super::get_providers(null_mut(), 0);
+        assert_eq!(InitializeResult::InvalidArgument, result);
+    }
 
     #[test]
     fn cant_initialize_more_than_2_64_labels() {
@@ -274,7 +283,7 @@ mod tests {
 
         let mut labels = Vec::new();
         let result = super::initialize(initializer, 0, u64::MAX, labels.as_mut_ptr(), null_mut());
-        assert_eq!(InitializeResult::InitializeInvalidLabelsRange, result);
+        assert_eq!(InitializeResult::InvalidLabelsRange, result);
     }
 
     #[test]
@@ -291,7 +300,7 @@ mod tests {
             labels.as_mut_ptr(),
             null_mut(),
         );
-        assert_eq!(InitializeResult::InitializeOk, result);
+        assert_eq!(InitializeResult::Ok, result);
 
         let mut expected = Vec::<u8>::with_capacity(indices.clone().count());
 
@@ -323,14 +332,15 @@ mod tests {
             vrf_difficulty: None,
         });
 
+        let mut labels = vec![0u8; 100 * 16];
         let result = super::initialize(
             initializer.as_mut() as *mut InitializerWrapper as *mut Initializer,
             0,
             99,
-            null_mut(),
+            labels.as_mut_ptr(),
             null_mut(),
         );
-        assert_eq!(InitializeResult::InitializeError, result);
+        assert_eq!(InitializeResult::Error, result);
     }
 
     #[test]
@@ -364,7 +374,7 @@ mod tests {
             labels.as_mut_ptr(),
             &mut nonce,
         );
-        assert_eq!(InitializeResult::InitializeOkNonceNotFound, result);
+        assert_eq!(InitializeResult::OkNonceNotFound, result);
         assert_eq!(0xCAFEDEAD, nonce);
     }
 
@@ -384,7 +394,7 @@ mod tests {
             labels.as_mut_ptr(),
             &mut nonce,
         );
-        assert_eq!(InitializeResult::InitializeOk, result);
+        assert_eq!(InitializeResult::Ok, result);
         assert_ne!(0xCAFEDEAD, nonce);
     }
 
@@ -407,7 +417,7 @@ mod tests {
         ];
 
         assert_eq!(
-            InitializeResult::InitializeOk,
+            InitializeResult::Ok,
             super::get_providers(providers.as_mut_ptr(), count)
         );
     }
@@ -425,16 +435,16 @@ mod tests {
         // Verify the data
         let datapath = CString::new(datadir.path().to_str().unwrap()).unwrap();
         let result = verify_pos(datapath.as_ptr(), null(), null(), 100.0, scrypt);
-        assert_eq!(VerifyResult::Ok, result);
+        assert_eq!(VerifyPosResult::Ok, result);
 
         // verify with wrong scrypt params
         let wrong_scrypt = ScryptParams::new(4, 1, 1);
         let result = verify_pos(datapath.as_ptr(), null(), null(), 100.0, wrong_scrypt);
-        assert_eq!(VerifyResult::Invalid, result);
+        assert!(matches!(result, VerifyPosResult::Invalid { file: 0, .. }));
 
         // verify with non-existent path
         let path = CString::new("non-existent-path").unwrap();
         let result = verify_pos(path.as_ptr(), null(), null(), 100.0, scrypt);
-        assert_eq!(VerifyResult::Failed, result);
+        assert_eq!(VerifyPosResult::Failed, result);
     }
 }

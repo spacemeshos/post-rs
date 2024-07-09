@@ -1,6 +1,6 @@
 [package]
 name = "post-cbindings"
-version = "0.6.6"
+version = "0.7.9"
 edition = "2021"
 
 
@@ -9,12 +9,12 @@ name = "post"
 crate_type = ["staticlib", "cdylib"]
 
 [dependencies]
-log = { version = "0.4.17", features = ["std"] }
+log = { version = "0.4.22", features = ["std"] }
 post-rs = { path = "../" }
 scrypt-ocl = { path = "../scrypt-ocl" }
 
 [build-dependencies]
-cbindgen = "*"
+cbindgen = { version = "0.26.0", default-features = false }
 
 [dev-dependencies]
 tempfile = "3.6.0"

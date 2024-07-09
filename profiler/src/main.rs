@@ -167,7 +167,16 @@ struct PerfResult {
 
 // Prepare file for benchmarking, possibly appending random data to it if needed.
 fn prepare_data_file(path: &Path, size: u64) -> eyre::Result<()> {
-    let file = OpenOptions::new().write(true).create(true).open(path)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .wrap_err_with(|| format!("creating directory {}", parent.display()))?;
+    }
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .wrap_err_with(|| format!("opening profiler data file {}", path.display()))?;
 
     // Disable caching on Mac
     #[cfg(target_os = "macos")]
@@ -320,4 +329,19 @@ fn pow(args: PowArgs) -> eyre::Result<()> {
     );
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn prepare_data_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        // it creates a missing direcory 'subdir'
+        let file_path = temp_dir.path().join("subdir").join("file.bin");
+        assert!(!file_path.exists());
+        super::prepare_data_file(&file_path, 1024).unwrap();
+        assert!(file_path.exists());
+        assert!(file_path.is_file());
+        assert_eq!(file_path.metadata().unwrap().len(), 1024);
+    }
 }

@@ -2,12 +2,12 @@ use std::sync::atomic::AtomicBool;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use post::{
-    config::{InitConfig, ProofConfig, ScryptParams},
+    config::{self, InitConfig, ProofConfig, ScryptParams},
     initialize::{CpuInitializer, Initialize},
     metadata::ProofMetadata,
     pow::randomx::{PoW, RandomXFlag},
-    prove::generate_proof,
-    verification::Verifier,
+    prove::{generate_proof, NoopProgressReporter},
+    verification::{Mode, Verifier},
 };
 #[cfg(not(windows))]
 use pprof::criterion::{Output, PProfProfiler};
@@ -20,7 +20,6 @@ fn verifying(c: &mut Criterion) {
     let cfg = ProofConfig {
         k1: 199,
         k2: 37,
-        k3: 37,
         pow_difficulty: [0xFF; 32],
     };
     let init_cfg = InitConfig {
@@ -45,7 +44,17 @@ fn verifying(c: &mut Criterion) {
     let pow_flags = RandomXFlag::get_recommended_flags();
     // Generate a proof
     let stop = AtomicBool::new(false);
-    let proof = generate_proof(datadir.path(), challenge, cfg, 32, 1, pow_flags, stop).unwrap();
+    let proof = generate_proof(
+        datadir.path(),
+        challenge,
+        cfg,
+        32,
+        config::Cores::Any(1),
+        pow_flags,
+        stop,
+        NoopProgressReporter {},
+    )
+    .unwrap();
     let metadata = ProofMetadata::new(metadata, *challenge);
 
     // Bench verifying the proof
@@ -53,7 +62,7 @@ fn verifying(c: &mut Criterion) {
     c.bench_function("verify", |b| {
         b.iter(|| {
             verifier
-                .verify(&proof, &metadata, &cfg, &init_cfg)
+                .verify(&proof, &metadata, &cfg, &init_cfg, Mode::All)
                 .expect("proof should be valid");
         });
     });

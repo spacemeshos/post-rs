@@ -38,7 +38,6 @@
 use std::cmp::Ordering;
 
 use cipher::BlockEncrypt;
-use itertools::Itertools;
 use log::debug;
 
 use crate::{
@@ -67,16 +66,18 @@ pub enum Error {
     InvalidPoW(#[from] crate::pow::Error),
     #[error("invalid number of indices (expected: {expected}, got: {got})")]
     InvalidIndicesLen { expected: usize, got: usize },
-    #[error("MSB value for index: {index} doesn't satisfy difficulty: {msb} > {difficulty_msb} (label: {label:?})")]
+    #[error("MSB value for index: {index} (id: {index_id}) doesn't satisfy difficulty: {msb} > {difficulty_msb} (label: {label:?})")]
     InvalidMsb {
         index: u64,
+        index_id: usize,
         msb: u8,
         difficulty_msb: u8,
         label: [u8; 16],
     },
-    #[error("LSB value for index: {index} doesn't satisfy difficulty: {lsb} >= {difficulty_lsb} (label: {label:?})")]
+    #[error("LSB value for index: {index} (id: {index_id}) doesn't satisfy difficulty: {lsb} >= {difficulty_lsb} (label: {label:?})")]
     InvalidLsb {
         index: u64,
+        index_id: usize,
         lsb: u64,
         difficulty_lsb: u64,
         label: [u8; 16],
@@ -114,6 +115,22 @@ pub fn verify_metadata(
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Mode<'a> {
+    /// Verify all indices in proof
+    All,
+    // Verify only one index at the given index
+    One {
+        index: usize,
+    },
+    // Verify a randomly selected subset of k3 indices.
+    // The `seed` is used to randomize the selection of indices.
+    Subset {
+        k3: usize,
+        seed: &'a [u8],
+    },
+}
+
 impl Verifier {
     pub fn new(pow_verifier: Box<dyn PowVerifier + Send + Sync>) -> Self {
         Self { pow_verifier }
@@ -133,6 +150,7 @@ impl Verifier {
         metadata: &ProofMetadata,
         cfg: &ProofConfig,
         init_cfg: &InitConfig,
+        mode: Mode,
     ) -> Result<(), Error> {
         verify_metadata(metadata, init_cfg)?;
 
@@ -142,8 +160,8 @@ impl Verifier {
         // Verify K2 PoW
         let nonce_group = proof.nonce / NONCES_PER_AES;
         debug!(
-            "verifying K2 pow for nonce group: {nonce_group} with difficulty: {:x?}",
-            pow_difficulty
+            "verifying K2 pow for nonce group: {nonce_group} with difficulty: {}",
+            hex::encode_upper(pow_difficulty)
         );
         self.pow_verifier.verify(
             proof.pow,
@@ -166,9 +184,6 @@ impl Verifier {
             });
         }
 
-        let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index)
-            .take(cfg.k2 as usize)
-            .collect_vec();
         let commitment = calc_commitment(&metadata.node_id, &metadata.commitment_atx_id);
         let cipher = AesCipher::new(&challenge, nonce_group, proof.pow);
         let lazy_cipher = AesCipher::new_lazy(&challenge, proof.nonce, nonce_group, proof.pow);
@@ -178,17 +193,26 @@ impl Verifier {
 
         let output_index = (proof.nonce % NONCES_PER_AES) as usize;
 
-        // Select K3 indices
-        let seed = &[
-            challenge.as_slice(),
-            &proof.nonce.to_le_bytes(),
-            proof.indices.as_ref(),
-            &proof.pow.to_le_bytes(),
-        ];
+        let indices_unpacked = decompress_indexes(&proof.indices, bits_per_index)
+            .take(cfg.k2 as usize)
+            .enumerate();
 
-        let k3_indices = RandomValuesIterator::new(indices_unpacked, seed).take(cfg.k3 as usize);
+        let indices: Box<dyn Iterator<Item = (usize, u64)>> = match mode {
+            Mode::All => Box::new(indices_unpacked),
+            Mode::Subset { k3, .. } if k3 == cfg.k2 as usize => Box::new(indices_unpacked),
+            Mode::One { index } => Box::new(indices_unpacked.skip(index).take(1)),
+            Mode::Subset { k3, seed } => {
+                // Shuffle and take k3 indices
+                let seed = &[
+                    seed,
+                    metadata.node_id.as_slice(),
+                    metadata.challenge.as_slice(),
+                ];
+                Box::new(RandomValuesIterator::new(indices_unpacked, seed).take(k3))
+            }
+        };
 
-        k3_indices.into_iter().try_for_each(|index| {
+        for (index_id, index) in indices {
             let mut output = [0u8; 16];
             let label = generate_label(&commitment, init_cfg.scrypt, index);
             cipher
@@ -203,6 +227,7 @@ impl Verifier {
                 Ordering::Greater => {
                     return Err(Error::InvalidMsb {
                         index,
+                        index_id,
                         msb,
                         difficulty_msb,
                         label,
@@ -219,6 +244,7 @@ impl Verifier {
                     if lsb >= difficulty_lsb {
                         return Err(Error::InvalidLsb {
                             index,
+                            index_id,
                             lsb,
                             difficulty_lsb,
                             label,
@@ -226,8 +252,8 @@ impl Verifier {
                     }
                 }
             }
-            Ok(())
-        })
+        }
+        Ok(())
     }
 }
 
@@ -258,7 +284,7 @@ mod tests {
         verification::Error,
     };
 
-    use super::{expected_indices_bytes, next_multiple_of, Verifier};
+    use super::{expected_indices_bytes, next_multiple_of, Mode, Verifier};
 
     #[test]
     fn test_next_mutliple_of() {
@@ -278,7 +304,6 @@ mod tests {
         let cfg = ProofConfig {
             k1: 3,
             k2: 3,
-            k3: 3,
             pow_difficulty: [0xFF; 32],
         };
         let init_cfg = InitConfig {
@@ -308,6 +333,7 @@ mod tests {
             &fake_metadata,
             &cfg,
             &init_cfg,
+            Mode::All,
         );
         assert!(matches!(result, Err(Error::InvalidPoW(_))));
     }
@@ -317,7 +343,6 @@ mod tests {
         let pcfg = ProofConfig {
             k1: 10,
             k2: 10,
-            k3: 10,
             pow_difficulty: [0xFF; 32],
         };
         let icfg = InitConfig {
@@ -344,7 +369,7 @@ mod tests {
                 indices: Cow::from(vec![]),
                 pow: 0,
             };
-            let result = verifier.verify(&empty_proof, &fake_metadata, &pcfg, &icfg);
+            let result = verifier.verify(&empty_proof, &fake_metadata, &pcfg, &icfg, Mode::All);
             assert!(matches!(
                 result,
                 Err(Error::InvalidIndicesLen {
@@ -354,22 +379,28 @@ mod tests {
             ));
         }
         {
-            let nonce_out_of_bounds_proof = Proof {
+            let nonce_out_of_bounds = Proof {
                 nonce: 256 * 16,
                 indices: Cow::from(vec![]),
                 pow: 0,
             };
-            let res = verifier.verify(&nonce_out_of_bounds_proof, &fake_metadata, &pcfg, &icfg);
+            let res = verifier.verify(
+                &nonce_out_of_bounds,
+                &fake_metadata,
+                &pcfg,
+                &icfg,
+                Mode::All,
+            );
             assert!(matches!(res, Err(Error::NonceGroupOutOfBounds(256))));
         }
         {
-            let proof_with_not_enough_indices = Proof {
+            let not_enough_indices = Proof {
                 nonce: 0,
                 indices: Cow::from(vec![1, 2, 3]),
                 pow: 0,
             };
             let result =
-                verifier.verify(&proof_with_not_enough_indices, &fake_metadata, &pcfg, &icfg);
+                verifier.verify(&not_enough_indices, &fake_metadata, &pcfg, &icfg, Mode::All);
             assert!(matches!(
                 result,
                 Err(Error::InvalidIndicesLen {

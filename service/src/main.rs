@@ -1,13 +1,15 @@
-use std::{fs::read_to_string, path::PathBuf, time::Duration};
+use std::{fs::read_to_string, net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 
 use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
-use sysinfo::{Pid, ProcessExt, ProcessStatus, System, SystemExt};
+use serde_with::{formats, hex::Hex, serde_as};
+use sysinfo::{Pid, ProcessStatus, System};
+use tokio::net::TcpListener;
 use tokio::sync::oneshot::{self, error::TryRecvError, Receiver};
 use tonic::transport::{Certificate, Identity};
 
 use post::pow::randomx::RandomXFlag;
-use post_service::client;
+use post_service::{client, operator};
 
 /// Post Service
 #[derive(Parser, Debug)]
@@ -27,6 +29,15 @@ struct Cli {
     #[arg(long)]
     max_retries: Option<usize>,
 
+    /// watch PID and exit if it dies
+    #[arg(long)]
+    watch_pid: Option<sysinfo::Pid>,
+
+    /// address to listen on for operator service
+    /// the operator service is disabled if not specified
+    #[arg(long)]
+    operator_address: Option<SocketAddr>,
+
     #[command(flatten, next_help_heading = "POST configuration")]
     post_config: PostConfig,
 
@@ -35,13 +46,10 @@ struct Cli {
 
     #[command(flatten, next_help_heading = "TLS configuration")]
     tls: Option<Tls>,
-
-    /// watch PID and exit if it dies
-    #[arg(long)]
-    watch_pid: Option<sysinfo::Pid>,
 }
 
-#[derive(Args, Debug)]
+#[serde_as]
+#[derive(Args, Debug, serde::Serialize)]
 /// POST configuration - network parameters
 struct PostConfig {
     /// The minimal number of units that must be initialized.
@@ -50,24 +58,19 @@ struct PostConfig {
     /// The maximal number of units that can be initialized.
     #[arg(long, default_value_t = u32::MAX)]
     pub max_num_units: u32,
-    ///  The number of labels per unit.
-    #[arg(long, default_value_t = 4294967296)]
-    pub labels_per_unit: u64,
     /// K1 specifies the difficulty for a label to be a candidate for a proof
     #[arg(long, default_value_t = 26)]
     k1: u32,
     /// K2 is the number of labels below the required difficulty required for a proof
     #[arg(long, default_value_t = 37)]
     k2: u32,
-    /// K3 is the size of the subset of proof indices that is validated
-    #[arg(long, default_value_t = 37)]
-    k3: u32,
     /// difficulty for the nonce proof of work (aka "k2pow")
     #[arg(
         long,
         default_value = "000dfb23b0979b4b000000000000000000000000000000000000000000000000",
         value_parser(parse_difficulty)
     )]
+    #[serde_as(as = "Hex<formats::Uppercase>")]
     pow_difficulty: [u8; 32],
     /// scrypt parameters for initialization
     #[command(flatten)]
@@ -75,7 +78,7 @@ struct PostConfig {
 }
 
 /// Scrypt parameters for initialization
-#[derive(Args, Debug)]
+#[derive(Args, Debug, serde::Serialize)]
 struct ScryptParams {
     /// scrypt N parameter
     #[arg(short, default_value_t = 8192)]
@@ -88,13 +91,12 @@ struct ScryptParams {
     p: usize,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, serde::Serialize)]
 /// POST proof generation settings
 struct PostSettings {
-    /// number of threads to use
-    /// '0' means use all available threads
-    #[arg(long, default_value_t = 1)]
-    threads: usize,
+    #[command(flatten)]
+    cores: CoresConfig,
+
     /// number of nonces to attempt in single pass over POS data
     ///
     /// Each group of 16 nonces requires a separate PoW. Must be a multiple of 16.
@@ -108,11 +110,29 @@ struct PostSettings {
     randomx_mode: RandomXMode,
 }
 
+#[derive(Args, Debug, Clone, serde::Serialize)]
+#[group(required = true)]
+struct CoresConfig {
+    /// number of threads to use,
+    /// '0' means use all available threads
+    ///
+    /// Can't use with `pinned-cores`
+    #[arg(long, default_value_t = 1)]
+    threads: usize,
+
+    /// list of cores to pin threads to,
+    /// it will use only these cores for proving
+    ///
+    /// Can't use with `threads`
+    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    pinned_cores: Option<Vec<usize>>,
+}
+
 /// RandomX modes of operation
 ///
 /// They are interchangeable as they give the same results but have different
 /// purpose and memory requirements.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum, serde::Serialize)]
 enum RandomXMode {
     /// Fast mode for proving. Requires 2080 MiB of memory.
     Fast,
@@ -175,33 +195,60 @@ async fn main() -> eyre::Result<()> {
     let env = env_logger::Env::default().filter_or("RUST_LOG", "info");
     env_logger::init_from_env(env);
 
-    log::info!("POST network parameters: {:?}", args.post_config);
-    log::info!("POST proving settings: {:?}", args.post_settings);
+    log::info!(
+        "POST network parameters: {}",
+        serde_json::to_string(&args.post_config).unwrap()
+    );
+    log::info!(
+        "POST proving settings: {}",
+        serde_json::to_string(&args.post_settings).unwrap()
+    );
 
     let scrypt = post::config::ScryptParams::new(
         args.post_config.scrypt.n,
         args.post_config.scrypt.r,
         args.post_config.scrypt.p,
     );
+
+    let cores_config = if let Some(pinned) = args.post_settings.cores.pinned_cores {
+        log::info!(
+            "using {} threads, pinned to cores: {:?}",
+            pinned.len(),
+            pinned.as_slice()
+        );
+        post::config::Cores::Pin(pinned)
+    } else {
+        match args.post_settings.cores.threads {
+            0 => {
+                log::info!("using all available cores");
+                post::config::Cores::All
+            }
+            n => {
+                log::info!("using {n} cores");
+                post::config::Cores::Any(n)
+            }
+        }
+    };
+
     let service = post_service::service::PostService::new(
         args.dir,
         post::config::ProofConfig {
             k1: args.post_config.k1,
             k2: args.post_config.k2,
-            k3: args.post_config.k3,
             pow_difficulty: args.post_config.pow_difficulty,
         },
-        post::config::InitConfig {
-            min_num_units: args.post_config.min_num_units,
-            max_num_units: args.post_config.max_num_units,
-            labels_per_unit: args.post_config.labels_per_unit,
-            scrypt,
-        },
+        scrypt,
         args.post_settings.nonces,
-        args.post_settings.threads,
+        cores_config,
         args.post_settings.randomx_mode.into(),
     )
     .wrap_err("creating Post Service")?;
+
+    let post_metadata = client::PostService::get_metadata(&service);
+    verify_num_units(
+        args.post_config.min_num_units..=args.post_config.max_num_units,
+        post_metadata.num_units,
+    )?;
 
     let tls = if let Some(tls) = args.tls {
         log::info!(
@@ -223,6 +270,13 @@ async fn main() -> eyre::Result<()> {
         log::info!("not configuring TLS");
         None
     };
+
+    let service = Arc::new(service);
+
+    if let Some(address) = args.operator_address {
+        let listener = TcpListener::bind(address).await?;
+        tokio::spawn(operator::run(listener, service.clone()));
+    }
 
     let client = client::ServiceClient::new(args.address, tls, service)?;
     let client_handle = tokio::spawn(client.run(args.max_retries, args.reconnect_interval_s));
@@ -278,11 +332,22 @@ fn watch_pid(pid: Pid, interval: Duration, mut term: Receiver<()>) {
     }
 }
 
+fn verify_num_units(range: std::ops::RangeInclusive<u32>, num_units: u32) -> eyre::Result<()> {
+    if !range.contains(&num_units) {
+        return Err(eyre::eyre!(
+            "number of units in the POST data is out of range: {} not in {}..={}",
+            num_units,
+            range.start(),
+            range.end()
+        ));
+    }
+    Ok(())
+}
 #[cfg(test)]
 mod tests {
     use std::process::Command;
 
-    use sysinfo::{Pid, PidExt};
+    use sysinfo::Pid;
     use tokio::sync::oneshot;
 
     #[tokio::test]
@@ -364,5 +429,14 @@ mod tests {
 
         proc.kill().unwrap();
         proc.wait().unwrap();
+    }
+
+    #[test]
+    fn verify_num_units() {
+        super::verify_num_units(1..=10, 5).unwrap();
+        super::verify_num_units(1..=10, 1).unwrap();
+        super::verify_num_units(1..=10, 10).unwrap();
+        assert!(super::verify_num_units(1..=10, 0).is_err());
+        assert!(super::verify_num_units(1..=10, 11).is_err());
     }
 }

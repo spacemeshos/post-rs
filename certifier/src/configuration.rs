@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, time::Duration};
 
 use ed25519_dalek::SecretKey;
 use post::pow::randomx::RandomXFlag;
@@ -39,10 +39,7 @@ pub struct Config {
     /// The address to listen on for incoming requests.
     pub listen: std::net::SocketAddr,
 
-    /// The maximum number of requests to process in parallel.
-    /// Typically set to the number of cores, which is the default (if not set).
-    #[serde(default = "max_concurrency")]
-    pub max_concurrent_requests: usize,
+    pub limits: Limits,
 
     #[serde_as(as = "Base64")]
     /// The base64-encoded secret key used to sign the proofs.
@@ -54,9 +51,36 @@ pub struct Config {
     #[serde(default)]
     pub randomx_mode: RandomXMode,
 
+    #[serde(
+        default,
+        deserialize_with = "duration_str::deserialize_option_duration"
+    )]
+    /// The time after which the certificates expire.
+    pub certificate_expiration: Option<Duration>,
+
     /// Address to expose metrics on.
     /// Metrics are disabled if not configured.
     pub metrics: Option<std::net::SocketAddr>,
+}
+
+#[derive(Debug, serde::Deserialize, Clone)]
+pub struct Limits {
+    /// The maximum number of requests to process in parallel.
+    /// Typically set to the number of cores, which is the default (if not set).
+    #[serde(default = "max_concurrency")]
+    pub max_concurrent_requests: usize,
+
+    /// The maximum number of requests to queue up before rejecting new requests.
+    /// Rejected requests have 429 TOO_MANY_REQUESTS status code.
+    pub max_pending_requests: usize,
+
+    /// The maximum size of a request body (the proof JSON)
+    #[serde(default = "default_max_body")]
+    pub max_body_size: usize,
+}
+
+fn default_max_body() -> usize {
+    1024
 }
 
 pub fn get_configuration(config_path: &Path) -> Result<Config, config::ConfigError> {

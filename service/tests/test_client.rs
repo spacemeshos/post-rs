@@ -103,7 +103,7 @@ async fn test_gen_proof_finished() {
 
     let mut service = MockPostService::new();
     service.expect_gen_proof().returning(move |c| {
-        assert_eq!(c.as_slice(), challenge);
+        assert_eq!(c, challenge);
         Ok(ProofGenState::Finished {
             proof: Proof {
                 nonce: 1,
@@ -121,9 +121,7 @@ async fn test_gen_proof_finished() {
         nonce: Some(12),
         ..Default::default()
     };
-    service
-        .expect_get_metadata()
-        .returning(move || Ok(post_metadata));
+    service.expect_get_metadata().return_const(post_metadata);
     // First try passes
     service
         .expect_verify_proof()
@@ -227,17 +225,12 @@ async fn test_get_metadata(#[case] vrf_difficulty: Option<[u8; 32]>) {
     let cfg = post::config::ProofConfig {
         k1: 23,
         k2: 32,
-        k3: 10,
         pow_difficulty: [0xFF; 32],
     };
-    let init_cfg = post::config::InitConfig {
-        min_num_units: 1,
-        max_num_units: 1000,
-        labels_per_unit: 256 * 16,
-        scrypt: post::config::ScryptParams::new(2, 1, 1),
-    };
 
-    let metadata = CpuInitializer::new(init_cfg.scrypt)
+    let scrypt = post::config::ScryptParams::new(2, 1, 1);
+
+    let metadata = CpuInitializer::new(scrypt)
         .initialize(
             datadir.path(),
             &[77; 32],
@@ -254,9 +247,9 @@ async fn test_get_metadata(#[case] vrf_difficulty: Option<[u8; 32]>) {
     let service = post_service::service::PostService::new(
         datadir.path().into(),
         cfg,
-        init_cfg,
+        scrypt,
         16,
-        1,
+        post::config::Cores::Any(1),
         post::pow::randomx::RandomXFlag::get_recommended_flags(),
     )
     .unwrap();
