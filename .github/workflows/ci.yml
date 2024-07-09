@@ -198,7 +198,7 @@ jobs:
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: libpost-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
+          name: libpost-${{ matrix.artifact-name }}${{ steps.version.outputs.suffix }}
           path: |
             ffi/post.h
             target/release-clib/${{ matrix.dylib }}
@@ -212,7 +212,7 @@ jobs:
       - name: Archive profiler artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: profiler-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
+          name: profiler-${{ matrix.artifact-name }}${{ steps.version.outputs.suffix }}
           path: |
             target/release/profiler${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
@@ -227,7 +227,7 @@ jobs:
       - name: Archive service artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: post-service-${{ matrix.artifact-name }}${{ steps.version.output.suffix }}
+          name: post-service-${{ matrix.artifact-name }}${{ steps.version.outputs.suffix }}
           path: |
             target/release/post-service${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
