@@ -188,9 +188,6 @@ jobs:
           wget https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v2023.04.17/OpenCL-SDK-v2023.04.17-Win-x64.zip
           unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
 
-      - name: Version suffix (for release only)
-        id: version
-        run: echo "suffix=${{ github.ref_type == 'tag' && '-' || ''}}${{ github.ref_type == 'tag' && github.ref_name || ''}}" >> $GITHUB_OUTPUT
       - name: Build clib
         run: cargo build -p post-cbindings --profile release-clib
         env:
@@ -198,7 +195,7 @@ jobs:
       - name: Archive production artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: libpost-${{ matrix.artifact-name }}${{ steps.version.outputs.suffix }}
+          name: libpost-${{ matrix.artifact-name }}
           path: |
             ffi/post.h
             target/release-clib/${{ matrix.dylib }}
@@ -212,7 +209,7 @@ jobs:
       - name: Archive profiler artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: profiler-${{ matrix.artifact-name }}${{ steps.version.outputs.suffix }}
+          name: profiler-${{ matrix.artifact-name }}
           path: |
             target/release/profiler${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
@@ -227,7 +224,7 @@ jobs:
       - name: Archive service artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: post-service-${{ matrix.artifact-name }}${{ steps.version.outputs.suffix }}
+          name: post-service-${{ matrix.artifact-name }}
           path: |
             target/release/post-service${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
@@ -259,8 +256,10 @@ jobs:
         run: >
           mkdir ./assets;
           for dir in ./artifacts/*/; do
-            zip -o -j -r "./assets/$(basename "$dir").zip" "$dir";
+            zip -o -j -r "./assets/$(basename "$dir")-$TAG.zip" "$dir";
           done
+        env:
+          TAG: ${{ github.ref_name }}
       - name: Upload Release Assets
         run: gh release upload $TAG ./assets/*.zip
         env:
