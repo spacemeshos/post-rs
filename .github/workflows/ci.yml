@@ -259,10 +259,8 @@ jobs:
         run: >
           mkdir ./assets;
           for dir in ./artifacts/*/; do
-            zip -o -j -r "./assets/$(basename "$dir")-$TAG.zip" "$dir";
+            zip -o -j -r "./assets/$(basename "$dir").zip" "$dir";
           done
-        env:
-          TAG: ${{ github.ref_name }}
       - name: Upload Release Assets
         run: gh release upload $TAG ./assets/*.zip
         env:
