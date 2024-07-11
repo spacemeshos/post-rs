@@ -20,9 +20,9 @@ COPY --from=planner /service/recipe.json recipe.json
 RUN cargo chef cook --release -p service --recipe-path recipe.json
 
 COPY . .
-RUN cargo build --release -p service --bin service
+RUN cargo build --release -p service --bin post-service
 
 FROM debian:bookworm-slim AS runtime
 WORKDIR /service
-COPY --from=builder /service/target/release/service /usr/local/bin
-ENTRYPOINT ["/usr/local/bin/service"]
+COPY --from=builder /service/target/release/post-service /usr/local/bin
+ENTRYPOINT ["/usr/local/bin/post-service"]
