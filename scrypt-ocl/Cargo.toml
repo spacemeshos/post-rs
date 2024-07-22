@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 ocl = "0.19.7"
-thiserror = "1.0.62"
+thiserror = "1.0.63"
 post-rs = { path = "../" }
 log = "0.4.22"
 regex = "1.10.5"
