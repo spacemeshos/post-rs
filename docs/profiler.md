@@ -164,7 +164,7 @@ If `speed_gib_s` is slowing down as nonces are increased, then the CPU is most l
 
 ### How to verify that the HDD is the limiting factor?
 
-If `speed_gib_s` is not slowing down with more nonces, then HDD is most likely the limiting factor. As stated earlier, try to add more nonces only if needed. Increasing nonces puts more load on CPU but increases the chances of finding the proof after only one pass over PoS data.
+If `speed_gib_s` is not slowing down with more nonces, then HDD is most likely the limiting factor. As stated earlier, try to add more nonces only if needed. While increasing nonces puts more load on the CPU, it also increases the chances of finding the proof after a single pass over the PoS data.
 
 ### How do I find the sweet spot?
 
