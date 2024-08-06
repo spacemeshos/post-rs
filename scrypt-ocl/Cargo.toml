@@ -12,4 +12,4 @@ regex = "1.10.6"
 
 [dev-dependencies]
 post-rs = { path = "../" }
-rstest = "0.21.0"
+rstest = "0.22.0"
