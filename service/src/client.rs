@@ -10,7 +10,8 @@ use post::metadata::PostMetadata;
 pub(crate) use spacemesh_v1::post_service_client::PostServiceClient;
 use spacemesh_v1::{node_request, service_response};
 use spacemesh_v1::{
-    GenProofRequest, GenProofResponse, GenProofStatus, Proof, ProofMetadata, ServiceResponse,
+    GenProofRequest, GenProofResponse, GenProofStatus, InterruptProofResponse, Proof,
+    ProofMetadata, ServiceResponse,
 };
 use tokio::sync::mpsc;
 use tokio::time::sleep;
@@ -46,6 +47,8 @@ pub trait PostService {
         proof: &post::prove::Proof<'a>,
         challenge: &[u8],
     ) -> eyre::Result<()>;
+
+    fn interrupt_proof(&self) -> eyre::Result<()>;
 }
 
 impl<T: PostService + ?Sized> PostService for std::sync::Arc<T> {
@@ -59,6 +62,10 @@ impl<T: PostService + ?Sized> PostService for std::sync::Arc<T> {
 
     fn get_metadata(&self) -> &PostMetadata {
         self.as_ref().get_metadata()
+    }
+
+    fn interrupt_proof(&self) -> eyre::Result<()> {
+        self.as_ref().interrupt_proof()
     }
 }
 
@@ -148,6 +155,10 @@ impl<S: PostService> ServiceClient<S> {
                     let resp = self.generate_and_verify_proof(req);
                     tx.send(resp).await?;
                 }
+                Some(node_request::Kind::Interrupt(_)) => {
+                    let resp = self.interrupt_proof();
+                    tx.send(resp).await?;
+                }
                 None => {
                     log::warn!("Got a request with no kind");
                     tx.send(ServiceResponse {
@@ -233,6 +244,14 @@ impl<S: PostService> ServiceClient<S> {
             kind: Some(service_response::Kind::Metadata(MetadataResponse {
                 meta: Some(convert_metadata(*meta)),
             })),
+        }
+    }
+
+    fn interrupt_proof(&self) -> ServiceResponse {
+        self.service.interrupt_proof().unwrap();
+        log::info!("received proof interrupt");
+        ServiceResponse {
+            kind: Some(service_response::Kind::Interrupt(InterruptProofResponse {})),
         }
     }
 }
