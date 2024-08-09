@@ -37,4 +37,4 @@ mockall = "0.13.0"
 [dev-dependencies]
 axum-test = "15.3.0"
 reqwest = { version = "0.12.5", features = ["json"] }
-tempfile = "3.8.1"
+tempfile = "3.12.0"
