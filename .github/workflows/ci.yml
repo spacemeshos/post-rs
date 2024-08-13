@@ -13,7 +13,7 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: arduino/setup-protoc@v2
+      - uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@v4
@@ -43,7 +43,7 @@ jobs:
           - os: windows-2019
 
     steps:
-      - uses: arduino/setup-protoc@v2
+      - uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@v4
@@ -88,7 +88,7 @@ jobs:
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: arduino/setup-protoc@v2
+      - uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/checkout@v4
@@ -108,7 +108,7 @@ jobs:
   coverage:
     runs-on: [self-hosted, linux, x64, intel]
     steps:
-      - uses: arduino/setup-protoc@v2
+      - uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install opencl
@@ -125,7 +125,7 @@ jobs:
       - name: cargo llvm-cov
         run: cargo llvm-cov --locked --lcov --output-path lcov.info --workspace --ignore-filename-regex "main.rs" -- --test-threads=1
       - name: Upload to codecov.io
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
 
@@ -214,7 +214,7 @@ jobs:
             target/release/profiler${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
 
-      - uses: arduino/setup-protoc@v2
+      - uses: arduino/setup-protoc@v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build service
@@ -237,7 +237,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: ./artifacts
       - name: List artifacts
