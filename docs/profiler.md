@@ -55,9 +55,9 @@ If no command is given, the profiler runs the `proving` command by default.
 ### Options
 
 * `--help`: Displays all the available commands and options along with their short descriptions. Use the `-h` flag for summarized help information.
-* `--data-file` (path): This is the path to an existing PoS file that we have already generated as a smesher during the [initialization or PoS generation](https://docs.spacemesh.io/docs/learn/post#generating-the-data) phase. By providing the path to an existing PoS data file, we are asking the profiler how long will it take to generate the PoST with the given PoS data. For accurate results, it is recommended to use the exact PoS data file on the same disk as used by the smeshing node. However, do note that the contents of the data file might get overwritten by the profiler tool.
+* `--data-file` (path): This is a path to the disk where we plan to store our PoS data. This ensures that the profiler will use the same disk to run the benchmarks as will be used to store the PoS, leading to more accurate results.
   * **Default**: The profiler tool will generate a 1 GiB PoS data file in a temporary directory.
-* `--data-size` (size in GiB): This is the size (in GiB) of the PoS data that we want the profiler to estimate the PoST generation time for. For example, we can provide a value of 5 GiB to have the profiler estimate the time it takes to generate the PoST given 5 GiB of PoS data.
+* `--data-size` (size in GiB): Increasing this value will give more accurate results.
   * **Default**: A PoS data size of 1 GiB will be used for running the benchmark.
 * `--duration` (in seconds): Duration in seconds of how long the profiler should run the PoST generation benchmark for. Longer duration yields more accurate results.
   * **Default**: 10 seconds.
@@ -83,7 +83,7 @@ The aforementioned formula gives the probability (with an output of 1 being 100%
 
 Please note that PoST generation speed scales *linearly* with the number of CPU cores used (assuming that they are equally fast) and *inversely* with the number of nonces in groups of 16 (32 nonces should be twice as slow as 16). This effect might not manifest itself until a high number of nonces is used. The reason for this is that in most setups, the hard disk drive (HDD) speed will become the limiting factor (as a spinning disk drive is used in most computers) if a low number of nonces is used.
 
-So, if we increase the CPU cores, the faster a valid PoST will be generated. And if you increase the number of nonces, the slower a valid PoST will be generated due to the increased usage of the HDD which results in the HDD speed being the limiting factor. Knowing this will help you make a better assessment of the profiler tool flags and its output.
+Ultimately, we should find a balance between the usage of these two resources to utilize them the best. If we increase the CPU cores, the faster a valid PoST will be generated. if we increase the number of nonces, the slower a valid PoST will be generated due to the increased CPU usage which results in the CPU being the limiting factor. On the other hand, with a low number of nonces, the HDD becomes the limiting factor as the CPU is processing the data faster than the disk can read it. Knowing this will help us make a better assessment of the profiler tool's inputs and outputs.
 
 ## How to interpret the profiler output
 
@@ -107,8 +107,7 @@ After running this command, we get the following output:
 }
 ```
 
-The output means that it took 10.31 seconds to find a valid PoST and the speed was 0.19 GiB/s.
-From the [formula above](#nonce-estimation-formula), we know that the probability of finding a proof with 64 nonces is 79.39%. Therefore, there is a ~20% chance that at least two passes are necessary (and a ~ 0.20^x chance that more than x passes are necessary).
+The output means that the benchmark ran for 10.31 seconds and the speed was 0.19 GiB/s. The profiler makes multiple passes over the data file, up to the configured `--duration` - the longer the duration, the more accurate the result (since it averages). From the [formula above](#nonce-estimation-formula), we know that the probability of finding a proof with 64 nonces is 79.39%. Therefore, there is a ~20% chance that at least two passes are necessary (and a ~ 0.20^x chance that more than x passes are necessary).
 
 Let us run another command, this time with the nonce count doubled to 128:
 
