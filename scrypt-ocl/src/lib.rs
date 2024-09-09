@@ -120,7 +120,7 @@ pub fn get_providers(device_types: Option<DeviceType>) -> Result<Vec<Provider>, 
 fn scan_for_vrf_nonce(labels: &[u8], mut difficulty: [u8; 32]) -> Option<VrfNonce> {
     let mut nonce = None;
     for (id, label) in labels.chunks(ENTIRE_LABEL_SIZE).enumerate() {
-        if label < &difficulty {
+        if label < difficulty.as_slice() {
             nonce = Some(VrfNonce {
                 index: id as u64,
                 label: label.try_into().unwrap(),
@@ -550,8 +550,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(&nonce.label[..16], label.as_slice());
-        assert!(nonce.label.as_slice() < &difficulty);
-        assert!(label.as_slice() < &difficulty);
+        assert!(nonce.label.as_slice() < difficulty.as_slice());
+        assert!(label.as_slice() < difficulty.as_slice());
 
         let mut sink = std::io::sink();
         let cpu_nonce = cpu_initializer

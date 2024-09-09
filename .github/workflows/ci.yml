@@ -221,6 +221,10 @@ jobs:
         run: cargo build -p service --release
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
+      - name: Build service
+        run: cargo build -p k2pow-service --release
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
       - name: Archive service artifacts
         uses: actions/upload-artifact@v4
         with:

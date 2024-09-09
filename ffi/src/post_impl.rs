@@ -4,7 +4,7 @@ use std::{
     ffi::{c_char, c_uchar, CStr},
     mem::ManuallyDrop,
     path::Path,
-    sync::atomic::AtomicBool,
+    sync::{atomic::AtomicBool, Arc},
 };
 
 use post::{
@@ -103,6 +103,7 @@ fn _generate_proof(
     let challenge = challenge.try_into()?;
 
     let stop = AtomicBool::new(false);
+    let pow_prover = post::pow::randomx::PoW::new(pow_flags).unwrap();
     let proof = prove::generate_proof(
         datadir,
         challenge,
@@ -112,6 +113,7 @@ fn _generate_proof(
         pow_flags,
         stop,
         prove::NoopProgressReporter {},
+        Arc::new(pow_prover),
     )?;
     Ok(Box::new(Proof::from(proof)))
 }

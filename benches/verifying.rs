@@ -44,6 +44,7 @@ fn verifying(c: &mut Criterion) {
     let pow_flags = RandomXFlag::get_recommended_flags();
     // Generate a proof
     let stop = AtomicBool::new(false);
+    let pow_prover = post::pow::randomx::PoW::new(pow_flags).unwrap();
     let proof = generate_proof(
         datadir.path(),
         challenge,
@@ -53,6 +54,7 @@ fn verifying(c: &mut Criterion) {
         pow_flags,
         stop,
         NoopProgressReporter {},
+        pow_prover,
     )
     .unwrap();
     let metadata = ProofMetadata::new(metadata, *challenge);

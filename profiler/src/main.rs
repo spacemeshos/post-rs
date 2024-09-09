@@ -6,6 +6,7 @@ use std::{
     fs::OpenOptions,
     io::{BufReader, BufWriter, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
+    sync::Arc,
     time::{self, Duration},
 };
 
@@ -237,7 +238,8 @@ fn proving(args: ProvingArgs) -> eyre::Result<()> {
 
     let mut pow_prover = pow::MockProver::new();
     pow_prover.expect_prove().returning(|_, _, _, _| Ok(0));
-    let prover = Prover8_56::new(challenge, 0..args.nonces, params, &pow_prover, &[7; 32])?;
+    let pow_prover: Arc<dyn post::pow::Prover + 'static> = Arc::new(pow_prover);
+    let prover = Prover8_56::new(challenge, 0..args.nonces, params, pow_prover, &[7; 32])?;
 
     let mut total_time = time::Duration::from_secs(0);
     let mut processed = 0;
