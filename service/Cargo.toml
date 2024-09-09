@@ -14,7 +14,7 @@ path = "src/lib.rs"
 [dependencies]
 post-rs = { path = "../" }
 prost = "0.13.2"
-tonic = { version = "0.12.1", features = ["tls"] }
+tonic = { version = "0.12.2", features = ["tls"] }
 tokio = { version = "1.39", features = [
     "rt-multi-thread",
     "macros",
