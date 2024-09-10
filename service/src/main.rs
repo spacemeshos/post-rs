@@ -3,7 +3,7 @@ use std::{fs::read_to_string, net::SocketAddr, path::PathBuf, sync::Arc, time::D
 use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
 use serde_with::{formats, hex::Hex, serde_as};
-use sysinfo::{Pid, ProcessStatus, System};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot::{self, error::TryRecvError, Receiver};
 use tonic::transport::{Certificate, Identity};
@@ -312,14 +312,20 @@ fn watch_pid(pid: Pid, interval: Duration, mut term: Receiver<()>) {
     log::info!("watching PID {pid}");
 
     let mut sys = System::new();
-    while sys.refresh_process(pid) {
-        if let Some(p) = sys.process(pid) {
-            match p.status() {
-                ProcessStatus::Zombie | ProcessStatus::Dead => {
-                    log::info!("PID {pid} died");
+    loop {
+        sys.refresh_processes_specifics(ProcessesToUpdate::All, ProcessRefreshKind::new());
+        match sys.process(pid) {
+            None => {
+                log::info!("PID {pid} not found");
+                return;
+            }
+            Some(p) => {
+                let status = p.status();
+                log::debug!("PID {pid} status: {status}");
+                if matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead) {
+                    log::info!("PID {pid} died (status: {status})");
                     return;
                 }
-                _ => {}
             }
         }
         match term.try_recv() {
@@ -355,8 +361,13 @@ mod tests {
         // Don't watch
         assert!(super::watch_pid_if_needed(None).await.is_none());
         // Watch
-        let (_term_tx, term_rx) = oneshot::channel();
-        super::watch_pid_if_needed(Some((Pid::from(0), term_rx)))
+        let mut proc = Command::new("sleep").arg("99999").spawn().unwrap();
+        let (_, term_rx) = oneshot::channel();
+
+        // kill and wait
+        proc.kill().unwrap();
+        proc.wait().unwrap();
+        super::watch_pid_if_needed(Some((Pid::from_u32(proc.id()), term_rx)))
             .await
             .expect("should be some")
             .expect("should be OK");
