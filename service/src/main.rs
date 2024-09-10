@@ -312,11 +312,11 @@ fn watch_pid(pid: Pid, interval: Duration, mut term: Receiver<()>) {
     log::info!("watching PID {pid}");
 
     let mut sys = System::new();
-    while sys.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid])) > 0 {
+    while sys.refresh_processes(sysinfo::ProcessesToUpdate::All) > 0 {
         if let Some(p) = sys.process(pid) {
             match p.status() {
                 ProcessStatus::Zombie | ProcessStatus::Dead => {
-                    log::info!("PID {pid} died");
+                    log::info!("PID {pid} died (status: {})", p.status());
                     return;
                 }
                 _ => {}
