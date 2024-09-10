@@ -371,8 +371,13 @@ mod tests {
         // Don't watch
         assert!(super::watch_pid_if_needed(None).await.is_none());
         // Watch
-        let (_term_tx, term_rx) = oneshot::channel();
-        super::watch_pid_if_needed(Some((Pid::from(0), term_rx)))
+        let mut proc = Command::new("sleep").arg("99999").spawn().unwrap();
+        let (_, term_rx) = oneshot::channel();
+
+        // kill and wait
+        proc.kill().unwrap();
+        proc.wait().unwrap();
+        super::watch_pid_if_needed(Some((Pid::from_u32(proc.id()), term_rx)))
             .await
             .expect("should be some")
             .expect("should be OK");
