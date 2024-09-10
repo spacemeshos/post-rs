@@ -287,7 +287,7 @@ unsafe fn _verify_proof(
     match verifier.verify(&proof.into(), metadata, &cfg, &init_cfg, mode) {
         Ok(_) => VerifyResult::Ok,
         Err(err) => {
-            log::error!("Proof is invalid: {err}");
+            log::debug!("Proof is invalid: {err}");
             err.into()
         }
     }

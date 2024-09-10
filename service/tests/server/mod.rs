@@ -57,7 +57,7 @@ impl post_service_server::PostService for TestPostService {
         &self,
         request: Request<tonic::Streaming<ServiceResponse>>,
     ) -> Result<Response<Self::RegisterStream>, Status> {
-        log::info!("Post Service connected: {:?}", request);
+        log::info!("post service connected: {:?}", request);
         let mut stream = request.into_inner();
 
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);

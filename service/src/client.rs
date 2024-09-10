@@ -206,7 +206,7 @@ impl<S: PostService> ServiceClient<S> {
                 }
             }
             Ok(ProofGenState::InProgress) => {
-                log::info!("proof generation in progress");
+                log::debug!("proof generation in progress");
                 ServiceResponse {
                     kind: Some(service_response::Kind::GenProof(GenProofResponse {
                         status: GenProofStatus::Ok as i32,
