@@ -3,7 +3,7 @@ use std::{fs::read_to_string, net::SocketAddr, path::PathBuf, sync::Arc, time::D
 use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
 use serde_with::{formats, hex::Hex, serde_as};
-use sysinfo::{Pid, ProcessStatus, System};
+use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot::{self, error::TryRecvError, Receiver};
 use tonic::transport::{Certificate, Identity};
@@ -313,10 +313,7 @@ fn watch_pid(pid: Pid, interval: Duration, mut term: Receiver<()>) {
 
     let mut sys = System::new();
     loop {
-        sys.refresh_processes_specifics(
-            sysinfo::ProcessesToUpdate::All,
-            sysinfo::ProcessRefreshKind::new(),
-        );
+        sys.refresh_processes_specifics(ProcessesToUpdate::All, ProcessRefreshKind::new());
         match sys.process(pid) {
             None => {
                 log::info!("PID {pid} not found");
@@ -326,7 +323,7 @@ fn watch_pid(pid: Pid, interval: Duration, mut term: Receiver<()>) {
                 let status = p.status();
                 log::debug!("PID {pid} status: {status}");
                 if matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead) {
-                    log::info!("PID {pid} died (status: {})", p.status());
+                    log::info!("PID {pid} died (status: {status})");
                     return;
                 }
             }
@@ -354,20 +351,13 @@ fn verify_num_units(range: std::ops::RangeInclusive<u32>, num_units: u32) -> eyr
 }
 #[cfg(test)]
 mod tests {
-    use std::{process::Command, sync::Once};
+    use std::process::Command;
 
     use sysinfo::Pid;
     use tokio::sync::oneshot;
 
-    static LOGGING: Once = Once::new();
-
     #[tokio::test]
     async fn watch_pid_if_needed() {
-        LOGGING.call_once(|| {
-            let env = env_logger::Env::default().filter_or("RUST_LOG", "debug");
-            env_logger::init_from_env(env);
-        });
-
         // Don't watch
         assert!(super::watch_pid_if_needed(None).await.is_none());
         // Watch
@@ -385,11 +375,6 @@ mod tests {
 
     #[tokio::test]
     async fn watching_pid_zombie() {
-        LOGGING.call_once(|| {
-            let env = env_logger::Env::default().filter_or("RUST_LOG", "debug");
-            env_logger::init_from_env(env);
-        });
-
         let mut proc = Command::new("sleep").arg("99999").spawn().unwrap();
         let pid = proc.id();
         let (_term_tx, term_rx) = oneshot::channel();
