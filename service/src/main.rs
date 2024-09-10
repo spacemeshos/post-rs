@@ -313,14 +313,16 @@ fn watch_pid(pid: Pid, interval: Duration, mut term: Receiver<()>) {
 
     let mut sys = System::new();
     while sys.refresh_processes(sysinfo::ProcessesToUpdate::All) > 0 {
-        if let Some(p) = sys.process(pid) {
-            match p.status() {
-                ProcessStatus::Zombie | ProcessStatus::Dead => {
-                    log::info!("PID {pid} died (status: {})", p.status());
-                    return;
-                }
-                _ => {}
+        match sys.process(pid) {
+            None => {
+                log::info!("PID {pid} not found");
+                return;
             }
+            Some(p) if matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead) => {
+                log::info!("PID {pid} died (status: {})", p.status());
+                return;
+            }
+            _ => {}
         }
         match term.try_recv() {
             Ok(_) | Err(TryRecvError::Closed) => {
