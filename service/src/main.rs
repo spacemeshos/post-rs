@@ -312,17 +312,24 @@ fn watch_pid(pid: Pid, interval: Duration, mut term: Receiver<()>) {
     log::info!("watching PID {pid}");
 
     let mut sys = System::new();
-    while sys.refresh_processes(sysinfo::ProcessesToUpdate::All) > 0 {
+    loop {
+        sys.refresh_processes_specifics(
+            sysinfo::ProcessesToUpdate::All,
+            sysinfo::ProcessRefreshKind::new(),
+        );
         match sys.process(pid) {
             None => {
                 log::info!("PID {pid} not found");
                 return;
             }
-            Some(p) if matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead) => {
-                log::info!("PID {pid} died (status: {})", p.status());
-                return;
+            Some(p) => {
+                let status = p.status();
+                log::debug!("PID {pid} status: {status}");
+                if matches!(p.status(), ProcessStatus::Zombie | ProcessStatus::Dead) {
+                    log::info!("PID {pid} died (status: {})", p.status());
+                    return;
+                }
             }
-            _ => {}
         }
         match term.try_recv() {
             Ok(_) | Err(TryRecvError::Closed) => {
@@ -347,13 +354,20 @@ fn verify_num_units(range: std::ops::RangeInclusive<u32>, num_units: u32) -> eyr
 }
 #[cfg(test)]
 mod tests {
-    use std::process::Command;
+    use std::{process::Command, sync::Once};
 
     use sysinfo::Pid;
     use tokio::sync::oneshot;
 
+    static LOGGING: Once = Once::new();
+
     #[tokio::test]
     async fn watch_pid_if_needed() {
+        LOGGING.call_once(|| {
+            let env = env_logger::Env::default().filter_or("RUST_LOG", "debug");
+            env_logger::init_from_env(env);
+        });
+
         // Don't watch
         assert!(super::watch_pid_if_needed(None).await.is_none());
         // Watch
@@ -366,6 +380,11 @@ mod tests {
 
     #[tokio::test]
     async fn watching_pid_zombie() {
+        LOGGING.call_once(|| {
+            let env = env_logger::Env::default().filter_or("RUST_LOG", "debug");
+            env_logger::init_from_env(env);
+        });
+
         let mut proc = Command::new("sleep").arg("99999").spawn().unwrap();
         let pid = proc.id();
         let (_term_tx, term_rx) = oneshot::channel();
