@@ -18,15 +18,14 @@ ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
 clap = { version = "4.5.16", features = ["derive", "env"] }
 hex = "0.4.3"
 config = "0.14.0"
-secrecy = { version = "0.8.0", features = ["serde"] }
 tracing = { version = "0.1.40", features = ["log"] }
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 rand = "0.8.5"
-serde_json = "1.0.124"
+serde_json = "1.0.128"
 base64 = "0.22.1"
 axum-prometheus = "0.7.0"
-tower = { version = "0.5.0", features = ["limit", "load-shed", "buffer"] }
+tower = { version = "0.5.1", features = ["limit", "load-shed", "buffer"] }
 duration-str = { version = "0.11.2", default-features = false, features = [
     "serde",
     "time",
@@ -36,5 +35,4 @@ mockall = "0.13.0"
 
 [dev-dependencies]
 axum-test = "15.6.0"
-reqwest = { version = "0.12.7", features = ["json"] }
 tempfile = "3.12.0"
