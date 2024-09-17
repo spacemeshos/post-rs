@@ -28,9 +28,7 @@ pub(crate) fn proving_difficulty(k1: u32, num_labels: u64) -> Result<u64, String
 /// difficulty = difficulty / num_units
 pub(crate) fn scale_pow_difficulty(difficulty: &[u8; 32], num_units: u32) -> [u8; 32] {
     let difficulty_scaled = U256::from_big_endian(difficulty) / num_units;
-    let mut difficulty = [0u8; 32];
-    difficulty_scaled.to_big_endian(&mut difficulty);
-    difficulty
+    difficulty_scaled.to_big_endian()
 }
 
 #[test]

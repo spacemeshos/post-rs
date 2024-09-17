@@ -39,7 +39,7 @@ log = "0.4.22"
 randomx-rs = { git = "https://github.com/spacemeshos/randomx-rs", rev = "d46bcd90e09428883e253b8203d6b311b0a07b91" }
 
 
-primitive-types = "0.12.1"
+primitive-types = "0.13.1"
 thiserror = "1.0.63"
 thread_local = "1.1.7"
 mockall = "0.13.0"

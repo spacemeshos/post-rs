@@ -71,9 +71,8 @@ pub struct ProvingParams {
 impl ProvingParams {
     pub fn new(metadata: &PostMetadata, cfg: &ProofConfig) -> eyre::Result<Self> {
         let num_labels = metadata.num_units as u64 * metadata.labels_per_unit;
-        let mut pow_difficulty = [0u8; 32];
         let difficulty_scaled = U256::from_big_endian(&cfg.pow_difficulty) / metadata.num_units;
-        difficulty_scaled.to_big_endian(&mut pow_difficulty);
+        let pow_difficulty = difficulty_scaled.to_big_endian();
         Ok(Self {
             difficulty: proving_difficulty(cfg.k1, num_labels).map_err(|e| eyre::eyre!(e))?,
             pow_difficulty,
