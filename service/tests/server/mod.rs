@@ -110,13 +110,12 @@ impl TestServer {
         let listener = TcpListener::bind("[::1]:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
-        let mut server = if let Some(tls) = &tls {
+        let mut server = Server::builder();
+        if let Some(tls) = &tls {
             let tls = ServerTlsConfig::new()
                 .identity(tls.server.clone())
                 .client_ca_root(tls.client_ca_cert.clone());
-            Server::builder().tls_config(tls).unwrap()
-        } else {
-            Server::builder()
+            server = server.tls_config(tls).unwrap();
         };
 
         let handle = tokio::spawn(
