@@ -212,9 +212,11 @@ async fn root() -> impl IntoResponse {
 #[derive(Deserialize)]
 struct HexStr<const COUNT: usize>(#[serde_as(as = "serde_with::hex::Hex")] [u8; COUNT]);
 
-impl<const COUNT: usize> HexStr<COUNT> {
-    fn array(self) -> [u8; COUNT] {
-        self.0
+impl<const COUNT: usize> std::ops::Deref for HexStr<COUNT> {
+    type Target = [u8; COUNT];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
