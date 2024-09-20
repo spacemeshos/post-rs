@@ -155,7 +155,7 @@ impl Prover8_56 {
                 &params.pow_difficulty,
                 miner_id,
             )?;
-            log::debug!("proof of work: {pow}");
+            log::debug!("proof of work for nonce group {nonce_group}: {pow}");
 
             Ok(AesCipher::new(challenge, nonce_group, pow))
         };
