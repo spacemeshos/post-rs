@@ -21,11 +21,40 @@ use post_service::{
     },
     service::ProofGenState,
 };
-use server::{TestNodeRequest, TestServer};
+use server::{TestNodeRequest, TestServer, TlsConfig};
+use tonic::transport::{Certificate, Identity};
 
 #[tokio::test]
 async fn test_registers() {
-    let mut test_server = TestServer::new().await;
+    let mut test_server = TestServer::new(None).await;
+    let client = test_server.create_client(Arc::new(MockPostService::new()));
+    let client_handle = tokio::spawn(client.run(None, std::time::Duration::from_secs(1)));
+
+    // Check if client registered
+    test_server.connected.recv().await.unwrap();
+    client_handle.abort();
+    let _ = client_handle.await;
+}
+
+#[tokio::test]
+async fn test_registers_tls() {
+    let ca = rcgen::generate_simple_self_signed(vec![]).unwrap();
+    let client = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+    let server = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+
+    let tls_config = TlsConfig {
+        client_ca_cert: Certificate::from_pem(ca.serialize_pem().unwrap()),
+        server_ca_cert: Certificate::from_pem(ca.serialize_pem().unwrap()),
+        server: Identity::from_pem(
+            server.serialize_pem_with_signer(&ca).unwrap(),
+            server.serialize_private_key_pem(),
+        ),
+        client: Identity::from_pem(
+            client.serialize_pem_with_signer(&ca).unwrap(),
+            client.serialize_private_key_pem(),
+        ),
+    };
+    let mut test_server = TestServer::new(Some(tls_config)).await;
     let client = test_server.create_client(Arc::new(MockPostService::new()));
     let client_handle = tokio::spawn(client.run(None, std::time::Duration::from_secs(1)));
 
@@ -37,7 +66,7 @@ async fn test_registers() {
 
 #[tokio::test]
 async fn test_gen_proof_in_progress() {
-    let mut test_server = TestServer::new().await;
+    let mut test_server = TestServer::new(None).await;
 
     let mut service = MockPostService::new();
     service
@@ -65,7 +94,7 @@ async fn test_gen_proof_in_progress() {
 
 #[tokio::test]
 async fn test_gen_proof_failed() {
-    let mut test_server = TestServer::new().await;
+    let mut test_server = TestServer::new(None).await;
 
     let mut service = MockPostService::new();
     service
@@ -94,7 +123,7 @@ async fn test_gen_proof_failed() {
 
 #[tokio::test]
 async fn test_gen_proof_finished() {
-    let mut test_server = TestServer::new().await;
+    let mut test_server = TestServer::new(None).await;
 
     let challenge = &[0xCA; 32];
     let indices = &[0xAA; 32];
@@ -180,7 +209,7 @@ async fn test_gen_proof_finished() {
 
 #[tokio::test]
 async fn test_broken_request_no_kind() {
-    let mut test_server = TestServer::new().await;
+    let mut test_server = TestServer::new(None).await;
 
     let mut service = MockPostService::new();
     service
@@ -242,7 +271,7 @@ async fn test_get_metadata(#[case] vrf_difficulty: Option<[u8; 32]>) {
         )
         .unwrap();
 
-    let mut test_server = TestServer::new().await;
+    let mut test_server = TestServer::new(None).await;
 
     let service = post_service::service::PostService::new(
         datadir.path().into(),

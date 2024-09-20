@@ -44,7 +44,7 @@ async fn test_gen_proof_in_progress() {
         .unwrap(),
     );
 
-    let mut test_server = TestServer::new().await;
+    let mut test_server = TestServer::new(None).await;
     let client = test_server.create_client(service.clone());
     tokio::spawn(client.run(None, time::Duration::from_secs(1)));
 

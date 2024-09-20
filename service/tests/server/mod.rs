@@ -11,7 +11,7 @@ use tokio::net::TcpListener;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio_stream::wrappers::TcpListenerStream;
 use tokio_stream::{Stream, StreamExt};
-use tonic::transport::Server;
+use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tonic::{Request, Response, Status};
 
 use post_service::client::spacemesh_v1::{
@@ -81,10 +81,19 @@ impl post_service_server::PostService for TestPostService {
     }
 }
 
+pub(crate) struct TlsConfig {
+    pub server_ca_cert: Certificate,
+    pub server: Identity,
+
+    pub client_ca_cert: Certificate,
+    pub client: Identity,
+}
+
 pub struct TestServer {
     pub connected: broadcast::Receiver<mpsc::Sender<TestNodeRequest>>,
     handle: tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
     addr: std::net::SocketAddr,
+    tls: Option<TlsConfig>,
 }
 
 impl Drop for TestServer {
@@ -94,15 +103,23 @@ impl Drop for TestServer {
 }
 
 impl TestServer {
-    pub async fn new() -> Self {
+    pub async fn new(tls: Option<TlsConfig>) -> Self {
         let mut test_node = TestPostService::new();
         let reg = test_node.register_for_connections();
 
         let listener = TcpListener::bind("[::1]:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
 
+        let mut server = Server::builder();
+        if let Some(tls) = &tls {
+            let tls = ServerTlsConfig::new()
+                .identity(tls.server.clone())
+                .client_ca_root(tls.client_ca_cert.clone());
+            server = server.tls_config(tls).unwrap();
+        };
+
         let handle = tokio::spawn(
-            Server::builder()
+            server
                 .add_service(post_service_server::PostServiceServer::new(test_node))
                 .serve_with_incoming(TcpListenerStream::new(listener)),
         );
@@ -111,6 +128,7 @@ impl TestServer {
             connected: reg,
             handle,
             addr,
+            tls,
         }
     }
 
@@ -118,7 +136,19 @@ impl TestServer {
     where
         S: PostService,
     {
-        ServiceClient::new(format!("http://{}", self.addr), None, service).unwrap()
+        let tls = self.tls.as_ref().map(|tls| {
+            (
+                Some("localhost".to_string()),
+                tls.server_ca_cert.clone(),
+                tls.client.clone(),
+            )
+        });
+        let scheme = match tls {
+            Some(_) => "https",
+            None => "http",
+        };
+
+        ServiceClient::new(format!("{scheme}://{}", self.addr), tls, service).unwrap()
     }
 
     pub async fn generate_proof(

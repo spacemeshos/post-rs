@@ -109,10 +109,10 @@ impl<S: PostService> ServiceClient<S> {
                     self.endpoint.uri(),
                     attempt
                 );
-                match PostServiceClient::connect(self.endpoint.clone()).await {
-                    Ok(client) => break client,
+                match self.endpoint.connect().await {
+                    Ok(channel) => break PostServiceClient::new(channel),
                     Err(e) => {
-                        log::info!("could not connect to the node: {e}");
+                        log::info!("could not connect to the node: {e:?}");
                         if let Some(max) = max_retries {
                             eyre::ensure!(attempt <= max, "max retries ({max}) reached");
                         }
