@@ -6,7 +6,7 @@ edition = "2021"
 
 [lib]
 name = "post"
-crate_type = ["staticlib", "cdylib"]
+crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
 log = { version = "0.4.22", features = ["std"] }
