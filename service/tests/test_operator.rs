@@ -2,7 +2,7 @@ use core::{panic, time};
 use std::{sync::Arc, time::Duration};
 
 use post_service::operator::{self, ServiceState};
-use tokio::{net::TcpListener, time::sleep};
+use tokio::time::sleep;
 
 use post::{
     initialize::{CpuInitializer, Initialize},
@@ -49,13 +49,10 @@ async fn test_gen_proof_in_progress() {
     tokio::spawn(client.run(None, time::Duration::from_secs(1)));
 
     // Create operator server and client
-    let listener = TcpListener::bind("localhost:0").await.unwrap();
-    let operator_addr = format!("http://{}", listener.local_addr().unwrap());
-    tokio::spawn(operator::run(listener, service));
+    let operator_server = axum_test::TestServer::new(operator::create_router(service)).unwrap();
 
-    let status_url = format!("{operator_addr}/status");
-    let resp = reqwest::get(&status_url).await.unwrap();
-    let status = resp.json().await.unwrap();
+    let resp = operator_server.get("/status").await;
+    let status = resp.json::<operator::ServiceState>();
     // It starts in idle state
     assert!(matches!(status, ServiceState::Idle));
 
@@ -64,8 +61,8 @@ async fn test_gen_proof_in_progress() {
 
     loop {
         let response = TestServer::generate_proof(&connected, vec![0xCA; 32]).await;
-        let status_resp = reqwest::get(&status_url).await.unwrap();
-        let status = status_resp.json().await.unwrap();
+        let resp = operator_server.get("/status").await;
+        let status = resp.json::<operator::ServiceState>();
 
         if let Some(service_response::Kind::GenProof(resp)) = response.kind {
             match resp.status() {

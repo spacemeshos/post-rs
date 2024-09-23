@@ -4,7 +4,6 @@ use clap::{Args, Parser, ValueEnum};
 use eyre::Context;
 use serde_with::{formats, hex::Hex, serde_as};
 use sysinfo::{Pid, ProcessRefreshKind, ProcessStatus, ProcessesToUpdate, System};
-use tokio::net::TcpListener;
 use tokio::sync::oneshot::{self, error::TryRecvError, Receiver};
 use tonic::transport::{Certificate, Identity};
 
@@ -274,8 +273,7 @@ async fn main() -> eyre::Result<()> {
     let service = Arc::new(service);
 
     if let Some(address) = args.operator_address {
-        let listener = TcpListener::bind(address).await?;
-        tokio::spawn(operator::run(listener, service.clone()));
+        tokio::spawn(operator::run(address, service.clone()));
     }
 
     let client = client::ServiceClient::new(args.address, tls, service)?;

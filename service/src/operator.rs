@@ -3,7 +3,7 @@
 //! It exposes an HTTP API.
 //! Allows to query the status of the post service.
 
-use std::{ops::Range, sync::Arc};
+use std::{net::SocketAddr, ops::Range, sync::Arc};
 
 use axum::{extract::State, routing::get, Json, Router};
 use serde::{Deserialize, Serialize};
@@ -32,17 +32,22 @@ pub trait Service {
     fn status(&self) -> ServiceState;
 }
 
-pub async fn run<S>(listener: TcpListener, service: Arc<S>) -> eyre::Result<()>
+pub fn create_router<S>(service: Arc<S>) -> Router
 where
     S: Service + Sync + Send + 'static,
 {
-    log::info!("running operator service on {}", listener.local_addr()?);
-
-    let app = Router::new()
+    Router::new()
         .route("/status", get(status))
-        .with_state(service);
+        .with_state(service)
+}
 
-    axum::serve(listener, app)
+pub async fn run<S>(address: SocketAddr, service: Arc<S>) -> eyre::Result<()>
+where
+    S: Service + Sync + Send + 'static,
+{
+    let listener = TcpListener::bind(address).await?;
+    log::info!("running operator service on {}", listener.local_addr()?);
+    axum::serve(listener, create_router(service))
         .await
         .map_err(|e| eyre::eyre!("failed to serve: {e}"))
 }
@@ -58,8 +63,6 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use tokio::net::TcpListener;
-
     #[tokio::test]
     async fn test_status() {
         let mut svc = super::MockService::new();
@@ -74,16 +77,15 @@ mod tests {
             .once()
             .return_const(proving_status.clone());
 
-        let listener = TcpListener::bind("localhost:0").await.unwrap();
-        let addr: std::net::SocketAddr = listener.local_addr().unwrap();
-        let url = format!("http://{addr}/status");
+        let server = axum_test::TestServer::new(super::create_router(Arc::new(svc))).unwrap();
 
-        tokio::spawn(super::run(listener, Arc::new(svc)));
+        let resp = server.get("/status").await;
+        assert_eq!(
+            super::ServiceState::Idle,
+            resp.json::<super::ServiceState>(),
+        );
 
-        let resp = reqwest::get(&url).await.unwrap();
-        assert_eq!(super::ServiceState::Idle, resp.json().await.unwrap());
-
-        let resp = reqwest::get(&url).await.unwrap();
-        assert_eq!(proving_status, resp.json().await.unwrap());
+        let resp = server.get("/status").await;
+        assert_eq!(proving_status, resp.json::<super::ServiceState>(),);
     }
 }
