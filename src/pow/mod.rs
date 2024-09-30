@@ -19,12 +19,10 @@ pub enum Error {
     InvalidPoW,
     #[error(transparent)]
     Internal(Box<dyn std::error::Error + Send + Sync>),
-    #[error("integer conversion error")]
-    IntConversionError(#[from] std::num::TryFromIntError),
 }
 
 #[automock]
-pub trait Prover: Send + Sync {
+pub trait Prover {
     fn prove(
         &self,
         nonce_group: u8,

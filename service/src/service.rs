@@ -169,7 +169,8 @@ impl crate::client::PostService for PostService {
                 let threads = self.threads.clone();
                 let stop = self.stop.clone();
                 let progress = ProvingProgress::default();
-                let pow_prover: Arc<dyn post::pow::Prover> = match &self.remote_k2pow {
+                let pow_prover: Arc<dyn post::pow::Prover + Send + Sync> = match &self.remote_k2pow
+                {
                     Some(uri) => Arc::new(post::pow::service::K2powService::new(uri.clone())),
                     None => Arc::new(post::pow::randomx::PoW::new(pow_flags).unwrap()),
                 };
