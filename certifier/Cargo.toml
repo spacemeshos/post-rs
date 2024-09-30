@@ -4,7 +4,7 @@ version = "0.7.13"
 edition = "2021"
 
 [dependencies]
-axum = "0.7.5"
+axum = "0.7.6"
 serde = { version = "1.0.210", features = ["derive"] }
 tokio = { version = "1.39", features = [
     "rt-multi-thread",
@@ -34,5 +34,5 @@ parity-scale-codec = { version = "3.6.12", features = ["derive", "serde"] }
 mockall = "0.13.0"
 
 [dev-dependencies]
-axum-test = "15.7.1"
+axum-test = "16.0.0"
 tempfile = "3.12.0"
