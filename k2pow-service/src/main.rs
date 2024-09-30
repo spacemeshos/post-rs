@@ -159,7 +159,7 @@ async fn consume(
 
     loop {
         sleep(Duration::from_secs(POLL_EVERY_SECS)).await;
-        let job = match job_manager.take().await {
+        let job = match job_manager.take() {
             None => continue,
             Some(v) => v,
         };
@@ -197,7 +197,7 @@ async fn consume(
             Ok(ok) => Ok(ok),
             Err(e) => Err(e.to_string()),
         };
-        if let Err(e) = job_manager.update(job, JobState::Done(done)).await {
+        if let Err(e) = job_manager.update(job, JobState::Done(done)) {
             tracing::error!("failed updating job with result: {:?}", e);
         }
     }
@@ -229,14 +229,12 @@ async fn get_job<T: GetOrCreate>(
         HexStr<32>,
     )>,
 ) -> Result<job_manager::JobState, job_manager::JobError> {
-    manager
-        .get_or_create(job_manager::Job {
-            nonce_group,
-            challenge: *challenge,
-            difficulty: *difficulty,
-            miner: *miner,
-        })
-        .await
+    manager.get_or_create(job_manager::Job {
+        nonce_group,
+        challenge: *challenge,
+        difficulty: *difficulty,
+        miner: *miner,
+    })
 }
 
 impl IntoResponse for job_manager::JobError {
@@ -263,7 +261,7 @@ impl IntoResponse for job_manager::JobState {
 
 #[cfg(test)]
 mod tests {
-    use super::job_manager::Job;
+    use super::job_manager::{Job, JobState};
     use super::router;
     use crate::job_manager;
     use axum_test::TestServer;
@@ -306,7 +304,7 @@ mod tests {
             .expect_get_or_create()
             .with(eq(JOB))
             .times(2)
-            .returning(|_| Box::pin(std::future::ready(Ok(job_manager::JobState::Created))));
+            .returning(|_| Ok(job_manager::JobState::Created));
         let router = router(Arc::new(mock_manager));
         let server = TestServer::new(router).unwrap();
         let url = format!("/job/{miner}/{nonce_group}/{challenge}/{difficulty}");
@@ -333,11 +331,7 @@ mod tests {
             .expect_get_or_create()
             .with(eq(JOB))
             .times(1)
-            .returning(|_| {
-                Box::pin(std::future::ready(Ok(job_manager::JobState::Done(Ok(
-                    RESULT,
-                )))))
-            });
+            .returning(|_| Ok(JobState::Done(Ok(RESULT))));
         let router = router(Arc::new(mock_manager));
         let server = TestServer::new(router).unwrap();
         let url = format!("/job/{miner}/{nonce_group}/{challenge}/{difficulty}");
@@ -361,11 +355,7 @@ mod tests {
             .expect_get_or_create()
             .with(eq(JOB))
             .times(1)
-            .returning(move |_| {
-                Box::pin(std::future::ready(Ok(job_manager::JobState::Done(Err(
-                    String::from("error message"),
-                )))))
-            });
+            .returning(move |_| Ok(JobState::Done(Err(String::from("error message")))));
         let router = router(Arc::new(mock_manager));
         let server = TestServer::new(router).unwrap();
         let url = format!("/job/{miner}/{nonce_group}/{challenge}/{difficulty}");

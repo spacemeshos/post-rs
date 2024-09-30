@@ -1,8 +1,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::Mutex;
 use thiserror::Error;
-use tokio::sync::Mutex;
 
 pub struct JobManager {
     jobs: Mutex<HashMap<Job, JobState>>,
@@ -19,15 +18,12 @@ pub enum JobError {
 
 #[cfg_attr(test, mockall::automock)]
 pub trait GetOrCreate: Send + Sync + 'static {
-    fn get_or_create(
-        &self,
-        job: Job,
-    ) -> impl std::future::Future<Output = Result<JobState, JobError>> + Send;
+    fn get_or_create(&self, job: Job) -> Result<JobState, JobError>;
 }
 
 impl GetOrCreate for JobManager {
-    async fn get_or_create(&self, job: Job) -> Result<JobState, JobError> {
-        let mut hs = self.jobs.lock().await;
+    fn get_or_create(&self, job: Job) -> Result<JobState, JobError> {
+        let mut hs = self.jobs.lock().unwrap();
         match hs.get(&job).cloned() {
             Some(j) => Ok(j),
             None => {
@@ -51,8 +47,8 @@ impl JobManager {
         }
     }
 
-    pub async fn take(&self) -> Option<Job> {
-        let mut hs = self.jobs.lock().await;
+    pub fn take(&self) -> Option<Job> {
+        let mut hs = self.jobs.lock().unwrap();
         for (k, v) in hs.iter_mut() {
             if let JobState::Created = *v {
                 *v = JobState::InProgress;
@@ -62,8 +58,8 @@ impl JobManager {
         None
     }
 
-    pub async fn update(&self, job: Job, state: JobState) -> Result<(), JobError> {
-        let mut hs = self.jobs.lock().await;
+    pub fn update(&self, job: Job, state: JobState) -> Result<(), JobError> {
+        let mut hs = self.jobs.lock().unwrap();
         match hs.entry(job) {
             Entry::Occupied(mut e) => {
                 *e.get_mut() = state;
@@ -108,14 +104,14 @@ mod tests {
                 5, 6, 7, 8,
             ],
         };
-        assert_eq!(job_manager.take().await, None);
+        assert_eq!(job_manager.take(), None);
         assert_eq!(
-            job_manager.get_or_create(job.clone()).await,
+            job_manager.get_or_create(job.clone()),
             Ok(JobState::Created)
         );
         // try to insert the same one twice
         assert_eq!(
-            job_manager.get_or_create(job.clone()).await,
+            job_manager.get_or_create(job.clone()),
             Ok(JobState::Created)
         );
 
@@ -123,32 +119,30 @@ mod tests {
         let mut job2 = job.clone();
         job2.nonce_group = 14;
         assert_eq!(
-            job_manager.get_or_create(job2.clone()).await,
+            job_manager.get_or_create(job2.clone()),
             Err(JobError::TooManyJobs)
         );
         assert_eq!(
-            job_manager.get_or_create(job.clone()).await,
+            job_manager.get_or_create(job.clone()),
             Ok(JobState::Created)
         );
-        assert_eq!(job_manager.take().await, Some(job.clone()));
+        assert_eq!(job_manager.take(), Some(job.clone()));
         // expect take() to mutate the job state to be in progress
         assert_eq!(
-            job_manager.get_or_create(job.clone()).await,
+            job_manager.get_or_create(job.clone()),
             Ok(JobState::InProgress)
         );
         let err = Err("abcd".into());
         assert_eq!(
-            job_manager
-                .update(job.clone(), JobState::Done(err.clone()))
-                .await,
+            job_manager.update(job.clone(), JobState::Done(err.clone())),
             Ok(())
         );
         assert_eq!(
-            job_manager.get_or_create(job.clone()).await,
+            job_manager.get_or_create(job.clone()),
             Ok(JobState::Done(err))
         );
 
         // since the first job is now marked as errored, we can insert job 2
-        assert_eq!(job_manager.get_or_create(job2).await, Ok(JobState::Created));
+        assert_eq!(job_manager.get_or_create(job2), Ok(JobState::Created));
     }
 }
