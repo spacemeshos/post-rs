@@ -121,7 +121,7 @@ fn router<T: GetOrCreate>(job_manager: Arc<T>) -> Router {
                 })
                 .on_response(|response: &Response, _latency: Duration, span: &Span| {
                     span.record("status", response.status().as_str());
-                    tracing::info!("served request");
+                    tracing::trace!("served request");
                 })
                 .on_failure(
                     |error: ServerErrorsFailureClass, _latency: Duration, span: &Span| {
