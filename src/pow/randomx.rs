@@ -79,13 +79,17 @@ impl Prover for PoW {
                 },
             )
             .filter_map(|res| res)
-            .find_any(|(_, hash)| hash.as_slice() < difficulty)
+            .find_any(|(_, hash)| hash.as_slice() < difficulty.as_slice())
             .ok_or(Error::PoWNotFound)?;
 
         let total_iterations = iterations.load(Ordering::Relaxed);
         log::debug!("Took {total_iterations:?} PoW iterations to find a valid nonce");
 
         Ok(pow_nonce)
+    }
+
+    fn par(&self) -> bool {
+        false
     }
 }
 
@@ -109,7 +113,7 @@ impl PowVerifier for PoW {
         let vm = self.get_vm()?;
         let hash = vm.calculate_hash(pow_input.as_slice())?;
 
-        if hash.as_slice() >= difficulty {
+        if hash.as_slice() >= difficulty.as_slice() {
             return Err(Error::InvalidPoW);
         }
         Ok(())

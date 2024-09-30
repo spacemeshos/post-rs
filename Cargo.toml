@@ -7,6 +7,7 @@ members = [
     "profiler",
     "service",
     "certifier",
+    "k2pow-service",
 ]
 
 [package]
@@ -45,6 +46,7 @@ thread_local = "1.1.7"
 mockall = "0.13.0"
 core_affinity = "0.8.1"
 hex = "0.4.3"
+reqwest = { version = "0.12.7", features = ["blocking"] }
 
 [dev-dependencies]
 criterion = "0.5"

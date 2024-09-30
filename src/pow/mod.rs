@@ -7,6 +7,7 @@
 //! without actually holding the whole POST data.
 
 pub mod randomx;
+pub mod service;
 use mockall::*;
 use thiserror::Error;
 
@@ -18,10 +19,12 @@ pub enum Error {
     InvalidPoW,
     #[error(transparent)]
     Internal(Box<dyn std::error::Error + Send + Sync>),
+    #[error("integer conversion error")]
+    IntConversionError(#[from] std::num::TryFromIntError),
 }
 
 #[automock]
-pub trait Prover {
+pub trait Prover: Send + Sync {
     fn prove(
         &self,
         nonce_group: u8,
@@ -29,6 +32,8 @@ pub trait Prover {
         difficulty: &[u8; 32],
         miner_id: &[u8; 32],
     ) -> Result<u64, Error>;
+
+    fn par(&self) -> bool;
 }
 
 #[automock]

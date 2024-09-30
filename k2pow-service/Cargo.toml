@@ -1,0 +1,23 @@
+[package]
+name = "k2pow-service"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+post-rs = { path="../" }
+clap = { version = "4.5.16", features = ["derive", "env"] }
+serde_with = "3.9.0"
+serde = { version = "1.0.210", features = ["derive", "serde_derive"] }
+tokio = { version = "1.40.0", features = ["full"] }
+tracing = "0.1.40"
+tracing-log = "0.2.0"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+axum = "0.7.5"
+tower-http = {version = "0.5.2", features = ["trace"]}
+hex = "0.4.3"
+thiserror = "1.0.63"
+
+[dev-dependencies]
+axum-test = "15.7.1"
+hex = "0.4.3"
+mockall = "0.13.0"

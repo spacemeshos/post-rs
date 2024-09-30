@@ -45,6 +45,10 @@ struct Cli {
 
     #[command(flatten, next_help_heading = "TLS configuration")]
     tls: Option<Tls>,
+
+    #[arg(long)]
+    /// Base URL for remote k2pow service.
+    remote_k2pow: Option<String>,
 }
 
 #[serde_as]
@@ -202,7 +206,9 @@ async fn main() -> eyre::Result<()> {
         "POST proving settings: {}",
         serde_json::to_string(&args.post_settings).unwrap()
     );
-
+    if let Some(uri) = &args.remote_k2pow {
+        log::info!("remote k2pow uri: {}", uri);
+    }
     let scrypt = post::config::ScryptParams::new(
         args.post_config.scrypt.n,
         args.post_config.scrypt.r,
@@ -240,6 +246,7 @@ async fn main() -> eyre::Result<()> {
         args.post_settings.nonces,
         cores_config,
         args.post_settings.randomx_mode.into(),
+        args.remote_k2pow,
     )
     .wrap_err("creating Post Service")?;
 

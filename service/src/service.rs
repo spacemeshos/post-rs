@@ -110,6 +110,7 @@ pub struct PostService {
     threads: post::config::Cores,
     pow_flags: RandomXFlag,
     proof_generation: Mutex<ProofGenProcess>,
+    remote_k2pow: Option<String>,
 
     stop: Arc<AtomicBool>,
 }
@@ -122,6 +123,7 @@ impl PostService {
         nonces: usize,
         threads: post::config::Cores,
         pow_flags: RandomXFlag,
+        remote_k2pow: Option<String>,
     ) -> eyre::Result<Self> {
         Ok(Self {
             metadata: post::metadata::load(&datadir).wrap_err("loading POST metadata")?,
@@ -132,6 +134,7 @@ impl PostService {
             threads,
             pow_flags,
             proof_generation: Mutex::new(ProofGenProcess::Idle),
+            remote_k2pow,
             stop: Arc::new(AtomicBool::new(false)),
         })
     }
@@ -166,12 +169,17 @@ impl crate::client::PostService for PostService {
                 let threads = self.threads.clone();
                 let stop = self.stop.clone();
                 let progress = ProvingProgress::default();
+                let pow_prover: Arc<dyn post::pow::Prover> = match &self.remote_k2pow {
+                    Some(uri) => Arc::new(post::pow::service::K2powService::new(uri.clone())),
+                    None => Arc::new(post::pow::randomx::PoW::new(pow_flags).unwrap()),
+                };
                 let reporter = progress.clone();
                 *proof_gen = ProofGenProcess::Running {
                     challenge,
                     handle: Some(std::thread::spawn(move || {
                         post::prove::generate_proof(
                             &datadir, &challenge, cfg, nonces, threads, pow_flags, stop, reporter,
+                            pow_prover,
                         )
                     })),
                     progress,
