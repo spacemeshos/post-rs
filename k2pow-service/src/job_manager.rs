@@ -5,7 +5,7 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 
 pub struct JobManager {
-    jobs: Arc<Mutex<HashMap<Job, JobState>>>,
+    jobs: Mutex<HashMap<Job, JobState>>,
 }
 
 #[derive(Error, Debug, PartialEq)]
@@ -47,7 +47,7 @@ impl GetOrCreate for JobManager {
 impl JobManager {
     pub fn new() -> Self {
         JobManager {
-            jobs: Arc::new(Mutex::new(HashMap::new())),
+            jobs: Mutex::new(HashMap::new()),
         }
     }
 

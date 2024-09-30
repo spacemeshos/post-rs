@@ -51,7 +51,7 @@ struct Cli {
 ///
 /// They are interchangeable as they give the same results but have different
 /// purpose and memory requirements.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum, serde::Serialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum)]
 enum RandomXMode {
     /// Fast mode for proving. Requires 2080 MiB of memory.
     Fast,
@@ -232,9 +232,9 @@ async fn get_job<T: GetOrCreate>(
     manager
         .get_or_create(job_manager::Job {
             nonce_group,
-            challenge: challenge.array(),
-            difficulty: difficulty.array(),
-            miner: miner.array(),
+            challenge: *challenge,
+            difficulty: *difficulty,
+            miner: *miner,
         })
         .await
 }
