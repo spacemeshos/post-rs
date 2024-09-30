@@ -99,7 +99,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn router<T: GetOrCreate>(job_manager: Arc<T>) -> Router {
+fn router<T: GetOrCreate + Send + Sync + 'static>(job_manager: Arc<T>) -> Router {
     Router::new()
         .route("/", get(root))
         .route(

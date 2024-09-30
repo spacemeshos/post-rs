@@ -17,7 +17,7 @@ pub enum JobError {
 }
 
 #[cfg_attr(test, mockall::automock)]
-pub trait GetOrCreate: Send + Sync + 'static {
+pub trait GetOrCreate {
     fn get_or_create(&self, job: Job) -> Result<JobState, JobError>;
 }
 
