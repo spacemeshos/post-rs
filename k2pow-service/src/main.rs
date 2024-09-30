@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_with::serde_as;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::{sync::Notify, time::sleep};
+use tokio::sync::Notify;
 use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
 use tracing::{info_span, Span};
 use tracing_log::LogTracer;
@@ -24,8 +24,6 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 mod job_manager;
 use job_manager::{JobError, JobState};
-
-const POLL_EVERY_SECS: u64 = 1;
 
 #[derive(Parser, Debug)]
 #[command(version)]

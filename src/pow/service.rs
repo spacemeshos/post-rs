@@ -33,7 +33,14 @@ impl Prover for K2powService {
         let backoff = time::Duration::from_secs(BACKOFF_SECS);
 
         loop {
-            let res = client.get(&uri).send().unwrap();
+            let res = match client.get(&uri).send() {
+                Ok(res) => res,
+                Err(err) => {
+                    log::warn!("get job error: {}. backing off before retry", err);
+                    thread::sleep(backoff);
+                    continue;
+                }
+            };
             let status = res.status();
             let txt = res.text().unwrap();
             let res = match status {
