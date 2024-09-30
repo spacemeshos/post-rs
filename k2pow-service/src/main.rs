@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_with::serde_as;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::sleep;
+use tokio::{sync::Notify, time::sleep};
 use tower_http::{classify::ServerErrorsFailureClass, trace::TraceLayer};
 use tracing::{info_span, Span};
 use tracing_log::LogTracer;
@@ -78,15 +78,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_env_filter(env_filter)
         .finish();
     tracing::subscriber::set_global_default(subscriber)?;
-
+    let notify = Arc::new(Notify::new());
     let job_manager = Arc::new(job_manager::JobManager::new());
     _ = tokio::task::spawn(consume(
         job_manager.clone(),
+        notify.clone(),
         args.cores,
         args.randomx_mode,
         args.randomx_large_pages,
     ));
-    let router = router(job_manager);
+    let router = router(job_manager, notify);
     tracing::info!(
         "starting http server with bind address: {}",
         args.bind_address
@@ -99,14 +100,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn router<T: GetOrCreate + Send + Sync + 'static>(job_manager: Arc<T>) -> Router {
+fn router<T: GetOrCreate + Send + Sync + 'static>(
+    job_manager: Arc<T>,
+    notify: Arc<Notify>,
+) -> Router {
     Router::new()
         .route("/", get(root))
         .route(
             "/job/:miner/:nonce_group/:challenge/:difficulty",
             get(get_job),
         )
-        .with_state(job_manager)
+        .with_state((job_manager, notify))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &Request<_>| {
@@ -140,6 +144,7 @@ fn router<T: GetOrCreate + Send + Sync + 'static>(job_manager: Arc<T>) -> Router
 }
 async fn consume(
     job_manager: Arc<JobManager>,
+    notify: Arc<Notify>,
     cores: u8,
     randomx_mode: RandomXMode,
     randomx_large_pages: bool,
@@ -158,7 +163,7 @@ async fn consume(
     eprintln!("RandomX flags: {}", randomx_flags);
 
     loop {
-        sleep(Duration::from_secs(POLL_EVERY_SECS)).await;
+        notify.notified().await;
         let job = match job_manager.take() {
             None => continue,
             Some(v) => v,
@@ -221,7 +226,7 @@ impl<const COUNT: usize> std::ops::Deref for HexStr<COUNT> {
 }
 
 async fn get_job<T: GetOrCreate>(
-    State(manager): State<Arc<T>>,
+    State((manager, notifier)): State<(Arc<T>, Arc<Notify>)>,
     Path((miner, nonce_group, challenge, difficulty)): Path<(
         HexStr<32>,
         u8,
@@ -229,12 +234,17 @@ async fn get_job<T: GetOrCreate>(
         HexStr<32>,
     )>,
 ) -> Result<job_manager::JobState, job_manager::JobError> {
-    manager.get_or_create(job_manager::Job {
+    let res = manager.get_or_create(job_manager::Job {
         nonce_group,
         challenge: *challenge,
         difficulty: *difficulty,
         miner: *miner,
-    })
+    });
+    if let Ok(JobState::Created) = res {
+        notifier.notify_one();
+    };
+
+    res
 }
 
 impl IntoResponse for job_manager::JobError {
@@ -267,6 +277,8 @@ mod tests {
     use axum_test::TestServer;
     use mockall::predicate::eq;
     use std::sync::Arc;
+    use tokio::sync::Notify;
+
     const JOB: Job = Job {
         nonce_group: 11,
         challenge: [1, 2, 3, 4, 5, 6, 7, 8],
@@ -282,10 +294,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_root() {
+        let notify = Arc::new(Notify::new());
         let mut mock_manager = job_manager::MockGetOrCreate::new();
         mock_manager.expect_get_or_create().times(0);
         let job_manager = job_manager::JobManager::new();
-        let router = router(Arc::new(job_manager));
+        let router = router(Arc::new(job_manager), notify);
         let server = TestServer::new(router).unwrap();
         let response = server.get("/").await;
         assert_eq!(response.text(), super::ROOT_RESPONSE);
@@ -305,15 +318,18 @@ mod tests {
             .with(eq(JOB))
             .times(2)
             .returning(|_| Ok(job_manager::JobState::Created));
-        let router = router(Arc::new(mock_manager));
+        let notify = Arc::new(Notify::new());
+        let router = router(Arc::new(mock_manager), notify.clone());
         let server = TestServer::new(router).unwrap();
         let url = format!("/job/{miner}/{nonce_group}/{challenge}/{difficulty}");
         let response = server.get(&url).await;
         assert_eq!(response.status_code(), axum::http::StatusCode::CREATED);
-
+        // this will block indifinitely if we didn't get a notification in the handler
+        notify.notified().await;
         // requesting the same is idempotent
         let response = server.get(&url).await;
         assert_eq!(response.status_code(), axum::http::StatusCode::CREATED);
+        notify.notified().await;
     }
 
     #[tokio::test]
@@ -325,6 +341,7 @@ mod tests {
             hex::encode(JOB.miner),
         );
         const RESULT: u64 = 1111;
+        let notify = Arc::new(Notify::new());
 
         let mut mock_manager = job_manager::MockGetOrCreate::new();
         mock_manager
@@ -332,7 +349,7 @@ mod tests {
             .with(eq(JOB))
             .times(1)
             .returning(|_| Ok(JobState::Done(Ok(RESULT))));
-        let router = router(Arc::new(mock_manager));
+        let router = router(Arc::new(mock_manager), notify);
         let server = TestServer::new(router).unwrap();
         let url = format!("/job/{miner}/{nonce_group}/{challenge}/{difficulty}");
         let response = server.get(&url).await;
@@ -349,6 +366,7 @@ mod tests {
             hex::encode(JOB.miner),
         );
         let err = String::from("error message");
+        let notify = Arc::new(Notify::new());
 
         let mut mock_manager = job_manager::MockGetOrCreate::new();
         mock_manager
@@ -356,7 +374,7 @@ mod tests {
             .with(eq(JOB))
             .times(1)
             .returning(move |_| Ok(JobState::Done(Err(String::from("error message")))));
-        let router = router(Arc::new(mock_manager));
+        let router = router(Arc::new(mock_manager), notify);
         let server = TestServer::new(router).unwrap();
         let url = format!("/job/{miner}/{nonce_group}/{challenge}/{difficulty}");
         let response = server.get(&url).await;
