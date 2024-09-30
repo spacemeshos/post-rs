@@ -62,6 +62,9 @@ impl Prover for PoW {
         ]
         .concat();
 
+        // the call to difficulty.as_slice() below (in find_any) is needed because of a compiler bug:
+        // https://github.com/rust-lang/rust/issues/130464
+
         let iterations = AtomicUsize::new(0);
         let (pow_nonce, _) = (0..2u64.pow(56))
             .into_par_iter()
@@ -81,7 +84,6 @@ impl Prover for PoW {
             .filter_map(|res| res)
             .find_any(|(_, hash)| hash.as_slice() < difficulty.as_slice())
             .ok_or(Error::PoWNotFound)?;
-
         let total_iterations = iterations.load(Ordering::Relaxed);
         log::debug!("Took {total_iterations:?} PoW iterations to find a valid nonce");
 
@@ -113,6 +115,8 @@ impl PowVerifier for PoW {
         let vm = self.get_vm()?;
         let hash = vm.calculate_hash(pow_input.as_slice())?;
 
+        // the call to difficulty.as_slice() is needed because of a compiler bug:
+        // https://github.com/rust-lang/rust/issues/130464
         if hash.as_slice() >= difficulty.as_slice() {
             return Err(Error::InvalidPoW);
         }
