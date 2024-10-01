@@ -2973,6 +2973,7 @@ dependencies = [
  "core_affinity",
  "criterion",
  "eyre",
+ "futures 0.3.30",
  "hex",
  "itertools 0.13.0",
  "log",
@@ -2993,6 +2994,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "thread_local",
+ "tokio",
 ]
 
 [[package]]

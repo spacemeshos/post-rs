@@ -1,6 +1,7 @@
 pub use randomx_rs::RandomXFlag;
 use randomx_rs::{RandomXCache, RandomXDataset, RandomXError, RandomXVM};
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use std::ops::Range;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use thread_local::ThreadLocal;
 
@@ -64,7 +65,6 @@ impl Prover for PoW {
 
         // the call to difficulty.as_slice() below (in find_any) is needed because of a compiler bug:
         // https://github.com/rust-lang/rust/issues/130464
-
         let iterations = AtomicUsize::new(0);
         let (pow_nonce, _) = (0..2u64.pow(56))
             .into_par_iter()
@@ -88,6 +88,16 @@ impl Prover for PoW {
         log::debug!("Took {total_iterations:?} PoW iterations to find a valid nonce");
 
         Ok(pow_nonce)
+    }
+
+    fn prove_many(
+        &self,
+        _: Range<u32>,
+        _: &[u8; 8],
+        _: &[u8; 32],
+        _: &[u8; 32],
+    ) -> Result<Vec<(u32, u64)>, Error> {
+        panic!("not implemented")
     }
 
     fn par(&self) -> bool {

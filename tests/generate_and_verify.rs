@@ -47,7 +47,7 @@ fn test_generate_and_verify() {
     let mut reporter = prove::MockProgressReporter::new();
     reporter.expect_new_nonce_group().once().return_const(());
     reporter.expect_finished_chunk().times(1..).return_const(());
-    let pow_prover = std::sync::Arc::new(post::pow::randomx::PoW::new(pow_flags).unwrap());
+    let pow_prover = post::pow::randomx::PoW::new(pow_flags).unwrap();
     let proof = generate_proof(
         datadir.path(),
         challenge,
@@ -57,7 +57,7 @@ fn test_generate_and_verify() {
         pow_flags,
         stop,
         reporter,
-        pow_prover,
+        &pow_prover,
     )
     .unwrap();
 
@@ -147,7 +147,7 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
     let pow_flags = RandomXFlag::get_recommended_flags();
     // Generate a proof
     let stop = AtomicBool::new(false);
-    let pow_prover = std::sync::Arc::new(post::pow::randomx::PoW::new(pow_flags).unwrap());
+    let pow_prover = post::pow::randomx::PoW::new(pow_flags).unwrap();
     let proof = generate_proof(
         datadir.path(),
         challenge,
@@ -157,7 +157,7 @@ fn test_generate_and_verify_difficulty_msb_not_zero() {
         pow_flags,
         stop,
         prove::NoopProgressReporter {},
-        pow_prover,
+        &pow_prover,
     )
     .unwrap();
 

@@ -161,9 +161,18 @@ impl Prover8_56 {
         };
 
         let ciphers: Vec<AesCipher> = match pow_prover.par() {
-            true => nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
-                .into_par_iter()
-                .map(map_fn)
+            true => pow_prover
+                .prove_many(
+                    nonce_group_range(nonces.clone(), Self::NONCES_PER_AES),
+                    challenge[..8].try_into()?,
+                    &params.pow_difficulty,
+                    miner_id,
+                )
+                .unwrap()
+                .into_iter()
+                .map(|(nonce_group, pow)| -> eyre::Result<AesCipher> {
+                    Ok(AesCipher::new(challenge, nonce_group, pow))
+                })
                 .collect::<eyre::Result<_>>()?,
             false => nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
                 .map(map_fn)
@@ -471,28 +480,18 @@ mod tests {
             .with(eq(0), eq([0; 8]), eq(cfg.pow_difficulty), always())
             .once()
             .returning(|_, _, _, _| Ok(0));
-        let mut pow_prover = Arc::new(pow_prover);
-        assert!(
-            Prover8_56::new(&[0; 32], 0..16, params, pow_prover.clone(), &meta.node_id).is_ok()
-        );
+        assert!(Prover8_56::new(&[0; 32], 0..16, params, &pow_prover, &meta.node_id).is_ok());
 
-        Arc::get_mut(&mut pow_prover)
-            .unwrap()
+        pow_prover
             .expect_prove()
             .with(eq(1), eq([0; 8]), eq(cfg.pow_difficulty), always())
             .once()
             .returning(|_, _, _, _| Ok(0));
 
-        assert!(
-            Prover8_56::new(&[0; 32], 16..32, params, pow_prover.clone(), &meta.node_id).is_ok()
-        );
+        assert!(Prover8_56::new(&[0; 32], 16..32, params, &pow_prover, &meta.node_id).is_ok());
 
-        assert!(
-            Prover8_56::new(&[0; 32], 0..0, params, pow_prover.clone(), &meta.node_id).is_err()
-        );
-        assert!(
-            Prover8_56::new(&[0; 32], 1..16, params, pow_prover.clone(), &meta.node_id).is_err()
-        );
+        assert!(Prover8_56::new(&[0; 32], 0..0, params, &pow_prover, &meta.node_id).is_err());
+        assert!(Prover8_56::new(&[0; 32], 1..16, params, &pow_prover, &meta.node_id).is_err());
     }
 
     #[test]
@@ -515,9 +514,7 @@ mod tests {
             .once()
             .returning(|_, _, _, _| Err(pow::Error::PoWNotFound));
         let params = ProvingParams::new(&meta, &cfg).unwrap();
-        assert!(
-            Prover8_56::new(&[0; 32], 0..16, params, Arc::new(pow_prover), &meta.node_id).is_err()
-        );
+        assert!(Prover8_56::new(&[0; 32], 0..16, params, &pow_prover, &meta.node_id).is_err());
     }
 
     /// Test that PoW threshold is scaled with num_units.
@@ -570,7 +567,7 @@ mod tests {
             challenge,
             0..Prover8_56::NONCES_PER_AES,
             params,
-            Arc::new(pow_prover),
+            &pow_prover,
             &[7; 32],
         )
         .unwrap();
@@ -610,7 +607,6 @@ mod tests {
         let mut pow_prover = pow::MockProver::new();
         pow_prover.expect_par().returning(|| false);
         pow_prover.expect_prove().returning(|_, _, _, _| Ok(0));
-        let pow_prover = Arc::new(pow_prover);
         let indexes = loop {
             let mut indicies = HashMap::<u32, Vec<u64>>::new();
 
@@ -618,7 +614,7 @@ mod tests {
                 challenge,
                 start_nonce..end_nonce,
                 params,
-                pow_prover.clone(),
+                &pow_prover,
                 &[7; 32],
             )
             .unwrap();
@@ -687,7 +683,7 @@ mod tests {
             challenge,
             0..Prover8_56::NONCES_PER_AES,
             params,
-            Arc::new(pow_prover),
+            &pow_prover,
             &[7; 32],
         )
         .unwrap();
