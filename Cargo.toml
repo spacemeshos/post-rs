@@ -23,7 +23,7 @@ aes = "0.8.4"
 # as `aes` doesn't expose it.
 cipher = { version = "*", features = ["block-padding"] }
 eyre = "0.6.12"
-regex = "1.10.6"
+regex = "1.11.0"
 itertools = "0.13.0"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
