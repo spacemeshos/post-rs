@@ -36,6 +36,8 @@ fn test_generate_and_verify() {
         post::config::Cores::Any(1),
         pow_flags,
         None,
+        1,
+        1,
     )
     .unwrap();
 
@@ -77,6 +79,8 @@ fn reject_invalid_challenge() {
         post::config::Cores::Any(1),
         RandomXFlag::get_recommended_flags(),
         None,
+        1,
+        1,
     )
     .unwrap();
     assert!(service.gen_proof(&[0xCA; 5]).is_err());
@@ -107,6 +111,8 @@ fn cannot_run_parallel_proof_gens() {
         post::config::Cores::Any(1),
         RandomXFlag::get_recommended_flags(),
         None,
+        1,
+        1,
     )
     .unwrap();
 
@@ -149,6 +155,8 @@ async fn remote_k2pow() {
         post::config::Cores::Any(1),
         RandomXFlag::get_recommended_flags(),
         Some(server.url("")),
+        1,
+        1,
     )
     .unwrap();
 

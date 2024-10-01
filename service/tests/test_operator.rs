@@ -41,6 +41,8 @@ async fn test_gen_proof_in_progress() {
             post::config::Cores::Any(1),
             pow_flags,
             None,
+            1,
+            1,
         )
         .unwrap(),
     );
