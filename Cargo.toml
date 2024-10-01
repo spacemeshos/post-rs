@@ -48,7 +48,7 @@ hex = "0.4.3"
 
 [dev-dependencies]
 criterion = "0.5"
-tempfile = "3.12.0"
+tempfile = "3.13.0"
 rand = "0.8.5"
 proptest = "1.5.0"
 rstest = "0.22.0"
