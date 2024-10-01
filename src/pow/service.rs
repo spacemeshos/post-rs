@@ -71,12 +71,9 @@ impl Prover for K2powService {
         difficulty: &[u8; 32],
         miner_id: &[u8; 32],
     ) -> Result<Vec<(u32, u64)>, Error> {
-        // Create a new Tokio runtime
         let rt = Runtime::new().unwrap();
         let k2p = self.k2pow_service.clone();
-        // Block on the runtime and run async code
         rt.block_on(async {
-            // Create tasks for each URL
             let mut tasks = vec![];
 
             nonce_groups.into_iter().for_each(|nonce| {

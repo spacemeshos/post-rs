@@ -23,7 +23,7 @@ use eyre::Context;
 use mockall::automock;
 use primitive_types::U256;
 use randomx_rs::RandomXFlag;
-use rayon::prelude::{IntoParallelIterator, ParallelBridge, ParallelIterator};
+use rayon::prelude::{ParallelBridge, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use serde_with::{base64::Base64, serde_as};
 
