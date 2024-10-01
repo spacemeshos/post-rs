@@ -17,4 +17,4 @@ scrypt-ocl = { path = "../scrypt-ocl" }
 cbindgen = { version = "0.27.0", default-features = false }
 
 [dev-dependencies]
-tempfile = "3.12.0"
+tempfile = "3.13.0"
