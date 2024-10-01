@@ -4,7 +4,7 @@ use std::{
     ffi::{c_char, c_uchar, CStr},
     mem::ManuallyDrop,
     path::Path,
-    sync::{atomic::AtomicBool, Arc},
+    sync::atomic::AtomicBool,
 };
 
 use post::{
@@ -113,7 +113,7 @@ fn _generate_proof(
         pow_flags,
         stop,
         prove::NoopProgressReporter {},
-        Arc::new(pow_prover),
+        &pow_prover,
     )?;
     Ok(Box::new(Proof::from(proof)))
 }

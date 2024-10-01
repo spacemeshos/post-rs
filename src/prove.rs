@@ -134,7 +134,7 @@ impl Prover8_56 {
         challenge: &[u8; 32],
         nonces: Range<u32>,
         params: ProvingParams,
-        pow_prover: Arc<dyn pow::Prover + Send + Sync>,
+        pow_prover: &(dyn pow::Prover + Send + Sync),
         miner_id: &[u8; 32],
     ) -> eyre::Result<Self> {
         // TODO consider to relax it to allow any range of nonces
@@ -297,7 +297,7 @@ pub fn generate_proof<Reporter, Stopper>(
     pow_flags: RandomXFlag,
     stop: Stopper,
     reporter: Reporter,
-    pow_prover: Arc<dyn pow::Prover + Send + Sync>,
+    pow_prover: &(dyn pow::Prover + Send + Sync),
 ) -> eyre::Result<Proof<'static>>
 where
     Stopper: Borrow<AtomicBool>,
@@ -332,14 +332,8 @@ where
         let pow_time = Instant::now();
         let prover = pool.install(|| {
             let miner_id = &metadata.node_id;
-            Prover8_56::new(
-                challenge,
-                nonces.clone(),
-                params,
-                pow_prover.clone(),
-                miner_id,
-            )
-            .wrap_err("creating prover")
+            Prover8_56::new(challenge, nonces.clone(), params, pow_prover, miner_id)
+                .wrap_err("creating prover")
         })?;
 
         let pow_secs = pow_time.elapsed().as_secs();

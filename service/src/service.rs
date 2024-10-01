@@ -169,18 +169,25 @@ impl crate::client::PostService for PostService {
                 let threads = self.threads.clone();
                 let stop = self.stop.clone();
                 let progress = ProvingProgress::default();
-                let pow_prover: Arc<dyn post::pow::Prover + Send + Sync> = match &self.remote_k2pow
+                let pow_prover: Box<dyn post::pow::Prover + Send + Sync> = match &self.remote_k2pow
                 {
-                    Some(uri) => Arc::new(post::pow::service::K2powService::new(uri.clone())),
-                    None => Arc::new(post::pow::randomx::PoW::new(pow_flags).unwrap()),
+                    Some(uri) => Box::new(post::pow::service::K2powService::new(uri.clone())),
+                    None => Box::new(post::pow::randomx::PoW::new(pow_flags).unwrap()),
                 };
                 let reporter = progress.clone();
                 *proof_gen = ProofGenProcess::Running {
                     challenge,
                     handle: Some(std::thread::spawn(move || {
                         post::prove::generate_proof(
-                            &datadir, &challenge, cfg, nonces, threads, pow_flags, stop, reporter,
-                            pow_prover,
+                            &datadir,
+                            &challenge,
+                            cfg,
+                            nonces,
+                            threads,
+                            pow_flags,
+                            stop,
+                            reporter,
+                            &*pow_prover,
                         )
                     })),
                     progress,
