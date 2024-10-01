@@ -111,6 +111,8 @@ pub struct PostService {
     pow_flags: RandomXFlag,
     proof_generation: Mutex<ProofGenProcess>,
     remote_k2pow: Option<String>,
+    remote_k2pow_parallelism: usize,
+    remote_k2pow_backoff: u64,
 
     stop: Arc<AtomicBool>,
 }
@@ -124,6 +126,8 @@ impl PostService {
         threads: post::config::Cores,
         pow_flags: RandomXFlag,
         remote_k2pow: Option<String>,
+        remote_k2pow_parallelism: usize,
+        remote_k2pow_backoff: u64,
     ) -> eyre::Result<Self> {
         Ok(Self {
             metadata: post::metadata::load(&datadir).wrap_err("loading POST metadata")?,
@@ -135,6 +139,9 @@ impl PostService {
             pow_flags,
             proof_generation: Mutex::new(ProofGenProcess::Idle),
             remote_k2pow,
+            remote_k2pow_parallelism,
+            remote_k2pow_backoff,
+
             stop: Arc::new(AtomicBool::new(false)),
         })
     }
@@ -171,7 +178,11 @@ impl crate::client::PostService for PostService {
                 let progress = ProvingProgress::default();
                 let pow_prover: Box<dyn post::pow::Prover + Send + Sync> = match &self.remote_k2pow
                 {
-                    Some(uri) => Box::new(post::pow::service::K2powService::new(uri.clone())),
+                    Some(uri) => Box::new(post::pow::service::K2powService::new(
+                        uri.clone(),
+                        self.remote_k2pow_parallelism,
+                        self.remote_k2pow_backoff,
+                    )),
                     None => Box::new(post::pow::randomx::PoW::new(pow_flags).unwrap()),
                 };
                 let reporter = progress.clone();

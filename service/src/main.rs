@@ -46,9 +46,19 @@ struct Cli {
     #[command(flatten, next_help_heading = "TLS configuration")]
     tls: Option<Tls>,
 
-    #[arg(long)]
     /// Base URL for remote k2pow service.
+    #[arg(long)]
     remote_k2pow: Option<String>,
+
+    /// How many remote k2pow jobs to execute in parallel. This highly depends on how many
+    /// remote k2pow workers are available.
+    #[arg(long, default_value = "5")]
+    remote_k2pow_parallelism: usize,
+
+    /// Time to back off before trying the k2pow service again while waiting for a result or to
+    /// queue in a new job.
+    #[arg(long, default_value = "5")]
+    remote_k2pow_backoff: u64,
 }
 
 #[serde_as]
@@ -247,6 +257,8 @@ async fn main() -> eyre::Result<()> {
         cores_config,
         args.post_settings.randomx_mode.into(),
         args.remote_k2pow,
+        args.remote_k2pow_parallelism,
+        args.remote_k2pow_backoff,
     )
     .wrap_err("creating Post Service")?;
 

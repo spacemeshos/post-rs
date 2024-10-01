@@ -2,66 +2,34 @@ use super::{Error, Prover};
 use futures::future;
 use reqwest;
 use std::ops::Range;
-use std::{thread, time};
+use std::sync::Arc;
+use std::time;
+use std::time::Duration;
 use tokio::runtime::Runtime;
-
-const BACKOFF_SECS: u64 = 5;
+use tokio::sync::Semaphore;
+use tokio::time::sleep;
 
 pub struct K2powService {
     k2pow_service: String,
+    semaphore: Arc<Semaphore>,
+    backoff: Duration,
 }
 
 impl K2powService {
-    pub fn new(k2pow_service: String) -> Self {
-        Self { k2pow_service }
+    pub fn new(k2pow_service: String, parallelism: usize, backoff_secs: u64) -> Self {
+        let semaphore = Arc::new(Semaphore::new(parallelism));
+        let backoff = time::Duration::from_secs(backoff_secs);
+        Self {
+            k2pow_service,
+            semaphore,
+            backoff,
+        }
     }
 }
 
 impl Prover for K2powService {
-    fn prove(
-        &self,
-        nonce_group: u8,
-        challenge: &[u8; 8],
-        difficulty: &[u8; 32],
-        miner_id: &[u8; 32],
-    ) -> Result<u64, Error> {
-        let client = reqwest::blocking::Client::new();
-        let uri = format!(
-            "{}/job/{}/{}/{}/{}",
-            self.k2pow_service,
-            hex::encode(miner_id),
-            nonce_group,
-            hex::encode(challenge),
-            hex::encode(difficulty)
-        );
-        let backoff = time::Duration::from_secs(BACKOFF_SECS);
-
-        loop {
-            let res = match client.get(&uri).send() {
-                Ok(res) => res,
-                Err(err) => {
-                    log::warn!("get job error: {}. backing off before retry", err);
-                    thread::sleep(backoff);
-                    continue;
-                }
-            };
-            let status = res.status();
-            let txt = res.text().unwrap();
-            let res = match status {
-                reqwest::StatusCode::OK => Ok(txt.parse::<u64>().unwrap()),
-                reqwest::StatusCode::INTERNAL_SERVER_ERROR => Err(Error::Internal(txt.into())),
-                reqwest::StatusCode::CREATED => {
-                    thread::sleep(backoff);
-                    continue;
-                }
-                reqwest::StatusCode::TOO_MANY_REQUESTS => {
-                    thread::sleep(backoff);
-                    continue;
-                }
-                _ => Err(Error::Internal("unknown status code returned".into())),
-            };
-            return res;
-        }
+    fn prove(&self, _: u8, _: &[u8; 8], _: &[u8; 32], _: &[u8; 32]) -> Result<u64, Error> {
+        panic!("not implemented");
     }
 
     fn prove_many(
@@ -75,7 +43,7 @@ impl Prover for K2powService {
         let k2p = self.k2pow_service.clone();
         rt.block_on(async {
             let mut tasks = vec![];
-
+            let backoff = self.backoff;
             nonce_groups.into_iter().for_each(|nonce| {
                 let uri = format!(
                     "{}/job/{}/{}/{}/{}",
@@ -85,34 +53,45 @@ impl Prover for K2powService {
                     hex::encode(challenge),
                     hex::encode(difficulty)
                 );
+                let semaphore = self.semaphore.clone();
 
                 let task = tokio::spawn(async move {
+                    let _permit = semaphore.acquire().await.unwrap();
                     let client = reqwest::Client::new();
-                    let backoff = time::Duration::from_secs(BACKOFF_SECS);
 
                     loop {
                         let res = match client.get(&uri).send().await {
                             Ok(res) => res,
                             Err(err) => {
                                 log::warn!("get job error: {}. backing off before retry", err);
-                                thread::sleep(backoff); // need to change to tokio
+                                sleep(backoff).await;
                                 continue;
                             }
                         };
                         let status = res.status();
-                        let txt = res.text().await.unwrap(); // todo this should have a
-                                                             // match
+                        let txt = match res.text().await {
+                            Ok(text) => text,
+                            Err(err) => {
+                                log::warn!(
+                                    "read response error: {}. backing off before retry",
+                                    err
+                                );
+                                sleep(backoff).await;
+                                continue;
+                            }
+                        };
+
                         let res = match status {
                             reqwest::StatusCode::OK => Ok((nonce, txt.parse::<u64>().unwrap())),
                             reqwest::StatusCode::INTERNAL_SERVER_ERROR => {
                                 Err(Error::Internal(txt.into()))
                             }
                             reqwest::StatusCode::CREATED => {
-                                thread::sleep(backoff); // tokio sleep
+                                sleep(backoff).await;
                                 continue;
                             }
                             reqwest::StatusCode::TOO_MANY_REQUESTS => {
-                                thread::sleep(backoff); //tokio sleep
+                                sleep(backoff).await;
                                 continue;
                             }
                             _ => Err(Error::Internal("unknown status code returned".into())),
