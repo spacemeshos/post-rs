@@ -21,7 +21,7 @@ use tracing_log::LogTracer;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 mod job_manager;
-use job_manager::{JobError, JobState};
+use job_manager::{JobError, JobStatus};
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -157,7 +157,7 @@ async fn get_job<T: GetOrCreate>(
         HexStr<8>,
         HexStr<32>,
     )>,
-) -> Result<job_manager::JobState, job_manager::JobError> {
+) -> Result<job_manager::JobStatus, job_manager::JobError> {
     manager.get_or_create(job_manager::Job {
         nonce_group,
         challenge: *challenge,
@@ -174,13 +174,13 @@ impl IntoResponse for job_manager::JobError {
     }
 }
 
-impl IntoResponse for job_manager::JobState {
+impl IntoResponse for job_manager::JobStatus {
     fn into_response(self) -> Response {
         match self {
-            JobState::Created => (StatusCode::CREATED, "").into_response(),
-            JobState::InProgress => (StatusCode::CREATED, "").into_response(),
-            JobState::Done(Ok(res)) => (StatusCode::OK, format!("{res}")).into_response(),
-            JobState::Done(Err(err)) => {
+            JobStatus::Created => (StatusCode::CREATED, "").into_response(),
+            JobStatus::InProgress => (StatusCode::CREATED, "").into_response(),
+            JobStatus::Done(Ok(res)) => (StatusCode::OK, format!("{res}")).into_response(),
+            JobStatus::Done(Err(err)) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response()
             }
         }
@@ -189,7 +189,7 @@ impl IntoResponse for job_manager::JobState {
 
 #[cfg(test)]
 mod tests {
-    use super::job_manager::{Job, JobState};
+    use super::job_manager::{Job, JobStatus};
     use super::router;
     use crate::job_manager;
     use axum_test::TestServer;
@@ -233,7 +233,7 @@ mod tests {
             .expect_get_or_create()
             .with(eq(JOB))
             .times(2)
-            .returning(|_| Ok(job_manager::JobState::Created));
+            .returning(|_| Ok(job_manager::JobStatus::Created));
         let router = router(Arc::new(mock_manager));
         let server = TestServer::new(router).unwrap();
         let url = format!("/job/{miner}/{nonce_group}/{challenge}/{difficulty}");
@@ -258,7 +258,7 @@ mod tests {
             .expect_get_or_create()
             .with(eq(JOB))
             .times(1)
-            .returning(|_| Ok(JobState::Done(Ok(RESULT))));
+            .returning(|_| Ok(JobStatus::Done(Ok(RESULT))));
         let router = router(Arc::new(mock_manager));
         let server = TestServer::new(router).unwrap();
         let url = format!("/job/{miner}/{nonce_group}/{challenge}/{difficulty}");
@@ -282,7 +282,7 @@ mod tests {
             .expect_get_or_create()
             .with(eq(JOB))
             .times(1)
-            .returning(move |_| Ok(JobState::Done(Err(String::from("error message")))));
+            .returning(move |_| Ok(JobStatus::Done(Err(String::from("error message")))));
         let router = router(Arc::new(mock_manager));
         let server = TestServer::new(router).unwrap();
         let url = format!("/job/{miner}/{nonce_group}/{challenge}/{difficulty}");
