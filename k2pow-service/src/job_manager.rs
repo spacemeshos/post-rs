@@ -1,7 +1,7 @@
 use crate::{create_thread_pool, PoW};
 use post::pow::Prover;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
@@ -24,15 +24,6 @@ enum JobState {
     Done(Result<u64, String>),
 }
 
-impl std::convert::Into<JobStatus> for JobState {
-    fn into(self) -> JobStatus {
-        match self {
-            JobState::InProgress(_) => JobStatus::InProgress,
-            JobState::Done(result) => JobStatus::Done(result),
-        }
-    }
-}
-
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct Job {
     pub nonce_group: u8,
@@ -46,7 +37,7 @@ pub trait GetOrCreate {
     fn get_or_create(&self, job: Job) -> Result<JobStatus, JobError>;
 }
 pub struct JobManager {
-    jobs: Arc<Mutex<HashMap<Job, JobState>>>,
+    jobs: Mutex<HashMap<Job, JobState>>,
     cores: u8,
     randomx_mode: crate::RandomXMode,
     randomx_large_pages: bool,
@@ -55,13 +46,17 @@ pub struct JobManager {
 impl JobManager {
     pub fn new(cores: u8, randomx_mode: crate::RandomXMode, randomx_large_pages: bool) -> Self {
         JobManager {
-            jobs: Arc::new(Mutex::new(HashMap::new())),
+            jobs: Mutex::new(HashMap::new()),
             cores,
             randomx_mode,
             randomx_large_pages,
         }
     }
     fn check_finished(&self, job: &Job) {
+        // there's probably a better way to write this with interior mutability on the
+        // value that the HashMap stores (like with a RefCell). For now, because the
+        // joining the handle consumes the value, borrowing doesn't work here and we need
+        // to remove the value, use it, then put it back into the map.
         let mut hs = self.jobs.lock().unwrap();
         let entry = hs.remove_entry(job);
         match entry {
@@ -82,7 +77,7 @@ impl JobManager {
             Some((key, JobState::Done(res))) => {
                 hs.insert(key, JobState::Done(res));
             }
-            None => return,
+            None => (),
         }
     }
 }
@@ -91,7 +86,6 @@ impl GetOrCreate for JobManager {
     fn get_or_create(&self, job: Job) -> Result<JobStatus, JobError> {
         self.check_finished(&job);
         let mut hs = self.jobs.lock().unwrap();
-
         match hs.get(&job) {
             Some(JobState::InProgress(_)) => Ok(JobStatus::InProgress),
             Some(JobState::Done(result)) => Ok(JobStatus::Done(result.clone())),
