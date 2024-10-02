@@ -118,6 +118,7 @@ pub struct PostService {
 }
 
 impl PostService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         datadir: PathBuf,
         cfg: post::config::ProofConfig,
