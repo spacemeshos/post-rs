@@ -3,7 +3,10 @@
 use std::{
     ops::{Range, RangeInclusive},
     path::PathBuf,
-    sync::{atomic::AtomicBool, Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
 };
 
 use eyre::Context;
@@ -212,6 +215,11 @@ impl crate::client::PostService for PostService {
 
     fn get_metadata(&self) -> &PostMetadata {
         &self.metadata
+    }
+
+    fn interrupt_proof(&self) -> eyre::Result<()> {
+        self.stop.clone().store(true, Ordering::Relaxed);
+        Ok(())
     }
 }
 
