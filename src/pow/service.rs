@@ -55,7 +55,7 @@ impl Prover for K2powService {
                 );
                 let semaphore = self.semaphore.clone();
 
-                let task = tokio::spawn(async move {
+                let task = async move {
                     let _permit = semaphore.acquire().await.unwrap();
                     let client = reqwest::Client::new();
 
@@ -98,20 +98,14 @@ impl Prover for K2powService {
                         };
                         return res;
                     }
-                });
+                };
                 tasks.push(task);
             });
 
-            match future::join_all(tasks)
+            future::join_all(tasks)
                 .await
                 .into_iter()
-                .collect::<Result<Vec<Result<(u32, u64), Error>>, tokio::task::JoinError>>()
-            {
-                Ok(results) => results
-                    .into_iter()
-                    .collect::<Result<Vec<(u32, u64)>, Error>>(),
-                Err(e) => Err(Error::Internal(e.into())),
-            }
+                .collect::<Result<Vec<(u32, u64)>, Error>>()
         })
     }
 
