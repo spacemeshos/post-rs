@@ -38,7 +38,7 @@ pub trait GetOrCreate {
 }
 
 struct Jobs {
-    in_progress: Option<(Job, JobState)>,
+    in_progress: Option<Job>,
     states: HashMap<Job, JobState>,
 }
 pub struct JobManager {
@@ -61,63 +61,54 @@ impl JobManager {
         }
     }
     fn check_finished(&self) {
-        // there's probably a better way to write this with interior mutability on the
-        // value that the HashMap stores (like with a RefCell). For now, because the
-        // joining the handle consumes the value, borrowing doesn't work here and we need
-        // to remove the value, use it, then put it back into the map.
         let mut hs = self.jobs.lock().unwrap();
-        let result: Option<(Job, JobState)> = match &mut hs.in_progress {
-            Some((job, JobState::InProgress(handle))) => {
-                if handle.as_ref().unwrap().is_finished() {
-                    let val = match handle.take().unwrap().join() {
-                        Ok(result) => JobState::Done(match result {
-                            Ok(v) => Ok(v),
-                            Err(e) => Err(e.to_string()),
-                        }),
-                        Err(e) => std::panic::resume_unwind(e),
-                    };
-                    Some((job.clone(), val))
-                } else {
-                    None
-                }
+        if hs.in_progress.is_none() {
+            return;
+        }
+        let job = hs.in_progress.as_ref().unwrap().clone();
+        let entry = hs.states.get_mut(&job).unwrap();
+        let result = if let JobState::InProgress(handle) = entry {
+            if handle.as_ref().unwrap().is_finished() {
+                let val = match handle.take().unwrap().join() {
+                    Ok(result) => JobState::Done(match result {
+                        Ok(v) => Ok(v),
+                        Err(e) => Err(e.to_string()),
+                    }),
+                    Err(e) => std::panic::resume_unwind(e),
+                };
+                Some(val)
+            } else {
+                None
             }
-            _ => None,
+        } else {
+            None
         };
-
-        //let entry = hs.remove_entry(job);
-        //match entry {
-        //Some((key, JobState::InProgress(handle))) => {
-        //if handle.is_finished() {
-        //let val = match handle.join() {
-        //Ok(result) => JobState::Done(match result {
-        //Ok(v) => Ok(v),
-        //Err(e) => Err(e.to_string()),
-        //}),
-        //Err(e) => std::panic::resume_unwind(e),
-        //};
-        //hs.insert(key, val);
-        //return;
-        //}
-        //hs.insert(key, JobState::InProgress(handle));
-        //}
-        //Some((key, JobState::Done(res))) => {
-        //hs.insert(key, JobState::Done(res));
-        //}
-        //None => (),
-        //}
+        drop(entry);
+        if let Some(result) = result {
+            let key = hs.in_progress.take().unwrap();
+            hs.states.insert(key, result);
+        }
     }
 }
 
 impl GetOrCreate for JobManager {
     fn get_or_create(&self, job: Job) -> Result<JobStatus, JobError> {
-        self.check_finished(&job);
+        self.check_finished();
         let mut hs = self.jobs.lock().unwrap();
-        match hs.get(&job) {
+        if let Some((in_prof, _)) = hs.in_progress {
+            if job == in_prof {
+                return Ok(JobStatus::InProgress);
+            }
+        }
+        match hs.states.get(&job) {
             Some(JobState::InProgress(_)) => Ok(JobStatus::InProgress),
             Some(JobState::Done(result)) => Ok(JobStatus::Done(result.clone())),
             None => {
-                let other = hs.values().find(|v| matches!(v, JobState::InProgress(_)));
-                if other.is_some() {
+                if let Some(_) = hs.in_progress {
+                    // if we're here it means:
+                    // - there's a job in progress
+                    // - it's not this job (covered by the first check after check_finished)
+                    // - it's not done either (covered by the earlier match arm)
                     return Err(JobError::TooManyJobs);
                 }
 
@@ -171,7 +162,7 @@ impl GetOrCreate for JobManager {
                     })
                 });
 
-                hs.insert(job, JobState::InProgress(handle));
+                hs.in_progress = Some((job, JobState::InProgress(handle)));
                 Ok(JobStatus::Created)
             }
         }
