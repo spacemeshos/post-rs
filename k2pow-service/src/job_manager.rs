@@ -20,7 +20,7 @@ pub enum JobStatus {
 
 #[derive(Debug)]
 enum JobState {
-    InProgress(std::thread::JoinHandle<Result<u64, post::pow::Error>>),
+    InProgress(Option<std::thread::JoinHandle<Result<u64, post::pow::Error>>>),
     Done(Result<u64, String>),
 }
 
@@ -36,8 +36,13 @@ pub struct Job {
 pub trait GetOrCreate {
     fn get_or_create(&self, job: Job) -> Result<JobStatus, JobError>;
 }
+
+struct Jobs {
+    in_progress: Option<(Job, JobState)>,
+    states: HashMap<Job, JobState>,
+}
 pub struct JobManager {
-    jobs: Mutex<HashMap<Job, JobState>>,
+    jobs: Mutex<Jobs>,
     cores: u8,
     randomx_mode: crate::RandomXMode,
     randomx_large_pages: bool,
@@ -46,39 +51,60 @@ pub struct JobManager {
 impl JobManager {
     pub fn new(cores: u8, randomx_mode: crate::RandomXMode, randomx_large_pages: bool) -> Self {
         JobManager {
-            jobs: Mutex::new(HashMap::new()),
+            jobs: Mutex::new(Jobs {
+                in_progress: None,
+                states: HashMap::new(),
+            }),
             cores,
             randomx_mode,
             randomx_large_pages,
         }
     }
-    fn check_finished(&self, job: &Job) {
+    fn check_finished(&self) {
         // there's probably a better way to write this with interior mutability on the
         // value that the HashMap stores (like with a RefCell). For now, because the
         // joining the handle consumes the value, borrowing doesn't work here and we need
         // to remove the value, use it, then put it back into the map.
         let mut hs = self.jobs.lock().unwrap();
-        let entry = hs.remove_entry(job);
-        match entry {
-            Some((key, JobState::InProgress(handle))) => {
-                if handle.is_finished() {
-                    let val = match handle.join() {
+        let result: Option<(Job, JobState)> = match &mut hs.in_progress {
+            Some((job, JobState::InProgress(handle))) => {
+                if handle.as_ref().unwrap().is_finished() {
+                    let val = match handle.take().unwrap().join() {
                         Ok(result) => JobState::Done(match result {
                             Ok(v) => Ok(v),
                             Err(e) => Err(e.to_string()),
                         }),
                         Err(e) => std::panic::resume_unwind(e),
                     };
-                    hs.insert(key, val);
-                    return;
+                    Some((job.clone(), val))
+                } else {
+                    None
                 }
-                hs.insert(key, JobState::InProgress(handle));
             }
-            Some((key, JobState::Done(res))) => {
-                hs.insert(key, JobState::Done(res));
-            }
-            None => (),
-        }
+            _ => None,
+        };
+
+        //let entry = hs.remove_entry(job);
+        //match entry {
+        //Some((key, JobState::InProgress(handle))) => {
+        //if handle.is_finished() {
+        //let val = match handle.join() {
+        //Ok(result) => JobState::Done(match result {
+        //Ok(v) => Ok(v),
+        //Err(e) => Err(e.to_string()),
+        //}),
+        //Err(e) => std::panic::resume_unwind(e),
+        //};
+        //hs.insert(key, val);
+        //return;
+        //}
+        //hs.insert(key, JobState::InProgress(handle));
+        //}
+        //Some((key, JobState::Done(res))) => {
+        //hs.insert(key, JobState::Done(res));
+        //}
+        //None => (),
+        //}
     }
 }
 
