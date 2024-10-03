@@ -42,6 +42,7 @@ fn gen_proof(
     // Generate a proof
     let pow_flags = RandomXFlag::get_recommended_flags();
     let stop = AtomicBool::new(false);
+    let pow_prover = post::pow::randomx::PoW::new(pow_flags).unwrap();
     let proof = generate_proof(
         datadir.path(),
         challenge,
@@ -51,6 +52,7 @@ fn gen_proof(
         pow_flags,
         stop,
         prove::NoopProgressReporter {},
+        &pow_prover,
     )
     .unwrap();
     let metadata = ProofMetadata::new(metadata, *challenge);

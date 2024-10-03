@@ -228,6 +228,17 @@ jobs:
           path: |
             target/release/post-service${{ matrix.os == 'windows-2019' && '.exe' || '' }}
           if-no-files-found: error
+      - name: Build k2pow service
+        run: cargo build -p k2pow-service --release
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+      - name: Archive k2pow service artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: k2pow-service-${{ matrix.artifact-name }}
+          path: |
+            target/release/k2pow-service${{ matrix.os == 'windows-2019' && '.exe' || '' }}
+          if-no-files-found: error
 
   release:
     name: Publish release

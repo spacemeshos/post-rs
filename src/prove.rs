@@ -130,11 +130,11 @@ pub struct Prover8_56 {
 impl Prover8_56 {
     pub(crate) const NONCES_PER_AES: u32 = 16;
 
-    pub fn new<P: pow::Prover>(
+    pub fn new(
         challenge: &[u8; 32],
         nonces: Range<u32>,
         params: ProvingParams,
-        pow_prover: &P,
+        pow_prover: &(dyn pow::Prover + Send + Sync),
         miner_id: &[u8; 32],
     ) -> eyre::Result<Self> {
         // TODO consider to relax it to allow any range of nonces
@@ -147,21 +147,37 @@ impl Prover8_56 {
             "nonces must be a multiple of 16"
         );
         log::info!("calculating proof of work for nonces {nonces:?}",);
-        let ciphers: Vec<AesCipher> = nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
-            .map(|nonce_group| {
-                log::debug!("calculating proof of work for nonce group {nonce_group}");
-                let pow = pow_prover.prove(
-                    nonce_group.try_into()?,
-                    challenge[..8].try_into().unwrap(),
+        let map_fn = |nonce_group: u32| -> eyre::Result<AesCipher> {
+            log::debug!("calculating proof of work for nonce group {nonce_group}");
+            let pow = pow_prover.prove(
+                nonce_group.try_into()?,
+                challenge[..8].try_into().unwrap(),
+                &params.pow_difficulty,
+                miner_id,
+            )?;
+            log::debug!("proof of work for nonce group {nonce_group}: {pow}");
+
+            Ok(AesCipher::new(challenge, nonce_group, pow))
+        };
+
+        let ciphers: Vec<AesCipher> = match pow_prover.par() {
+            true => pow_prover
+                .prove_many(
+                    nonce_group_range(nonces.clone(), Self::NONCES_PER_AES),
+                    challenge[..8].try_into()?,
                     &params.pow_difficulty,
                     miner_id,
-                )?;
-                log::debug!("proof of work: {pow}");
-
-                Ok(AesCipher::new(challenge, nonce_group, pow))
-            })
-            .collect::<eyre::Result<_>>()?;
-
+                )
+                .unwrap()
+                .into_iter()
+                .map(|(nonce_group, pow)| -> eyre::Result<AesCipher> {
+                    Ok(AesCipher::new(challenge, nonce_group, pow))
+                })
+                .collect::<eyre::Result<_>>()?,
+            false => nonce_group_range(nonces.clone(), Self::NONCES_PER_AES)
+                .map(map_fn)
+                .collect::<eyre::Result<_>>()?,
+        };
         let lazy_ciphers = nonces
             .map(|nonce| {
                 let nonce_group = calc_nonce_group(nonce, Self::NONCES_PER_AES);
@@ -290,6 +306,7 @@ pub fn generate_proof<Reporter, Stopper>(
     pow_flags: RandomXFlag,
     stop: Stopper,
     reporter: Reporter,
+    pow_prover: &(dyn pow::Prover + Send + Sync),
 ) -> eyre::Result<Proof<'static>>
 where
     Stopper: Borrow<AtomicBool>,
@@ -303,7 +320,6 @@ where
         params.difficulty,
         hex::encode_upper(params.pow_difficulty)
     );
-    let pow_prover = pow::randomx::PoW::new(pow_flags)?;
 
     let mut nonces = 0..nonces_size as u32;
 
@@ -325,7 +341,7 @@ where
         let pow_time = Instant::now();
         let prover = pool.install(|| {
             let miner_id = &metadata.node_id;
-            Prover8_56::new(challenge, nonces.clone(), params, &pow_prover, miner_id)
+            Prover8_56::new(challenge, nonces.clone(), params, pow_prover, miner_id)
                 .wrap_err("creating prover")
         })?;
 
@@ -381,7 +397,7 @@ where
     }
 }
 
-fn create_thread_pool<F>(
+pub fn create_thread_pool<F>(
     cores: config::Cores,
     on_affinity_set_error: F,
 ) -> Result<rayon::ThreadPool, rayon::ThreadPoolBuildError>
@@ -457,6 +473,7 @@ mod tests {
         };
         let params = ProvingParams::new(&meta, &cfg).unwrap();
         let mut pow_prover = pow::MockProver::new();
+        pow_prover.expect_par().returning(|| false);
 
         pow_prover
             .expect_prove()
@@ -470,6 +487,7 @@ mod tests {
             .with(eq(1), eq([0; 8]), eq(cfg.pow_difficulty), always())
             .once()
             .returning(|_, _, _, _| Ok(0));
+
         assert!(Prover8_56::new(&[0; 32], 16..32, params, &pow_prover, &meta.node_id).is_ok());
 
         assert!(Prover8_56::new(&[0; 32], 0..0, params, &pow_prover, &meta.node_id).is_err());
@@ -490,6 +508,7 @@ mod tests {
             pow_difficulty: [0xFF; 32],
         };
         let mut pow_prover = pow::MockProver::new();
+        pow_prover.expect_par().returning(|| false);
         pow_prover
             .expect_prove()
             .once()
@@ -541,6 +560,7 @@ mod tests {
             pow_difficulty: [0xFF; 32],
         };
         let mut pow_prover = pow::MockProver::new();
+        pow_prover.expect_par().returning(|| false);
         pow_prover.expect_prove().returning(|_, _, _, _| Ok(0));
 
         let prover = Prover8_56::new(
@@ -585,8 +605,8 @@ mod tests {
             pow_difficulty: [0xFF; 32],
         };
         let mut pow_prover = pow::MockProver::new();
+        pow_prover.expect_par().returning(|| false);
         pow_prover.expect_prove().returning(|_, _, _, _| Ok(0));
-
         let indexes = loop {
             let mut indicies = HashMap::<u32, Vec<u64>>::new();
 
@@ -649,6 +669,7 @@ mod tests {
             pow_difficulty: [0xFF; 32],
         };
         let mut pow_prover = pow::MockProver::new();
+        pow_prover.expect_par().returning(|| false);
         pow_prover
             .expect_prove()
             .once()

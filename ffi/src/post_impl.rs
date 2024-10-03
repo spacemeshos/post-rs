@@ -103,6 +103,7 @@ fn _generate_proof(
     let challenge = challenge.try_into()?;
 
     let stop = AtomicBool::new(false);
+    let pow_prover = post::pow::randomx::PoW::new(pow_flags).unwrap();
     let proof = prove::generate_proof(
         datadir,
         challenge,
@@ -112,6 +113,7 @@ fn _generate_proof(
         pow_flags,
         stop,
         prove::NoopProgressReporter {},
+        &pow_prover,
     )?;
     Ok(Box::new(Proof::from(proof)))
 }

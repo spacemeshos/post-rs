@@ -8,7 +8,7 @@ use tokio::sync::oneshot::{self, error::TryRecvError, Receiver};
 use tonic::transport::{Certificate, Identity};
 
 use post::pow::randomx::RandomXFlag;
-use post_service::{client, operator};
+use post_service::{client, operator, service::K2powConfig};
 
 /// Post Service
 #[derive(Parser, Debug)]
@@ -45,6 +45,20 @@ struct Cli {
 
     #[command(flatten, next_help_heading = "TLS configuration")]
     tls: Option<Tls>,
+
+    /// Base URL for remote k2pow service.
+    #[arg(long)]
+    remote_k2pow: Option<String>,
+
+    /// How many remote k2pow jobs to execute in parallel. This highly depends on how many
+    /// remote k2pow workers are available.
+    #[arg(long, default_value = "5")]
+    remote_k2pow_parallelism: usize,
+
+    /// Time to back off before trying the k2pow service again while waiting for a result or to
+    /// queue in a new job.
+    #[arg(long, default_value = "5")]
+    remote_k2pow_backoff: u64,
 }
 
 #[serde_as]
@@ -202,7 +216,9 @@ async fn main() -> eyre::Result<()> {
         "POST proving settings: {}",
         serde_json::to_string(&args.post_settings).unwrap()
     );
-
+    if let Some(uri) = &args.remote_k2pow {
+        log::info!("remote k2pow uri: {}", uri);
+    }
     let scrypt = post::config::ScryptParams::new(
         args.post_config.scrypt.n,
         args.post_config.scrypt.r,
@@ -229,6 +245,15 @@ async fn main() -> eyre::Result<()> {
         }
     };
 
+    let remote_k2pow_config = match args.remote_k2pow {
+        Some(url) => Some(K2powConfig {
+            url,
+            parallelism: args.remote_k2pow_parallelism,
+            backoff: Duration::from_secs(args.remote_k2pow_backoff),
+        }),
+        None => None,
+    };
+
     let service = post_service::service::PostService::new(
         args.dir,
         post::config::ProofConfig {
@@ -240,6 +265,7 @@ async fn main() -> eyre::Result<()> {
         args.post_settings.nonces,
         cores_config,
         args.post_settings.randomx_mode.into(),
+        remote_k2pow_config,
     )
     .wrap_err("creating Post Service")?;
 

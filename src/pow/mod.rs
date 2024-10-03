@@ -7,7 +7,9 @@
 //! without actually holding the whole POST data.
 
 pub mod randomx;
+pub mod service;
 use mockall::*;
+use std::ops::Range;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -29,6 +31,16 @@ pub trait Prover {
         difficulty: &[u8; 32],
         miner_id: &[u8; 32],
     ) -> Result<u64, Error>;
+
+    fn prove_many(
+        &self,
+        nonce_group: Range<u32>,
+        challenge: &[u8; 8],
+        difficulty: &[u8; 32],
+        miner_id: &[u8; 32],
+    ) -> Result<Vec<(u32, u64)>, Error>;
+
+    fn par(&self) -> bool;
 }
 
 #[automock]
