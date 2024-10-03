@@ -67,7 +67,7 @@ impl JobManager {
         }
         let job = hs.in_progress.as_ref().unwrap().clone();
         let entry = hs.states.get_mut(&job).unwrap();
-        let result = if let JobState::InProgress(handle) = entry {
+        if let JobState::InProgress(handle) = entry {
             if handle.as_ref().unwrap().is_finished() {
                 let val = match handle.take().unwrap().join() {
                     Ok(result) => JobState::Done(match result {
@@ -76,18 +76,10 @@ impl JobManager {
                     }),
                     Err(e) => std::panic::resume_unwind(e),
                 };
-                Some(val)
-            } else {
-                None
+                *entry = val;
+                hs.in_progress.take();
             }
-        } else {
-            None
         };
-        drop(entry);
-        if let Some(result) = result {
-            let key = hs.in_progress.take().unwrap();
-            hs.states.insert(key, result);
-        }
     }
 }
 
@@ -95,19 +87,15 @@ impl GetOrCreate for JobManager {
     fn get_or_create(&self, job: Job) -> Result<JobStatus, JobError> {
         self.check_finished();
         let mut hs = self.jobs.lock().unwrap();
-        if let Some((in_prof, _)) = hs.in_progress {
-            if job == in_prof {
-                return Ok(JobStatus::InProgress);
-            }
-        }
+
         match hs.states.get(&job) {
             Some(JobState::InProgress(_)) => Ok(JobStatus::InProgress),
             Some(JobState::Done(result)) => Ok(JobStatus::Done(result.clone())),
             None => {
-                if let Some(_) = hs.in_progress {
+                if hs.in_progress.is_some() {
                     // if we're here it means:
                     // - there's a job in progress
-                    // - it's not this job (covered by the first check after check_finished)
+                    // - it's not this job (because we didn't get a result from HashMap.get)
                     // - it's not done either (covered by the earlier match arm)
                     return Err(JobError::TooManyJobs);
                 }
@@ -162,7 +150,8 @@ impl GetOrCreate for JobManager {
                     })
                 });
 
-                hs.in_progress = Some((job, JobState::InProgress(handle)));
+                hs.in_progress = Some(job.clone());
+                hs.states.insert(job, JobState::InProgress(Some(handle)));
                 Ok(JobStatus::Created)
             }
         }
