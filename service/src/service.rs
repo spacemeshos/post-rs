@@ -4,6 +4,7 @@ use std::{
     ops::{Range, RangeInclusive},
     path::PathBuf,
     sync::{atomic::AtomicBool, Arc, Mutex},
+    time::Duration,
 };
 
 use eyre::Context;
@@ -101,6 +102,12 @@ impl ProvingProgress {
     }
 }
 
+pub struct K2powConfig {
+    pub url: String,
+    pub parallelism: usize,
+    pub backoff: Duration,
+}
+
 pub struct PostService {
     datadir: PathBuf,
     metadata: post::metadata::PostMetadata,
@@ -110,9 +117,7 @@ pub struct PostService {
     threads: post::config::Cores,
     pow_flags: RandomXFlag,
     proof_generation: Mutex<ProofGenProcess>,
-    remote_k2pow: Option<String>,
-    remote_k2pow_parallelism: usize,
-    remote_k2pow_backoff: u64,
+    remote_k2pow_config: Option<K2powConfig>,
 
     stop: Arc<AtomicBool>,
 }
@@ -126,9 +131,7 @@ impl PostService {
         nonces: usize,
         threads: post::config::Cores,
         pow_flags: RandomXFlag,
-        remote_k2pow: Option<String>,
-        remote_k2pow_parallelism: usize,
-        remote_k2pow_backoff: u64,
+        remote_k2pow_config: Option<K2powConfig>,
     ) -> eyre::Result<Self> {
         Ok(Self {
             metadata: post::metadata::load(&datadir).wrap_err("loading POST metadata")?,
@@ -139,9 +142,7 @@ impl PostService {
             threads,
             pow_flags,
             proof_generation: Mutex::new(ProofGenProcess::Idle),
-            remote_k2pow,
-            remote_k2pow_parallelism,
-            remote_k2pow_backoff,
+            remote_k2pow_config,
 
             stop: Arc::new(AtomicBool::new(false)),
         })
@@ -177,15 +178,15 @@ impl crate::client::PostService for PostService {
                 let threads = self.threads.clone();
                 let stop = self.stop.clone();
                 let progress = ProvingProgress::default();
-                let pow_prover: Box<dyn post::pow::Prover + Send + Sync> = match &self.remote_k2pow
-                {
-                    Some(uri) => Box::new(post::pow::service::K2powService::new(
-                        uri.clone(),
-                        self.remote_k2pow_parallelism,
-                        self.remote_k2pow_backoff,
-                    )),
-                    None => Box::new(post::pow::randomx::PoW::new(pow_flags).unwrap()),
-                };
+                let pow_prover: Box<dyn post::pow::Prover + Send + Sync> =
+                    match &self.remote_k2pow_config {
+                        Some(cfg) => Box::new(post::pow::service::K2powService::new(
+                            cfg.url.clone(),
+                            cfg.parallelism,
+                            cfg.backoff,
+                        )),
+                        None => Box::new(post::pow::randomx::PoW::new(pow_flags).unwrap()),
+                    };
                 let reporter = progress.clone();
                 *proof_gen = ProofGenProcess::Running {
                     challenge,

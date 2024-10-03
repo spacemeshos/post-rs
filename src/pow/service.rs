@@ -3,7 +3,6 @@ use futures::future;
 use reqwest;
 use std::ops::Range;
 use std::sync::Arc;
-use std::time;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 use tokio::sync::Semaphore;
@@ -16,9 +15,8 @@ pub struct K2powService {
 }
 
 impl K2powService {
-    pub fn new(k2pow_service: String, parallelism: usize, backoff_secs: u64) -> Self {
+    pub fn new(k2pow_service: String, parallelism: usize, backoff: Duration) -> Self {
         let semaphore = Arc::new(Semaphore::new(parallelism));
-        let backoff = time::Duration::from_secs(backoff_secs);
         Self {
             k2pow_service,
             semaphore,

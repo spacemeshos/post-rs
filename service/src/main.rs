@@ -8,7 +8,7 @@ use tokio::sync::oneshot::{self, error::TryRecvError, Receiver};
 use tonic::transport::{Certificate, Identity};
 
 use post::pow::randomx::RandomXFlag;
-use post_service::{client, operator};
+use post_service::{client, operator, service::K2powConfig};
 
 /// Post Service
 #[derive(Parser, Debug)]
@@ -245,6 +245,15 @@ async fn main() -> eyre::Result<()> {
         }
     };
 
+    let remote_k2pow_config = match args.remote_k2pow {
+        Some(url) => Some(K2powConfig {
+            url,
+            parallelism: args.remote_k2pow_parallelism,
+            backoff: Duration::from_secs(args.remote_k2pow_backoff),
+        }),
+        None => None,
+    };
+
     let service = post_service::service::PostService::new(
         args.dir,
         post::config::ProofConfig {
@@ -256,9 +265,7 @@ async fn main() -> eyre::Result<()> {
         args.post_settings.nonces,
         cores_config,
         args.post_settings.randomx_mode.into(),
-        args.remote_k2pow,
-        args.remote_k2pow_parallelism,
-        args.remote_k2pow_backoff,
+        remote_k2pow_config,
     )
     .wrap_err("creating Post Service")?;
 
