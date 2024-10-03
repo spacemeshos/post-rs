@@ -162,8 +162,8 @@ impl GetOrCreate for JobManager {
 mod tests {
     use super::{GetOrCreate, JobError, JobStatus};
 
-    #[tokio::test]
-    async fn test_job_manager() {
+    #[test]
+    fn test_job_manager() {
         let job_manager = super::JobManager::new(1, crate::RandomXMode::Light, false);
         let job = super::Job {
             nonce_group: 11,
