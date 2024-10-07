@@ -41,8 +41,9 @@ Note: the `miner` prefix is first in order to allow for flexibility in how to ro
 
 ### Setup
 
-While a single post service can use a single k2pow service as a processing backend, this is rather useless.
-The two are imagined to interact through a load balancer. The load balancer should try sequencially to send the job between the different
+While a single post service can use a single k2pow service as a processing backend, this is a rather specific use case where one uses one high-performance k2pow service machine with multiple post-services that are significantly less powerful. It's also worth noting that k2pow requires RandomX-optimized hardware, while the post-service requires AES-NI optimized hardware.
+
+More advanced setup would interact through a load balancer. The load balancer should try sequencially to send the job between the different
 workers, ideally sweeping through them until a vacant one is found. Once it sweeps through all of them, it should propagate the error back to
 the post service. The post service knows to backoff and wait before trying again to send the job. The backoff period is also configurable.
 The load balancer needs to remember which node was queried so that the same request can later scrape the result (instead of sending the job to a new node).
@@ -51,4 +52,3 @@ The one caveat here is that if a worker is restarted, the load balancer behavior
 
 The individual k2pow workers have no persistence enabled.
 Individual k2pow results are remembered and kept within the duration of a session, but not across sessions. This means that if they crashed/restarted no previous results would be remembered.
-
