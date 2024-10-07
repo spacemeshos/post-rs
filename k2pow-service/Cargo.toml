@@ -6,7 +6,7 @@ edition = "2021"
 [dependencies]
 post-rs = { path="../" }
 clap = { version = "4.5.16", features = ["derive", "env"] }
-serde_with = "3.9.0"
+serde_with = "3.11.0"
 serde = { version = "1.0.210", features = ["derive", "serde_derive"] }
 tokio = { version = "1.40.0", features = ["full"] }
 tracing = "0.1.40"
