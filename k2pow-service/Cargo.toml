@@ -13,7 +13,7 @@ tracing = "0.1.40"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 axum = "0.7.5"
-tower-http = {version = "0.5.2", features = ["trace"]}
+tower-http = {version = "0.6.1", features = ["trace"]}
 hex = "0.4.3"
 thiserror = "1.0.63"
 
