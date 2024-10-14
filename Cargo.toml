@@ -28,7 +28,7 @@ regex = "1.11.0"
 itertools = "0.13.0"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
-bytemuck = "1.18.0"
+bytemuck = "1.19.0"
 serde_with = { version = "3.11.0", features = ["base64", "hex"] }
 
 scrypt-jane = { git = "https://github.com/spacemeshos/scrypt-jane-rs", branch = "main" }
