@@ -337,7 +337,7 @@ fn watch_pid(pid: Pid, interval: Duration, mut term: Receiver<()>) {
 
     let mut sys = System::new();
     loop {
-        sys.refresh_processes_specifics(ProcessesToUpdate::All, ProcessRefreshKind::new());
+        sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::new());
         match sys.process(pid) {
             None => {
                 log::info!("PID {pid} not found");
