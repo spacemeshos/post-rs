@@ -456,34 +456,6 @@ dependencies = [
 
 [[package]]
 name = "axum-test"
-version = "15.7.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac63648e380fd001402a02ec804e7686f9c4751f8cad85b7de0b53dae483a128"
-dependencies = [
- "anyhow",
- "auto-future",
- "axum",
- "bytes",
- "cookie",
- "http 1.1.0",
- "http-body-util",
- "hyper 1.4.0",
- "hyper-util",
- "mime",
- "pretty_assertions",
- "reserve-port",
- "rust-multipart-rfc7578_2",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "smallvec",
- "tokio",
- "tower 0.5.1",
- "url",
-]
-
-[[package]]
-name = "axum-test"
 version = "16.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dcd0a5e654fa2bae63e6101a776d8984bf641e2841e8ad307007b6e9b99c61f"
@@ -733,7 +705,7 @@ version = "0.8.0"
 dependencies = [
  "axum",
  "axum-prometheus",
- "axum-test 16.0.0",
+ "axum-test",
  "base64 0.22.1",
  "clap",
  "config",
@@ -2166,7 +2138,7 @@ name = "k2pow-service"
 version = "0.8.0"
 dependencies = [
  "axum",
- "axum-test 15.7.4",
+ "axum-test",
  "clap",
  "hex",
  "mockall",
@@ -3881,7 +3853,7 @@ version = "0.8.0"
 dependencies = [
  "async-stream",
  "axum",
- "axum-test 16.0.0",
+ "axum-test",
  "clap",
  "env_logger",
  "eyre",
