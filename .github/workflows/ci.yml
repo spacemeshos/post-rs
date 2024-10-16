@@ -61,6 +61,11 @@ jobs:
           unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
       - uses: Swatinem/rust-cache@v2
 
+      - name: Benchmarks
+        run: cargo bench --no-run
+        env:
+          RUSTFLAGS: ${{ matrix.rustflags }}
+
       - name: Tests
         run: cargo test --workspace --exclude scrypt-ocl
         env:
