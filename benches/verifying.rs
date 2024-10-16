@@ -54,7 +54,7 @@ fn verifying(c: &mut Criterion) {
         pow_flags,
         stop,
         NoopProgressReporter {},
-        pow_prover,
+        &pow_prover,
     )
     .unwrap();
     let metadata = ProofMetadata::new(metadata, *challenge);
