@@ -456,9 +456,9 @@ dependencies = [
 
 [[package]]
 name = "axum-test"
-version = "16.0.0"
+version = "16.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7dcd0a5e654fa2bae63e6101a776d8984bf641e2841e8ad307007b6e9b99c61f"
+checksum = "3254184de359bbae2a8ca10b050870a7a4f1c8332a2c27d53f360b9835bb3911"
 dependencies = [
  "anyhow",
  "assert-json-diff",
