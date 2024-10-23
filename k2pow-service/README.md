@@ -36,6 +36,7 @@ This endpoint may yield different responses depending on the state of the node:
 - `HTTP 201 CREATED` - the job has been created and is processing (the first call and subsequent calls will yield the same status code)
 - `HTTP 200 OK` - the job has been completed and the result is then encoded in the body as a `uint64` encoded as a string.
 - `HTTP 500 INTERNAL SERVER ERROR` - the job had encountered an error. The error is written to the response as a string.
+- `HTTP 429 TOO MANY REQUESTS` - the worker is busy and cannot accept the job at the moment. The client should backoff and retry later. It will be returned when worker is doing the job for OTHER than requested params (if params match and the job is still being processed it will return `201` as written above)
 
 Note: the `miner` prefix is first in order to allow for flexibility in how to route requests within the load-balancer.
 
@@ -46,9 +47,11 @@ While a single post service can use a single k2pow service as a processing backe
 More advanced setup would interact through a load balancer. The load balancer should try sequencially to send the job between the different
 workers, ideally sweeping through them until a vacant one is found. Once it sweeps through all of them, it should propagate the error back to
 the post service. The post service knows to backoff and wait before trying again to send the job. The backoff period is also configurable.
-The load balancer needs to remember which node was queried so that the same request can later scrape the result (instead of sending the job to a new node).
+The load balancer needs to remember which node was queried so that the same request can later scrape the result (instead of sending the job to a new node). One of the ways to "remember" it is using sharding based on the `miner` part of the URI.
 The post service will keep requesting using the same endpoint always, this means that even in the case of a worker restart, the job can eventually get through.
 The one caveat here is that if a worker is restarted, the load balancer behavior may be affected (it keeps forwarding the same GET request to the same worker, which is _not necessarily_ executing that job.
 
 The individual k2pow workers have no persistence enabled.
 Individual k2pow results are remembered and kept within the duration of a session, but not across sessions. This means that if they crashed/restarted no previous results would be remembered.
+
+There is example configuration for HAProxy loab balancer in the [haproxy.cfg](./examples/haproxy/haproxy.cfg) with the [README.md](./examples/haproxy/README.md)
