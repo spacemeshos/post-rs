@@ -41,7 +41,7 @@ randomx-rs = { git = "https://github.com/spacemeshos/randomx-rs", rev = "d46bcd9
 
 
 primitive-types = "0.13.1"
-thiserror = "1.0.64"
+thiserror = "1.0.65"
 thread_local = "1.1.7"
 mockall = "0.13.0"
 core_affinity = "0.8.1"

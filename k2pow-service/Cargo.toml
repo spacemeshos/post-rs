@@ -15,7 +15,7 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 axum = "0.7.5"
 tower-http = {version = "0.6.1", features = ["trace"]}
 hex = "0.4.3"
-thiserror = "1.0.63"
+thiserror = "1.0.65"
 
 [dev-dependencies]
 axum-test = "16.2.0"
