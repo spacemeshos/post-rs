@@ -4,6 +4,7 @@
 //! It connects to the node and registers itself as a Post Service.
 //! It then waits for requests from the node and forwards them to the Post Service.
 
+use http::uri::{Scheme, Uri};
 use std::time::Duration;
 
 use post::metadata::PostMetadata;
@@ -68,9 +69,17 @@ impl<S: PostService> ServiceClient<S> {
         tls: Option<(Option<String>, Certificate, Identity)>,
         service: S,
     ) -> eyre::Result<Self> {
+        let listen_address = address.parse::<Uri>()?;
+        let parts = listen_address.into_parts();
+        let scheme = parts.scheme.unwrap_or(Scheme::HTTP);
+        if !["http", "https"].contains(&scheme.as_str()) {
+            return Err(eyre::eyre!("unknown client protocol"));
+        };
+
         let endpoint = Channel::builder(address.parse()?)
             .keep_alive_timeout(Duration::from_secs(20))
             .http2_keep_alive_interval(Duration::from_secs(10 * 60));
+
         let endpoint = match tls {
             Some((domain, cert, identity)) => {
                 let domain = match domain {
@@ -90,7 +99,15 @@ impl<S: PostService> ServiceClient<S> {
                         .identity(identity),
                 )?
             }
-            None => endpoint,
+            None => {
+                if scheme == Scheme::HTTPS {
+                    return Err(eyre::eyre!(
+                        "client protocol set to https but tls configuration not provided"
+                    ));
+                }
+
+                endpoint
+            }
         };
 
         Ok(Self { endpoint, service })
