@@ -17,7 +17,7 @@ use post_service::{
             self, service_response, GenProofResponse, GenProofStatus, Metadata, MetadataResponse,
             NodeRequest,
         },
-        MockPostService,
+        MockPostService, ServiceClient,
     },
     service::ProofGenState,
 };
@@ -62,6 +62,51 @@ async fn test_registers_tls() {
     test_server.connected.recv().await.unwrap();
     client_handle.abort();
     let _ = client_handle.await;
+}
+
+#[test]
+fn test_client_creation_error_handling() {
+    let ca = rcgen::generate_simple_self_signed(vec![]).unwrap();
+    let client = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+    let tls = Some((
+        Some("localhost".to_string()),
+        Certificate::from_pem(ca.serialize_pem().unwrap()).clone(),
+        Identity::from_pem(
+            client.serialize_pem_with_signer(&ca).unwrap(),
+            client.serialize_private_key_pem(),
+        ),
+    ));
+    let service = Arc::new(MockPostService::new());
+
+    // backward compatibility - default to http if no scheme provided.
+    // should work both with or without tls configuration
+    let result = ServiceClient::new("localhost:1234".to_string(), tls.clone(), service.clone());
+    assert!(result.is_ok());
+    let result = ServiceClient::new("localhost:1234".to_string(), None, service.clone());
+    assert!(result.is_ok());
+
+    let result = ServiceClient::new(
+        "http://localhost:1234".to_string(),
+        tls.clone(),
+        service.clone(),
+    );
+    assert!(result.is_ok());
+    let result = ServiceClient::new("http://localhost:1234".to_string(), None, service.clone());
+    assert!(result.is_ok());
+
+    // should fail only without tls configuration
+    let result = ServiceClient::new(
+        "https://localhost:1234".to_string(),
+        tls.clone(),
+        service.clone(),
+    );
+    assert!(result.is_ok());
+    let result = ServiceClient::new("https://localhost:1234".to_string(), None, service.clone());
+    assert!(result.is_err());
+
+    // should fail on unrecognized scheme
+    let result = ServiceClient::new("yolo://localhost:1234".to_string(), None, service.clone());
+    assert!(result.is_err());
 }
 
 #[tokio::test]
