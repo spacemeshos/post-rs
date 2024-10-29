@@ -15,7 +15,7 @@ path = "src/lib.rs"
 post-rs = { path = "../" }
 prost = "0.13.3"
 tonic = { version = "0.12.3", features = ["tls"] }
-tokio = { version = "1.39", features = [
+tokio = { version = "1.41", features = [
     "rt-multi-thread",
     "macros",
     "sync",
