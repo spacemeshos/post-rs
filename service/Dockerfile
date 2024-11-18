@@ -7,8 +7,6 @@ RUN apt-get update && apt-get install -y\
     clang \
     cmake \
     protobuf-compiler \
-    ca-certificates \
-    libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /service
@@ -27,5 +25,8 @@ RUN cargo build --release -p service --bin post-service
 FROM debian:bookworm-slim AS runtime
 WORKDIR /service
 COPY --from=builder /service/target/release/post-service /usr/local/bin
-
+RUN apt-get update && apt-get install -y\
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
 ENTRYPOINT ["/usr/local/bin/post-service"]
