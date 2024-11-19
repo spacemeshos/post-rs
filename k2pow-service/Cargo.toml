@@ -20,4 +20,4 @@ thiserror = "2.0.3"
 [dev-dependencies]
 axum-test = "16.3.0"
 hex = "0.4.3"
-mockall = "0.13.0"
+mockall = "0.13.1"
