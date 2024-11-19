@@ -4,7 +4,7 @@ version = "0.8.2"
 edition = "2021"
 
 [dependencies]
-axum = "0.7.7"
+axum = "0.7.9"
 serde = { version = "1.0.215", features = ["derive"] }
 tokio = { version = "1.41", features = [
     "rt-multi-thread",
