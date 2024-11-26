@@ -49,6 +49,7 @@ fn prover_bench(c: &mut Criterion) {
                     .expect_prove()
                     .times(nonces as usize / 16)
                     .returning(|_, _, _, _| Ok(0));
+                pow_prover.expect_par().returning(|| false);
                 let prover =
                     Prover8_56::new(CHALLENGE, 0..nonces, params, &pow_prover, &[7; 32]).unwrap();
                 b.iter(|| {
