@@ -25,7 +25,9 @@ RUN cargo build --release -p service --bin post-service
 FROM debian:bookworm-slim AS runtime
 WORKDIR /service
 COPY --from=builder /service/target/release/post-service /usr/local/bin
-RUN apt-get update && apt-get install -y\
+RUN set -ex \
+    && apt-get update --fix-missing \
+    && apt-get install -qy --no-install-recommends \
     ca-certificates \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
