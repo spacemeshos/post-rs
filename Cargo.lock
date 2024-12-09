@@ -409,7 +409,7 @@ dependencies = [
  "axum-core",
  "bytes",
  "futures-util",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.0",
  "http-body-util",
  "hyper 1.5.1",
@@ -442,7 +442,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "futures-util",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.0",
  "http-body-util",
  "mime",
@@ -463,7 +463,7 @@ dependencies = [
  "axum",
  "bytes",
  "futures-core",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.0",
  "matchit",
  "metrics",
@@ -488,7 +488,7 @@ dependencies = [
  "bytes",
  "bytesize",
  "cookie",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body-util",
  "hyper 1.5.1",
  "hyper-util",
@@ -1682,7 +1682,7 @@ dependencies = [
  "fnv",
  "futures-core",
  "futures-sink",
- "http 1.1.0",
+ "http 1.2.0",
  "indexmap 2.2.5",
  "slab",
  "tokio",
@@ -1777,9 +1777,9 @@ dependencies = [
 
 [[package]]
 name = "http"
-version = "1.1.0"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21b9ddb458710bc376481b842f5da65cdf31522de232c1ca8146abce2a358258"
+checksum = "f16ca2af56261c99fba8bac40a10251ce8188205a4c448fbb745a2e4daa76fea"
 dependencies = [
  "bytes",
  "fnv",
@@ -1804,7 +1804,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1cac85db508abc24a2e48553ba12a996e87244a0395ce011e62b37158745d643"
 dependencies = [
  "bytes",
- "http 1.1.0",
+ "http 1.2.0",
 ]
 
 [[package]]
@@ -1815,7 +1815,7 @@ checksum = "0475f8b2ac86659c21b64320d5d653f9efe42acd2a4e560073ec61a155a34f1d"
 dependencies = [
  "bytes",
  "futures-core",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.0",
  "pin-project-lite",
 ]
@@ -1899,7 +1899,7 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "h2",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.0",
  "httparse",
  "httpdate",
@@ -1917,7 +1917,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "08afdbb5c31130e3034af566421053ab03787c640246a446327f550d11bcb333"
 dependencies = [
  "futures-util",
- "http 1.1.0",
+ "http 1.2.0",
  "hyper 1.5.1",
  "hyper-util",
  "rustls",
@@ -1965,7 +1965,7 @@ dependencies = [
  "bytes",
  "futures-channel",
  "futures-util",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.0",
  "hyper 1.5.1",
  "pin-project-lite",
@@ -3459,7 +3459,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "h2",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.0",
  "http-body-util",
  "hyper 1.5.1",
@@ -3905,7 +3905,7 @@ dependencies = [
  "env_logger",
  "eyre",
  "hex",
- "http 1.1.0",
+ "http 1.2.0",
  "httpmock",
  "log",
  "mockall",
@@ -4455,7 +4455,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "h2",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.0",
  "http-body-util",
  "hyper 1.5.1",
@@ -4534,7 +4534,7 @@ checksum = "1e9cd434a998747dd2c4276bc96ee2e0c7a2eadf3cae88e52be55a05fa9053f5"
 dependencies = [
  "bitflags 2.5.0",
  "bytes",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.0",
  "http-body-util",
  "pin-project-lite",
@@ -4550,7 +4550,7 @@ checksum = "403fa3b783d4b626a8ad51d766ab03cb6d2dbfc46b1c5d4448395e6628dc9697"
 dependencies = [
  "bitflags 2.5.0",
  "bytes",
- "http 1.1.0",
+ "http 1.2.0",
  "http-body 1.0.0",
  "pin-project-lite",
  "tower-layer",
