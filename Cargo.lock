@@ -1295,7 +1295,7 @@ checksum = "f88959de2d447fd3eddcf1909d1f19fe084e27a056a6904203dc5d8b9e771c1e"
 dependencies = [
  "rust_decimal",
  "serde",
- "thiserror 2.0.6",
+ "thiserror 2.0.7",
  "time",
  "winnow 0.6.8",
 ]
@@ -2351,7 +2351,7 @@ dependencies = [
  "post-rs",
  "serde",
  "serde_with",
- "thiserror 2.0.6",
+ "thiserror 2.0.7",
  "tokio",
  "tower-http 0.6.2",
  "tracing",
@@ -3164,7 +3164,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "tempfile",
- "thiserror 2.0.6",
+ "thiserror 2.0.7",
  "thread_local",
  "tokio",
 ]
@@ -3913,7 +3913,7 @@ dependencies = [
  "post-rs",
  "regex",
  "rstest",
- "thiserror 2.0.6",
+ "thiserror 2.0.7",
 ]
 
 [[package]]
@@ -4378,11 +4378,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.6"
+version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fec2a1820ebd077e2b90c4df007bebf344cd394098a13c563957d0afc83ea47"
+checksum = "93605438cbd668185516ab499d589afb7ee1859ea3d5fc8f6b0755e1c7443767"
 dependencies = [
- "thiserror-impl 2.0.6",
+ "thiserror-impl 2.0.7",
 ]
 
 [[package]]
@@ -4398,9 +4398,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.6"
+version = "2.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d65750cab40f4ff1929fb1ba509e9914eb756131cef4210da8d5d700d26f6312"
+checksum = "e1d8749b4531af2117677a5fcd12b1348a3fe2b81e36e61ffeac5c4aa3273e36"
 dependencies = [
  "proc-macro2",
  "quote",
