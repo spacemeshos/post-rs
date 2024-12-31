@@ -46,7 +46,7 @@ thread_local = "1.1.7"
 mockall = "0.13.1"
 core_affinity = "0.8.1"
 hex = "0.4.3"
-reqwest = { version = "0.12.9" }
+reqwest = { version = "0.12.11" }
 tokio = { version = "1.42.0", features = ["rt-multi-thread"]}
 futures = "0.3.31"
 
