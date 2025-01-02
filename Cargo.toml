@@ -29,7 +29,7 @@ itertools = "0.13.0"
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.134"
 bytemuck = "1.21.0"
-serde_with = { version = "3.11.0", features = ["base64", "hex"] }
+serde_with = { version = "3.12.0", features = ["base64", "hex"] }
 
 scrypt-jane = { git = "https://github.com/spacemeshos/scrypt-jane-rs", branch = "main" }
 blake3 = "1.5.5"
