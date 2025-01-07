@@ -284,8 +284,7 @@ impl Scrypter {
 
             let gws = if labels_to_init < self.global_work_size {
                 // Round up labels_to_init to be a multiple of preferred_wg_size_mult
-                (labels_to_init + self.preferred_wg_size_mult - 1) / self.preferred_wg_size_mult
-                    * self.preferred_wg_size_mult
+                labels_to_init.div_ceil(self.preferred_wg_size_mult) * self.preferred_wg_size_mult
             } else {
                 self.global_work_size
             };
