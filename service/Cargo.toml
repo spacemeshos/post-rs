@@ -29,7 +29,7 @@ clap = { version = "4.5.23", features = ["derive"] }
 hex = "0.4.3"
 mockall = "0.13.1"
 sysinfo = "0.33.1"
-axum = "0.7.9"
+axum = "0.8.1"
 serde = { version = "1.0.217", features = ["derive"] }
 range-set = "0.0.11"
 serde_with = { version = "3.12.0", features = ["hex"] }
