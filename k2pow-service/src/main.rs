@@ -96,7 +96,7 @@ fn router<T: GetOrCreate + Send + Sync + 'static>(job_manager: Arc<T>) -> Router
     Router::new()
         .route("/", get(root))
         .route(
-            "/job/:miner/:nonce_group/:challenge/:difficulty",
+            "/job/{miner}/{nonce_group}/{challenge}/{difficulty}",
             get(get_job),
         )
         .with_state(job_manager)

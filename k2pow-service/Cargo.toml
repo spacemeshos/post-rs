@@ -12,12 +12,12 @@ tokio = { version = "1.42.0", features = ["full"] }
 tracing = "0.1.41"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-axum = "0.7.9"
+axum = "0.8.1"
 tower-http = {version = "0.6.2", features = ["trace"]}
 hex = "0.4.3"
 thiserror = "2.0.9"
 
 [dev-dependencies]
-axum-test = "16.4.1"
+axum-test = "17.0.1"
 hex = "0.4.3"
 mockall = "0.13.1"

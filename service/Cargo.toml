@@ -29,7 +29,7 @@ clap = { version = "4.5.23", features = ["derive"] }
 hex = "0.4.3"
 mockall = "0.13.1"
 sysinfo = "0.33.1"
-axum = "0.7.9"
+axum = "0.8.1"
 serde = { version = "1.0.217", features = ["derive"] }
 range-set = "0.0.11"
 serde_with = { version = "3.12.0", features = ["hex"] }
@@ -42,7 +42,7 @@ tonic-build = "0.12.3"
 [dev-dependencies]
 async-stream = "0.3.6"
 httpmock = "0.7.0"
-axum-test = "16.4.1"
+axum-test = "17.0.1"
 rcgen = "0.12.1"
 rstest = "0.22.0"
 tempfile = "3.14.0"

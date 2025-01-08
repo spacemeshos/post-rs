@@ -115,7 +115,7 @@ fn calc_nonce_group(nonce: u32, per_aes: u32) -> usize {
 #[inline(always)]
 fn nonce_group_range(nonces: Range<u32>, per_aes: u32) -> Range<u32> {
     let start_group = nonces.start / per_aes;
-    let end_group = std::cmp::max(start_group + 1, (nonces.end + per_aes - 1) / per_aes);
+    let end_group = std::cmp::max(start_group + 1, nonces.end.div_ceil(per_aes));
     start_group..end_group
 }
 
