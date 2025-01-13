@@ -34,5 +34,5 @@ parity-scale-codec = { version = "3.6.12", features = ["derive", "serde"] }
 mockall = "0.13.1"
 
 [dev-dependencies]
-axum-test = "17.0.1"
+axum-test = "17.0.2"
 tempfile = "3.14.0"
