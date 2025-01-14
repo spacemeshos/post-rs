@@ -22,7 +22,7 @@ pub(crate) fn open_without_cache(path: &Path) -> eyre::Result<File> {
             None,
             OPEN_EXISTING,
             FILE_FLAG_NO_BUFFERING, // <- drops cache
-            HANDLE(std::ptr::null_mut()),
+            Some(HANDLE(std::ptr::null_mut())),
         )
     }
     .wrap_err("opening file to drop cache")?;
