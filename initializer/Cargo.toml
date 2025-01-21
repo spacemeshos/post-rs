@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 base64 = "0.22.1"
-clap = { version = "4.5.23", features = ["derive"] }
+clap = { version = "4.5.26", features = ["derive"] }
 post-rs = { path = "../" }
 scrypt-ocl = { path = "../scrypt-ocl" }
 rayon = "1.10.0"
