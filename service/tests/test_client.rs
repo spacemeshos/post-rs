@@ -2,6 +2,7 @@ mod server;
 
 use std::{borrow::Cow, sync::Arc};
 
+use rcgen::{CertificateParams, CertifiedKey, KeyPair};
 use rstest::rstest;
 use tempfile::tempdir;
 use tokio::sync::oneshot;
@@ -36,23 +37,29 @@ async fn test_registers() {
     let _ = client_handle.await;
 }
 
+fn create_certified_key(
+    ca: &CertifiedKey,
+    subject_alt_names: Vec<String>,
+) -> Result<CertifiedKey, rcgen::Error> {
+    let key_pair = KeyPair::generate()?;
+    let cert_params = CertificateParams::new(subject_alt_names)?;
+    let cert = cert_params
+        .signed_by(&key_pair, &ca.cert, &ca.key_pair)
+        .unwrap();
+    Ok(CertifiedKey { cert, key_pair })
+}
+
 #[tokio::test]
 async fn test_registers_tls() {
     let ca = rcgen::generate_simple_self_signed(vec![]).unwrap();
-    let client = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
-    let server = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+    let client = create_certified_key(&ca, vec!["localhost".into()]).unwrap();
+    let server = create_certified_key(&ca, vec!["localhost".into()]).unwrap();
 
     let tls_config = TlsConfig {
-        client_ca_cert: Certificate::from_pem(ca.serialize_pem().unwrap()),
-        server_ca_cert: Certificate::from_pem(ca.serialize_pem().unwrap()),
-        server: Identity::from_pem(
-            server.serialize_pem_with_signer(&ca).unwrap(),
-            server.serialize_private_key_pem(),
-        ),
-        client: Identity::from_pem(
-            client.serialize_pem_with_signer(&ca).unwrap(),
-            client.serialize_private_key_pem(),
-        ),
+        client_ca_cert: Certificate::from_pem(ca.cert.pem()),
+        server_ca_cert: Certificate::from_pem(ca.cert.pem()),
+        server: Identity::from_pem(server.cert.pem(), server.key_pair.serialize_pem()),
+        client: Identity::from_pem(client.cert.pem(), client.key_pair.serialize_pem()),
     };
     let mut test_server = TestServer::new(Some(tls_config)).await;
     let client = test_server.create_client(Arc::new(MockPostService::new()));
@@ -67,14 +74,11 @@ async fn test_registers_tls() {
 #[test]
 fn test_client_creation_error_handling() {
     let ca = rcgen::generate_simple_self_signed(vec![]).unwrap();
-    let client = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+    let client = create_certified_key(&ca, vec!["localhost".into()]).unwrap();
     let tls = Some((
         Some("localhost".to_string()),
-        Certificate::from_pem(ca.serialize_pem().unwrap()).clone(),
-        Identity::from_pem(
-            client.serialize_pem_with_signer(&ca).unwrap(),
-            client.serialize_private_key_pem(),
-        ),
+        Certificate::from_pem(ca.cert.pem()).clone(),
+        Identity::from_pem(client.cert.pem(), client.key_pair.serialize_pem()),
     ));
     let service = Arc::new(MockPostService::new());
 
