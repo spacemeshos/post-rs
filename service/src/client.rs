@@ -278,11 +278,8 @@ mod tests {
             "https://localhost:1234".to_string(),
             Some((
                 None,
-                Certificate::from_pem(crt.serialize_pem().unwrap()),
-                Identity::from_pem(
-                    client_crt.serialize_pem().unwrap(),
-                    client_crt.serialize_private_key_pem(),
-                ),
+                Certificate::from_pem(crt.cert.pem()),
+                Identity::from_pem(client_crt.cert.pem(), client_crt.key_pair.serialize_pem()),
             )),
             super::MockPostService::new(),
         )
