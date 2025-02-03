@@ -22,7 +22,7 @@ tracing = { version = "0.1.41", features = ["log"] }
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 rand = "0.8.5"
-serde_json = "1.0.137"
+serde_json = "1.0.138"
 base64 = "0.22.1"
 axum-prometheus = "0.8.0"
 tower = { version = "0.5.2", features = ["limit", "load-shed", "buffer"] }
