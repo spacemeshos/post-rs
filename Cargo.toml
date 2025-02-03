@@ -52,7 +52,7 @@ futures = "0.3.31"
 
 [dev-dependencies]
 criterion = "0.5"
-tempfile = "3.14.0"
+tempfile = "3.16.0"
 rand = "0.8.5"
 proptest = "1.6.0"
 rstest = "0.24.0"
