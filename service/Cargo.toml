@@ -42,7 +42,7 @@ tonic-build = "0.12.3"
 [dev-dependencies]
 async-stream = "0.3.6"
 httpmock = "0.7.0"
-axum-test = "17.1.0"
+axum-test = "17.2.0"
 rcgen = "0.13.2"
 rstest = "0.24.0"
 tempfile = "3.16.0"
