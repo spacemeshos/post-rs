@@ -15,7 +15,7 @@ tokio = { version = "1.43", features = [
 post-rs = { path = "../" }
 serde_with = { version = "3.12.0", features = ["base64", "hex"] }
 ed25519-dalek = { version = "2.1.1", features = ["rand_core"] }
-clap = { version = "4.5.28", features = ["derive", "env"] }
+clap = { version = "4.5.29", features = ["derive", "env"] }
 hex = "0.4.3"
 config = "0.15.7"
 tracing = { version = "0.1.41", features = ["log"] }
