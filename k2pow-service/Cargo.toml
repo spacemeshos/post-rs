@@ -7,7 +7,7 @@ edition = "2021"
 post-rs = { path="../" }
 clap = { version = "4.5.29", features = ["derive", "env"] }
 serde_with = "3.12.0"
-serde = { version = "1.0.217", features = ["derive", "serde_derive"] }
+serde = { version = "1.0.218", features = ["derive", "serde_derive"] }
 tokio = { version = "1.43.0", features = ["full"] }
 tracing = "0.1.41"
 tracing-log = "0.2.0"
