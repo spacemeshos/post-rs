@@ -44,7 +44,7 @@ primitive-types = "0.13.1"
 thiserror = "2.0.11"
 thread_local = "1.1.7"
 mockall = "0.13.1"
-core_affinity = "0.8.1"
+core_affinity = "0.8.3"
 hex = "0.4.3"
 reqwest = { version = "0.12.12" }
 tokio = { version = "1.43.0", features = ["rt-multi-thread"]}
