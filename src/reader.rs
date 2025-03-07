@@ -39,6 +39,7 @@ pub struct BatchingReader<T>
 where
     T: Read,
 {
+    identifier: String,
     reader: T,
     starting_pos: u64,
     pos: u64,
@@ -47,8 +48,15 @@ where
 }
 
 impl<T: Read> BatchingReader<T> {
-    pub fn new(reader: T, pos: u64, batch_size: usize, total_size: u64) -> BatchingReader<T> {
+    pub fn new(
+        identifier: impl Into<String>,
+        reader: T,
+        pos: u64,
+        batch_size: usize,
+        total_size: u64,
+    ) -> BatchingReader<T> {
         BatchingReader::<T> {
+            identifier: identifier.into(),
             reader,
             starting_pos: pos,
             pos,
@@ -85,7 +93,16 @@ impl<T: Read> Iterator for BatchingReader<T> {
                 self.pos += n as u64;
                 Some(batch)
             }
-            Err(_) => None,
+            Err(e) => {
+                log::error!(
+                    "failed to read file '{}' @ {}/{}: {:?}",
+                    self.identifier,
+                    pos_in_file,
+                    self.total_size,
+                    e,
+                );
+                None
+            }
         }
     }
 }
@@ -116,7 +133,7 @@ pub(crate) fn read_data(
     batch_size: usize,
     file_size: u64,
 ) -> eyre::Result<impl Iterator<Item = Batch>> {
-    let mut readers = Vec::<BatchingReader<LazyFile>>::new();
+    let mut readers = Vec::new();
     let mut files = pos_files(datadir)?.enumerate().peekable();
 
     while let Some((id, entry)) = files.next() {
@@ -141,6 +158,7 @@ pub(crate) fn read_data(
         }
 
         readers.push(BatchingReader::new(
+            format!("{}", entry.path().display()),
             LazyFile::new(entry.path()),
             pos,
             batch_size,
@@ -164,7 +182,7 @@ mod tests {
     fn batching_reader() {
         let data = (0..40).collect::<Vec<u8>>();
         let file = Cursor::new(data);
-        let mut reader = BatchingReader::new(file, 0, 16, 40);
+        let mut reader = BatchingReader::new("", file, 0, 16, 40);
         assert_eq!(
             Some(Batch {
                 data: (0..16).collect(),
