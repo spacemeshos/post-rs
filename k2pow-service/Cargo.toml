@@ -1,6 +1,6 @@
 [package]
 name = "k2pow-service"
-version = "0.8.4"
+version = "0.8.5"
 edition = "2021"
 
 [dependencies]
