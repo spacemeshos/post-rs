@@ -8,7 +8,7 @@ name = "post"
 crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
-log = { version = "0.4.26", features = ["std"] }
+log = { version = "0.4.27", features = ["std"] }
 post-rs = { path = "../" }
 scrypt-ocl = { path = "../scrypt-ocl" }
 
