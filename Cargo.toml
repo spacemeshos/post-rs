@@ -36,7 +36,7 @@ blake3 = "1.7.0"
 bitvec = "1.0.1"
 rayon = "1.10.0"
 rand = "0.8.5"
-log = "0.4.26"
+log = "0.4.27"
 randomx-rs = { git = "https://github.com/spacemeshos/randomx-rs", rev = "d46bcd90e09428883e253b8203d6b311b0a07b91" }
 
 
