@@ -28,8 +28,8 @@ env_logger = "0.11.6"
 clap = { version = "4.5.32", features = ["derive"] }
 hex = "0.4.3"
 mockall = "0.13.1"
-sysinfo = "0.33.1"
-axum = "0.8.1"
+sysinfo = "0.34.1"
+axum = "0.8.3"
 serde = { version = "1.0.219", features = ["derive"] }
 range-set = "0.0.11"
 serde_with = { version = "3.12.0", features = ["hex"] }
