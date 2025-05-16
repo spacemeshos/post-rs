@@ -59,6 +59,7 @@ jobs:
           choco install -y wget unzip opencl-intel-cpu-runtime
           wget https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v2023.04.17/OpenCL-SDK-v2023.04.17-Win-x64.zip
           unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
+
       - uses: Swatinem/rust-cache@v2
 
       - name: Benchmarks
@@ -72,7 +73,9 @@ jobs:
           RUSTFLAGS: ${{ matrix.rustflags }}
 
       - name: Test scrypt-ocl crate
-        if: ${{ matrix.os != 'windows-2019' }}
+        # TODO(mafa): ocl links to OpenCL.framework instead of libOpenCL.dylib
+        # would probably require a fork of ocl to make work on macos-14
+        if: ${{ matrix.os != 'windows-2019' && matrix.os != 'macos-14' }}
         run: cargo test -p scrypt-ocl -- --test-threads=1
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
