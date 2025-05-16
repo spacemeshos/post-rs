@@ -29,7 +29,7 @@ fn test_generate_and_verify() {
 
     // Generate a proof
     let service = post_service::service::PostService::new(
-        datadir.into_path(),
+        datadir.keep(),
         cfg,
         scrypt,
         16,
@@ -70,7 +70,7 @@ fn reject_invalid_challenge() {
 
     // Generate a proof
     let service = post_service::service::PostService::new(
-        datadir.into_path(),
+        datadir.keep(),
         cfg,
         scrypt,
         16,
@@ -100,7 +100,7 @@ fn cannot_run_parallel_proof_gens() {
 
     // Generate a proof
     let service = post_service::service::PostService::new(
-        datadir.into_path(),
+        datadir.keep(),
         cfg,
         scrypt,
         16,
@@ -142,7 +142,7 @@ async fn remote_k2pow() {
         .unwrap();
 
     let service = post_service::service::PostService::new(
-        datadir.into_path(),
+        datadir.keep(),
         cfg,
         scrypt,
         16,
