@@ -15,7 +15,7 @@ jobs:
           - package: certifier
             image: certifier-service
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Git Checkout
         uses: actions/checkout@v4
@@ -38,4 +38,3 @@ jobs:
           file: ./${{ matrix.package }}/Dockerfile
           push: true
           tags: spacemeshos/${{ matrix.image }}:latest, spacemeshos/${{ matrix.image }}:${{ GITHUB.SHA  }}, spacemeshos/${{ matrix.image }}:${{ github.ref_name }}
-
