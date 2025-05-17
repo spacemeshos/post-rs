@@ -34,7 +34,7 @@ async fn test_gen_proof_in_progress() {
 
     let service = Arc::new(
         post_service::service::PostService::new(
-            datadir.into_path(),
+            datadir.keep(),
             cfg,
             scrypt,
             16,

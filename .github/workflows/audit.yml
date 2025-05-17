@@ -9,7 +9,7 @@ on:
       - "**/Cargo.lock"
 jobs:
   security_audit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       checks: write
       issues: write

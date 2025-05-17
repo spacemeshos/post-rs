@@ -11,7 +11,7 @@ name: CI
 jobs:
   check:
     name: Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: arduino/setup-protoc@v3
         with:
@@ -33,10 +33,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: [self-hosted, linux, x64, intel]
-          - os: ubuntu-latest-arm-8-cores
+          - os: ubuntu-24.04
+          - os: ubuntu-24.04-arm
             rustflags: --cfg=aes_armv8
-          - os: [self-hosted, macos, arm64]
+          - os: macos-14
             rustflags: --cfg=aes_armv8
           - os: macos-13
             toolchain: stable
@@ -50,15 +50,16 @@ jobs:
         with:
           submodules: true
       - uses: dtolnay/rust-toolchain@1.85
-      - if: matrix.os == 'ubuntu-latest-arm-8-cores'
+      - if: ${{ matrix.os == 'ubuntu-24.04' || matrix.os == 'ubuntu-24.04-arm' }}
         run: sudo apt-get update && sudo apt-get install -y libpocl2 pocl-opencl-icd ocl-icd-opencl-dev
         name: Install dependencies for testing openCL on Linux
-      - if: matrix.os == 'windows-2019'
+      - if: ${{ matrix.os == 'windows-2019' }}
         name: Install dependencies for testing openCL on Windows
         run: |
           choco install -y wget unzip opencl-intel-cpu-runtime
           wget https://github.com/KhronosGroup/OpenCL-SDK/releases/download/v2023.04.17/OpenCL-SDK-v2023.04.17-Win-x64.zip
           unzip -j OpenCL-SDK-v2023.04.17-Win-x64.zip OpenCL-SDK-v2023.04.17-Win-x64/lib/OpenCL.lib
+
       - uses: Swatinem/rust-cache@v2
 
       - name: Benchmarks
@@ -72,14 +73,16 @@ jobs:
           RUSTFLAGS: ${{ matrix.rustflags }}
 
       - name: Test scrypt-ocl crate
-        if: matrix.os != 'windows-2019'
+        # TODO(mafa): ocl links to OpenCL.framework instead of libOpenCL.dylib
+        # would probably require a fork of ocl to make work on macos-14
+        if: ${{ matrix.os != 'windows-2019' && matrix.os != 'macos-14' }}
         run: cargo test -p scrypt-ocl -- --test-threads=1
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
 
   fmt:
     name: Rustfmt
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
@@ -91,7 +94,7 @@ jobs:
       - run: cargo fmt --all -- --check
 
   clippy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: arduino/setup-protoc@v3
         with:
@@ -110,7 +113,7 @@ jobs:
           args: --all-features --workspace
 
   coverage:
-    runs-on: [self-hosted, linux, x64, intel]
+    runs-on: ubuntu-24.04
     steps:
       - uses: arduino/setup-protoc@v3
         with:
@@ -144,18 +147,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: [self-hosted, linux, x64, intel]
+          - os: ubuntu-24.04
             dylib: libpost.so
             staticlib: libpost.a
             artifact-name: linux
 
-          - os: ubuntu-latest-arm-8-cores
+          - os: ubuntu-24.04-arm
             dylib: libpost.so
             staticlib: libpost.a
             rustflags: --cfg=aes_armv8
             artifact-name: linux-arm64
 
-          - os: [self-hosted, macos, arm64]
+          - os: macos-14
             dylib: libpost.dylib
             staticlib: libpost.a
             rustflags: --cfg=aes_armv8
@@ -171,10 +174,10 @@ jobs:
             staticlib: post.lib
             artifact-name: windows
     steps:
-      - if: matrix.os == 'ubuntu-latest-arm-8-cores'
+      - if: ${{ matrix.os == 'ubuntu-24.04' || matrix.os == 'ubuntu-24.04-arm' }}
         run: sudo apt-get update && sudo apt-get install -y ocl-icd-opencl-dev
         name: Install opencl
-      - if: matrix.os == 'windows-2019'
+      - if: ${{ matrix.os == 'windows-2019' }}
         name: Install opencl
         run: vcpkg install opencl
       - uses: actions/checkout@v4
@@ -185,7 +188,7 @@ jobs:
         with:
           key: ${{ join( matrix.os, '-' ) }}
 
-      - if: matrix.os == 'windows-2019'
+      - if: ${{ matrix.os == 'windows-2019' }}
         name: Download OpenCL.lib
         run: |
           choco install -y wget unzip
@@ -246,9 +249,9 @@ jobs:
 
   release:
     name: Publish release
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    if: ${{ github.event_name == 'push' && github.ref_type == 'tag' }}
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Download artifacts
