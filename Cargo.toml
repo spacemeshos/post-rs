@@ -47,7 +47,7 @@ mockall = "0.13.1"
 core_affinity = "0.8.3"
 hex = "0.4.3"
 reqwest = { version = "0.12.15" }
-tokio = { version = "1.44.2", features = ["rt-multi-thread"]}
+tokio = { version = "1.45.0", features = ["rt-multi-thread"]}
 futures = "0.3.31"
 
 [dev-dependencies]
