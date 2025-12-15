@@ -200,7 +200,7 @@ jobs:
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
       - name: Archive production artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: libpost-${{ matrix.artifact-name }}
           path: |
@@ -214,7 +214,7 @@ jobs:
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
       - name: Archive profiler artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: profiler-${{ matrix.artifact-name }}
           path: |
@@ -229,7 +229,7 @@ jobs:
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
       - name: Archive service artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: post-service-${{ matrix.artifact-name }}
           path: |
@@ -240,7 +240,7 @@ jobs:
         env:
           RUSTFLAGS: ${{ matrix.rustflags }}
       - name: Archive k2pow service artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: k2pow-service-${{ matrix.artifact-name }}
           path: |
